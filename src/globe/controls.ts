@@ -104,7 +104,8 @@ export class TrackballControls {
 
   private readonly onMove = (e: PointerEvent) => {
     const p = this.pointers.get(e.pointerId);
-    this.ev.activity();
+    // A plain hover is not activity: only a drag pauses the idle spin.
+    if (p) this.ev.activity();
     if (!p) {
       if (e.pointerType !== 'touch') this.ev.hover(e.clientX, e.clientY);
       return;

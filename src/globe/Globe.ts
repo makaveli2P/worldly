@@ -63,8 +63,8 @@ const RAISE_MS = 200;
 const BLUR_MS = 200;
 const FOCUS_MS = 700;
 const FRAME_TAU = 110; // ms, smoothing for zoom and inset changes
-const IDLE_MS = 4000;
-const SPIN = 0.045; // rad/s, idle rotation
+const IDLE_MS = 1500;
+const SPIN = 0.1; // rad/s, idle rotation (about 6°/s)
 const FOCUS_FILL = 0.25; // selected country radius as a share of the smaller side of the free rect
 const SMALL_CAP = (0.6 * Math.PI) / 180; // countries smaller than this get a pick tolerance
 const PICK_SLOP_PX = 6;
@@ -154,7 +154,7 @@ export class Globe {
   private blurT = 0;
   private pointer: { x: number; y: number } | null = null;
   private pointerMoved = false;
-  private lastActivity = performance.now();
+  private lastActivity = -Infinity; // spin from the first frame
   private spin = 0; // 0..1 ramp of the idle rotation
   private focusAnim: { from: Quaternion; to: Quaternion; start: number } | null = null;
 
