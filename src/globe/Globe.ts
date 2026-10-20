@@ -62,6 +62,7 @@ export interface GlobeOptions {
   features: CountryFeature[];
   onHover: (id: CountryId | null, screen: { x: number; y: number } | null) => void; // screen = client px for the tooltip
   onSelect: (id: CountryId | null) => void; // null = click on ocean/space. Fired only for clicks, not drags (<5px movement).
+  onReset?: () => void; // double-click or double-tap on the canvas. Globe already called resetView(); deselect here.
   mapStyle?: MapStyle; // default 'satellite'
   theme?: ThemeName; // default: prefers-color-scheme
 }
@@ -96,6 +97,7 @@ const FOCUS_MS = 700;
 const TEXTURE_FADE_MS = 400;
 const FRAME_TAU = 110; // ms, smoothing for zoom and inset changes
 const IDLE_MS = 1500;
+const TAP_HOLD_PX = 4; // after a double-click reset, the hover pick waits until the mouse moves this far
 const SPIN = 0.1; // rad/s, idle rotation (about 6°/s)
 const FOCUS_FILL = 0.25; // selected country radius as a share of the smaller side of the free rect
 const SMALL_CAP = (0.6 * Math.PI) / 180; // countries smaller than this get a pick tolerance
@@ -269,6 +271,8 @@ export class Globe {
   private lastActivity = -Infinity; // spin from the first frame
   private spin = 0; // 0..1 ramp of the idle rotation
   private focusAnim: { from: Quaternion; to: Quaternion; start: number } | null = null;
+  private readonly homeQuat = new Quaternion(); // orientation on first load, for resetView()
+  private hoverHold: { x: number; y: number } | null = null; // no hover pick after a reset until the pointer moves
 
   // Framing.
   private width = 1;
@@ -307,7 +311,15 @@ export class Globe {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.autoClear = false;
     this.canvas = this.renderer.domElement;
-    Object.assign(this.canvas.style, { display: 'block', width: '100%', height: '100%', touchAction: 'none', cursor: 'grab' });
+    Object.assign(this.canvas.style, {
+      display: 'block',
+      width: '100%',
+      height: '100%',
+      touchAction: 'none',
+      userSelect: 'none',
+      webkitUserSelect: 'none',
+      cursor: 'grab',
+    });
     this.canvas.tabIndex = -1; // focus target after a panel closes
     this.canvas.setAttribute('role', 'img');
     this.canvas.setAttribute('aria-label', 'Globe. Press / to search for a country.');
@@ -482,7 +494,8 @@ export class Globe {
 
     // Start with the viewer's own longitude, from the time zone.
     const lon = -new Date().getTimezoneOffset() / 4;
-    this.globe.quaternion.copy(this.orientationFor(20, ((lon + 540) % 360) - 180));
+    this.homeQuat.copy(this.orientationFor(20, ((lon + 540) % 360) - 180));
+    this.globe.quaternion.copy(this.homeQuat);
 
     this.controls = new TrackballControls(this.canvas, {
       rotate: (q) => {
@@ -504,7 +517,16 @@ export class Globe {
         const i = this.pickAt(x, y);
         this.opts.onSelect(i >= 0 ? this.opts.features[i].id : null);
       },
+      doubleTap: (x, y, type) => {
+        this.resetView();
+        if (type !== 'touch') this.hoverHold = { x, y };
+        this.opts.onReset?.();
+      },
       hover: (x, y) => {
+        if (this.hoverHold) {
+          if (Math.hypot(x - this.hoverHold.x, y - this.hoverHold.y) < TAP_HOLD_PX) return;
+          this.hoverHold = null;
+        }
         this.pointer = { x, y };
         this.pointerMoved = true;
       },
@@ -514,6 +536,7 @@ export class Globe {
       },
       dragStart: () => {
         this.focusAnim = null;
+        this.hoverHold = null;
         this.setHover(-1, null);
         this.updateCursor();
       },
@@ -534,9 +557,38 @@ export class Globe {
   }
 
   setSelected(id: CountryId | null): void {
-    this.selectedIndex = this.indexOf(id);
+    const index = this.indexOf(id);
+    // No change: do not restart the idle timer (a reset lets the spin resume at once).
+    if (index === this.selectedIndex && index < 0) return;
+    this.selectedIndex = index;
     if (this.selectedIndex < 0) this.focusRadius = null;
     this.lastActivity = performance.now();
+    this.needsRender = true;
+  }
+
+  /**
+   * Turns the globe back to its first-load orientation and zoom, and clears hover, preview and
+   * selection. The idle spin starts when the turn ends. Insets stay: the owner clears them with the panels.
+   */
+  resetView(): void {
+    this.controls.cancelPendingTap();
+    this.controls.stopInertia();
+    this.previewIndex = -1;
+    this.selectedIndex = -1;
+    this.focusRadius = null;
+    this.zoomRatio = 1;
+    this.pointer = null;
+    this.setHover(-1, null);
+    if (this.reducedMotion.matches) {
+      this.globe.quaternion.copy(this.homeQuat);
+      this.focusAnim = null;
+      this.distance = this.targetDistance();
+      this.updateCamera();
+    } else {
+      this.focusAnim = { from: this.globe.quaternion.clone(), to: this.homeQuat.clone(), start: performance.now() };
+    }
+    this.lastActivity = -Infinity;
+    this.updateCursor();
     this.needsRender = true;
   }
 
@@ -569,7 +621,9 @@ export class Globe {
   }
 
   setPreview(id: CountryId | null): void {
-    this.previewIndex = this.indexOf(id);
+    const index = this.indexOf(id);
+    if (index === this.previewIndex && index < 0) return;
+    this.previewIndex = index;
     this.lastActivity = performance.now();
     this.needsRender = true;
   }

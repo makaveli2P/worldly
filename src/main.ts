@@ -85,6 +85,11 @@ async function start(): Promise<void> {
         setPreview(id);
       }
     },
+    // Double-click or double-tap: the globe already turned home. Close the panels and clear the hash.
+    onReset: () => {
+      tooltip.hide();
+      deselect();
+    },
   });
 
   // ---- overlay: labels, leader lines and the readout ----
@@ -239,6 +244,16 @@ async function start(): Promise<void> {
   window.addEventListener('resize', syncInsets);
   window.addEventListener('hashchange', fromHash);
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Home' && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      // Home resets the view, like a double-click. Keep Home for text fields and the panel scroll.
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select, .panels'))) return;
+      e.preventDefault();
+      globe.resetView();
+      tooltip.hide();
+      deselect();
+      return;
+    }
     if (e.key !== 'Escape') return;
     if (selected) deselect();
     else setPreview(null);

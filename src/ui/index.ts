@@ -2,6 +2,7 @@ import '../styles.css';
 
 export { DetailsPanel } from './details';
 export { NewsPanel } from './news';
+export { NowBlock } from './now';
 export { Tooltip } from './tooltip';
 export { CountrySearch } from './search';
 export { mountShell, INTERACTED_EVENT } from './shell';

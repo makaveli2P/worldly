@@ -84,6 +84,7 @@
 
 :root {
   --panel-width: 336px;
+  --brand-space: 128px; /* brand width plus a 24px gap */
   --edge: 24px;
   --bar: 56px;
   --top: calc(var(--bar) + 24px);
@@ -190,7 +191,8 @@ a {
   inset: 0 0 auto 0;
   height: var(--bar);
   display: grid;
-  grid-template-columns: var(--panel-width) minmax(0, 344px) 1fr auto;
+  /* Column 1 matches the details plate below, so the search ends on the plate's right edge. */
+  grid-template-columns: var(--panel-width) 1fr auto;
   align-items: center;
   column-gap: 24px;
   padding: 0 var(--edge);
@@ -216,12 +218,23 @@ a {
   background: var(--accent);
 }
 
+.brand {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+}
+
 .search-slot {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  /* The brand takes the start of column 1; the search fills the rest. */
+  width: calc(100% - var(--brand-space));
   min-width: 0;
 }
 
 .bar-tools {
-  grid-column: 4;
+  grid-column: 3;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -790,6 +803,124 @@ a {
   display: none;
 }
 
+/* "Now": local time and weather at the capital, under the name. */
+.now-h {
+  justify-content: space-between;
+}
+
+.now-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.now-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px 0 16px;
+}
+
+.now[data-no-weather] .now-grid {
+  grid-template-columns: 1fr;
+}
+
+.now[data-no-weather] .now-wx {
+  display: none;
+}
+
+.now-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 68px;
+}
+
+.now-wx {
+  padding-left: 16px;
+  border-left: 1px solid var(--rule);
+}
+
+.now-fig {
+  display: block;
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.now-clock[data-loading] .now-fig {
+  color: var(--faint);
+}
+
+.now-unit {
+  margin-left: 2px;
+  font-size: 14px;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.now-alt {
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--faint);
+}
+
+.now-sub {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.now-cond {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-meta {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.now-meta .num {
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.now-clock .now-meta .num {
+  color: var(--muted);
+}
+
+.now-meta .u {
+  color: var(--muted);
+}
+
+.now-wx .sk {
+  display: block;
+  background: var(--rule);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.now-wx .sk--fig {
+  width: 56px;
+  height: 16px;
+  margin: 10px 0 6px;
+}
+
+.now-wx .sk--sub {
+  width: 88px;
+  height: 8px;
+  margin-top: 6px;
+}
+
 /* ---------- News plate ---------- */
 
 .news-h {
@@ -947,6 +1078,8 @@ a {
   }
 
   .search-slot {
+    width: auto;
+    justify-self: stretch;
     grid-column: 1 / -1;
     grid-row: 2;
     align-self: stretch;

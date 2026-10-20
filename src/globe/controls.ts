@@ -8,8 +8,13 @@ export interface ControlEvents {
   rotate(delta: Quaternion): void;
   /** Multiplies the zoom ratio (less than 1 = closer). */
   zoom(factor: number): void;
-  /** Click or tap with less than 5px of movement. */
+  /**
+   * Click or tap with less than 5px of movement. The controls hold it for TAP_DELAY ms,
+   * so a second quick tap turns the pair into a doubleTap and this never fires.
+   */
   tap(clientX: number, clientY: number, pointerType: string): void;
+  /** Two taps within DOUBLE_MS and DOUBLE_SLOP px. */
+  doubleTap(clientX: number, clientY: number, pointerType: string): void;
   /** Mouse or pen moves over the canvas without a drag. Null when it leaves. */
   hover(clientX: number, clientY: number): void;
   leave(): void;
@@ -22,6 +27,12 @@ export interface ControlEvents {
 }
 
 const TAP_SLOP = 5;
+const DOUBLE_MS = 300; // max time between the two taps of a double tap
+// ms that a single tap waits for a possible second tap. It equals DOUBLE_MS, so a single tap
+// never fires inside the double-tap window (no select-then-reset flash).
+const TAP_DELAY = DOUBLE_MS;
+const NATIVE_DOUBLE_MS = 800; // a native dblclick later than this after the last tap is not ours
+const DOUBLE_SLOP = 30; // max px between the two taps of a double tap
 const DAMPING = 0.0045; // per ms: velocity *= exp(-DAMPING * dt)
 
 interface Tracked {
@@ -44,6 +55,9 @@ export class TrackballControls {
   private readonly velocity = new Vector3();
   private readonly tmpAxis = new Vector3();
   private readonly tmpQuat = new Quaternion();
+  // The last tap: a candidate first half of a double tap, or the end of one (consumed).
+  private lastTap: { x: number; y: number; time: number; consumed: boolean } | null = null;
+  private pendingTap = 0; // timer of the held single tap
 
   constructor(el: HTMLElement, events: ControlEvents) {
     this.el = el;
@@ -54,6 +68,8 @@ export class TrackballControls {
     el.addEventListener('pointercancel', this.onCancel);
     el.addEventListener('pointerleave', this.onLeave);
     el.addEventListener('wheel', this.onWheel, { passive: false });
+    el.addEventListener('mousedown', this.onMouseDown);
+    el.addEventListener('dblclick', this.onDblClick);
   }
 
   get isDragging(): boolean {
@@ -62,6 +78,12 @@ export class TrackballControls {
 
   stopInertia(): void {
     this.velocity.set(0, 0, 0);
+  }
+
+  /** Drops a held single tap, so it never fires. */
+  cancelPendingTap(): void {
+    clearTimeout(this.pendingTap);
+    this.pendingTap = 0;
   }
 
   /** Applies inertia. Returns true while the globe still moves. */
@@ -83,6 +105,9 @@ export class TrackballControls {
     el.removeEventListener('pointercancel', this.onCancel);
     el.removeEventListener('pointerleave', this.onLeave);
     el.removeEventListener('wheel', this.onWheel);
+    el.removeEventListener('mousedown', this.onMouseDown);
+    el.removeEventListener('dblclick', this.onDblClick);
+    this.cancelPendingTap();
   }
 
   private readonly onDown = (e: PointerEvent) => {
@@ -125,6 +150,7 @@ export class TrackballControls {
 
     if (!this.dragging && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) >= TAP_SLOP) {
       this.dragging = true;
+      this.lastTap = null; // a drag ends any double-tap sequence
       this.ev.dragStart();
     }
     if (!this.dragging) return;
@@ -161,7 +187,9 @@ export class TrackballControls {
       if (performance.now() - this.lastMoveTime > 80 || wasMulti) this.velocity.set(0, 0, 0);
       this.ev.dragEnd();
     } else if (!wasMulti) {
-      this.ev.tap(e.clientX, e.clientY, p.type);
+      this.onTap(e.clientX, e.clientY, p.type);
+    } else {
+      this.lastTap = null;
     }
     if (e.pointerType !== 'touch') this.ev.hover(e.clientX, e.clientY);
   };
@@ -179,6 +207,46 @@ export class TrackballControls {
 
   private readonly onLeave = (e: PointerEvent) => {
     if (e.pointerType !== 'touch' && !this.pointers.has(e.pointerId)) this.ev.leave();
+  };
+
+  private onTap(x: number, y: number, type: string): void {
+    const now = performance.now();
+    const last = this.lastTap;
+    const quick = last !== null && now - last.time <= DOUBLE_MS && Math.hypot(x - last.x, y - last.y) <= DOUBLE_SLOP;
+    if (quick && last.consumed) {
+      // A third quick tap after a double tap: ignore it, so a triple click does not select.
+      last.time = now;
+      return;
+    }
+    if (quick) {
+      this.cancelPendingTap();
+      this.lastTap = { x, y, time: now, consumed: true };
+      this.ev.doubleTap(x, y, type);
+      return;
+    }
+    this.cancelPendingTap();
+    this.lastTap = { x, y, time: now, consumed: false };
+    this.pendingTap = window.setTimeout(() => {
+      this.pendingTap = 0;
+      this.ev.tap(x, y, type);
+    }, TAP_DELAY);
+  }
+
+  // A double click must not select text next to the canvas.
+  private readonly onMouseDown = (e: MouseEvent) => {
+    if (e.detail > 1) e.preventDefault();
+  };
+
+  // The OS double-click interval (about 500 ms on macOS) can be longer than DOUBLE_MS. Then the
+  // second click arrives as a new single tap. The native dblclick turns that pair into a doubleTap.
+  private readonly onDblClick = (e: MouseEvent) => {
+    e.preventDefault();
+    const last = this.lastTap;
+    if (last === null || last.consumed) return; // onTap already reported this pair as a doubleTap.
+    if (performance.now() - last.time > NATIVE_DOUBLE_MS) return;
+    this.cancelPendingTap();
+    last.consumed = true;
+    this.ev.doubleTap(e.clientX, e.clientY, 'mouse');
   };
 
   private readonly onWheel = (e: WheelEvent) => {

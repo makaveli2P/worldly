@@ -5,6 +5,7 @@ import type { CountryId, CountryInfo } from '../types';
 import { h } from './dom';
 import * as fmt from './format';
 import { getLayout, type PanelLayout } from './layout';
+import { NowBlock } from './now';
 
 type Value = string | Node | null;
 type Row = [label: string, value: Value];
@@ -18,6 +19,8 @@ export interface DetailsPanelOptions {
 export class DetailsPanel {
   private readonly layout: PanelLayout;
   private readonly body: HTMLElement;
+  /** Local time and weather at the capital, under the name. */
+  private readonly now = new NowBlock();
 
   constructor(
     root: HTMLElement,
@@ -28,13 +31,15 @@ export class DetailsPanel {
   }
 
   show(info: CountryInfo): void {
-    this.body.replaceChildren(this.header(info), ...this.sections(info), this.footer(info));
+    this.now.show(info);
+    this.body.replaceChildren(this.header(info), this.now.el, ...this.sections(info), this.footer(info));
     this.layout.setIdentity(this.compactHeader(info));
     this.layout.setOpen('details', true);
     this.body.scrollTop = 0;
   }
 
   hide(): void {
+    this.now.hide();
     this.layout.setOpen('details', false);
     this.layout.setIdentity(null);
   }

@@ -88,7 +88,7 @@ export function mountShell(app: HTMLElement): Shell {
   );
 
   const touch = window.matchMedia('(hover: none)').matches;
-  const hint = h('p', { class: 'hint' }, touch ? 'Drag to spin · Tap a country' : 'Drag to spin · Click a country');
+  const hint = h('p', { class: 'hint' }, touch ? 'Tap a country · Double-tap to reset' : 'Drag to spin · Click a country · Double-click to reset');
   const readout = new Readout();
   const ui = h('div', { class: 'ui', 'data-ui-host': true }, header, hint, readout.el);
   app.append(globe, overlay, ui);
