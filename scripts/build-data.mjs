@@ -209,6 +209,116 @@ const GENERIC_GOVERNMENT = new Set([
   'sovereign state',
 ]);
 
+// Final government types that replace the cleaned Wikidata list. The cleaner drops
+// "theocracy" as a weak label, which is wrong for these two.
+const GOVERNMENT_TYPE_FINAL = {
+  VAT: 'Absolute elective theocracy',
+  IRN: 'Islamic republic, theocracy',
+};
+
+// Government type labels that only repeat what a stronger label says, or describe status
+// rather than government. The cleaner drops them when another label is left.
+const WEAK_GOVERNMENT = new Set([
+  'parliamentary system',
+  'parliamentary democracy',
+  'westminster system',
+  'hereditary monarchy',
+  'parliamentary monarchy',
+  'islamic state',
+  'emirate',
+  'theocracy',
+  'communist dictatorship',
+  'participatory democracy',
+  'british overseas territories',
+  'diarchy',
+  'juche',
+]);
+
+// Words that keep a capital letter in a sentence-case government type.
+const PROPER_WORDS = { islamic: 'Islamic', british: 'British', france: 'France', westminster: 'Westminster', juche: 'Juche' };
+
+/**
+ * Shortens a government type to at most two terms in sentence case, so that it fits on
+ * one or two lines. "people's republic, communist dictatorship, one-party state" ->
+ * "People's republic, one-party state". The input can be a Wikidata list or a string.
+ */
+function cleanGovernmentType(input) {
+  if (!input) return null;
+  let l = (Array.isArray(input) ? input : String(input).split(/,\s*/))
+    .map((s) => s.toLowerCase().trim())
+    .filter(Boolean);
+  // A presidential or semi-presidential system is always a republic here.
+  l = l.map((s) =>
+    s
+      .replace(/^(semi-presidential|presidential|parliamentary) system$/, '$1 republic')
+      .replace(/^parliamentary-presidential republic$/, 'semi-presidential republic'),
+  );
+  // "federal republic" + "parliamentary republic" -> "federal parliamentary republic".
+  for (const kind of ['republic', 'monarchy']) {
+    const fed = `federal ${kind}`;
+    const other = l.find((s) => s !== fed && s.endsWith(` ${kind}`) && !s.startsWith('federal ') && s !== `people's ${kind}`);
+    if (l.includes(fed) && other)
+      l = l.map((s) => (s === fed || s === other ? `federal ${other}` : s));
+  }
+  // "parliamentary monarchy" + "constitutional monarchy" say one thing.
+  if (l.includes('constitutional monarchy') && l.includes('parliamentary monarchy'))
+    l = l.filter((s) => s !== 'parliamentary monarchy');
+  l = [...new Set(l)];
+  const specific = l.filter((s) => !GENERIC_GOVERNMENT.has(s));
+  if (specific.length) l = specific;
+  const strong = l.filter((s) => !WEAK_GOVERNMENT.has(s));
+  if (strong.length) l = strong;
+  const words = (s) => new Set(s.split(/[\s-]+/));
+  l = l.filter((a) => !l.some((b) => b !== a && b.length > a.length && [...words(a)].every((w) => words(b).has(w))));
+  // A form of state (monarchy, republic, junta) reads first; a qualifier second.
+  const isForm = (s) => /\b(republic|monarchy|junta|coprincipality|papacy|state|government)$/.test(s);
+  l.sort((a, b) => Number(isForm(b)) - Number(isForm(a)));
+  l = l.slice(0, 2);
+  // Two republics say "republic" twice: "Islamic republic" + "presidential republic" -> "Islamic presidential republic".
+  if (l.length === 2 && l.every((s) => s.endsWith(' republic'))) {
+    const order = (q) => (q === 'federal' ? 0 : q === 'islamic' ? 1 : q === "people's" ? 3 : 2);
+    const quals = [...new Set(l.flatMap((s) => s.replace(/ republic$/, '').split(' ')))];
+    quals.sort((a, b) => order(a) - order(b));
+    l = [`${quals.join(' ')} republic`];
+  }
+  if (l.length === 2 && l.join(', ').length > 48) l = l.slice(0, 1);
+  const out = l.join(', ').replace(/\b[a-z]+\b/g, (w) => PROPER_WORDS[w] ?? w);
+  return capitalise(out);
+}
+
+// Capital coordinates [lat, lng] where Wikidata has no current capital that matches
+// capital[0] (checked October 2026). Keyed by CountryId.
+const CAPITAL_LATLNG_FALLBACK = {
+  GNQ: [3.7523, 8.7742], // Malabo (Wikidata lists only Ciudad de la Paz, not yet in use)
+  ESH: [27.1536, -13.2033], // El Aaiún (Laayoune); Wikidata has no P36
+  HKG: [22.2819, 114.1586], // City of Victoria (Central); Wikidata has no P36
+};
+
+/** Lower case, no accents, no punctuation, no "city". */
+function placeKey(s) {
+  return slug(s ?? '')
+    .replace(/-?\b(city|d-c|dc)\b-?/g, '')
+    .replace(/-/g, '');
+}
+
+/**
+ * [lat, lng] of capital[0]: the current Wikidata capital whose label or alias matches it,
+ * else the fallback table, else the only current capital. Returns {latlng, how}.
+ */
+function capitalLatLng(id, capitalName, wdCaps) {
+  const round = (p) => [Math.round(p.lat * 1e4) / 1e4, Math.round(p.lng * 1e4) / 1e4];
+  if (!capitalName) return { latlng: null, how: 'none' };
+  const key = placeKey(capitalName);
+  const list = [...(wdCaps ?? [])].sort((a, b) => b.rank - a.rank);
+  const hit =
+    list.find((c) => c.names.some((n) => placeKey(n) === key)) ??
+    list.find((c) => c.names.some((n) => placeKey(n).startsWith(key) || key.startsWith(placeKey(n))));
+  if (hit) return { latlng: round(hit), how: 'wikidata' };
+  if (CAPITAL_LATLNG_FALLBACK[id]) return { latlng: CAPITAL_LATLNG_FALLBACK[id], how: 'fallback' };
+  if (list.length === 1) return { latlng: round(list[0]), how: `only (${list[0].names[0]})` };
+  return { latlng: null, how: `missing (${list.map((c) => c.names[0]).join(', ') || 'no P36'})` };
+}
+
 // ---------- helpers ----------
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -342,7 +452,7 @@ function governmentType(labels) {
   // Drop a label whose words all appear in a longer label ("republic" in "federal republic").
   const words = (s) => new Set(s.split(/[\s-]+/));
   l = l.filter((a) => !l.some((b) => b !== a && b.length > a.length && [...words(a)].every((w) => words(b).has(w))));
-  return l.slice(0, 3).join(', ');
+  return l.join(', ');
 }
 
 function capitalise(s) {
@@ -852,6 +962,38 @@ async function wikidataUnMembers(qids) {
   return new Set(rows.map((r) => qidOf(r.item)));
 }
 
+/**
+ * Current capitals (P36, not deprecated, no end time) with their coordinates (P625).
+ * Map<qid, {names: string[], lat, lng, rank}[]>. names holds the English label and aliases.
+ */
+async function wikidataCapitals(qids) {
+  const rows = await sparql(`
+    SELECT ?item ?cap ?capLabel ?coord ?rank (GROUP_CONCAT(DISTINCT ?alt; SEPARATOR="|") AS ?alts) WHERE {
+      VALUES ?item { ${values(qids)} }
+      ?item p:P36 ?s. ?s ps:P36 ?cap; wikibase:rank ?rank.
+      FILTER(?rank != wikibase:DeprecatedRank)
+      FILTER NOT EXISTS { ?s pq:P582 ?end }
+      ?cap wdt:P625 ?coord.
+      OPTIONAL { ?cap skos:altLabel ?alt. FILTER(LANG(?alt) = "en") }
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul". ?cap rdfs:label ?capLabel. }
+    }
+    GROUP BY ?item ?cap ?capLabel ?coord ?rank`);
+  const out = new Map();
+  for (const r of rows) {
+    const m = r.coord.match(/^Point\(([-\d.eE]+) ([-\d.eE]+)\)$/);
+    if (!m) continue; // a coordinate on another globe
+    const q = qidOf(r.item);
+    if (!out.has(q)) out.set(q, []);
+    out.get(q).push({
+      names: [r.capLabel, ...(r.alts ? r.alts.split('|') : [])],
+      lat: Number(m[2]),
+      lng: Number(m[1]),
+      rank: RANK[r.rank],
+    });
+  }
+  return out;
+}
+
 async function wikidataFlags(qids) {
   const rows = await sparql(`
     SELECT ?item ?f ?rank WHERE {
@@ -891,6 +1033,7 @@ async function wikidataBatch(qids, extraQids) {
   await step('population', () => wikidataLatest(qids, 'P1082'));
   await step('timezones', () => wikidataTimezones(qids));
   await step('un', () => wikidataUnMembers(qids));
+  await step('capitalCoords', () => wikidataCapitals(qids));
   if (extraQids.length) {
     await step('flags', () => wikidataFlags(extraQids));
     await step('capitals', () => wikidataLabels(extraQids, 'P36'));
@@ -986,6 +1129,7 @@ async function main() {
 
   const countries = {};
   const staleHeads = [];
+  const capitalNotes = [];
   for (const e of entries) {
     const c = e.base;
     const q = e.qid;
@@ -1030,6 +1174,7 @@ async function main() {
         ? `https://flagcdn.com/${iso2.toLowerCase()}.svg`
         : (wd.flags?.get(q) ?? null),
       capital: c?.capital?.length ? c.capital : (wd.capitals?.get(q) ?? []),
+      capitalLatLng: null,
       region: c?.region ?? e.region ?? null,
       subregion: c?.subregion ?? e.subregion ?? null,
       latlng:
@@ -1099,6 +1244,16 @@ async function main() {
     }
     Object.assign(info.government, GOVERNMENT_OVERRIDES[e.id] ?? {});
     if (!info.government.type && GOVERNMENT_TYPE_FALLBACK[e.id]) info.government.type = GOVERNMENT_TYPE_FALLBACK[e.id];
+    info.government.type = GOVERNMENT_TYPE_FINAL[e.id] ?? cleanGovernmentType(info.government.type);
+
+    const cap = capitalLatLng(e.id, info.capital[0], wd.capitalCoords?.get(q));
+    if (!cap.latlng && q && failedPart('capitalCoords', q) && prev?.capitalLatLng) {
+      cap.latlng = prev.capitalLatLng;
+      cap.how = 'previous';
+    }
+    info.capitalLatLng = cap.latlng;
+    if (cap.how !== 'wikidata' && cap.how !== 'none') capitalNotes.push(`${e.id} ${info.capital[0]}: ${cap.how}`);
+
     // A title with no name says nothing.
     if (!info.government.headOfState) info.government.headOfStateTitle = null;
     if (!info.government.headOfGovernment) info.government.headOfGovernmentTitle = null;
@@ -1122,6 +1277,10 @@ async function main() {
   if (staleHeads.length) {
     console.log('\nLeaders with no current matching position in Wikidata (check these):');
     for (const s of staleHeads) console.log(`  ${s}`);
+  }
+  if (capitalNotes.length) {
+    console.log('\nCapital coordinates not from a matching Wikidata capital (check these):');
+    for (const s of capitalNotes) console.log(`  ${s}`);
   }
   for (const p of [OUT_WORLD, OUT_COUNTRIES, OUT_API]) {
     const s = await stat(p);
@@ -1147,6 +1306,7 @@ function report(countries, geometryCount, failed) {
   console.log(`  geometries          ${geometryCount}`);
   console.log(`  entries             ${list.length}`);
   console.log(`  with facts (capital) ${count((c) => c.capital.length)}`);
+  console.log(`  with capitalLatLng  ${count((c) => c.capitalLatLng)} of ${count((c) => c.capital.length)}`);
   console.log(`  with population     ${count((c) => c.population)}`);
   console.log(`  with government     ${count((c) => c.government.type)}`);
   console.log(`  with headOfState    ${count((c) => c.government.headOfState)}`);

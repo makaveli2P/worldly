@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Worldly — Swiss</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Worldly</div>
+      <label class="search">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.25"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.25"/></svg>
+        <input type="text" placeholder="Search countries" />
+        <kbd>/</kbd>
+      </label>
+      <div class="coords mono" id="coords"></div>
+      <div class="toggle" role="radiogroup" aria-label="Map style">
+        <a href="?style=satellite" data-style="satellite" role="radio">Satellite</a>
+        <a href="?style=atlas" data-style="atlas" role="radio">Atlas</a>
+      </div>
+    </header>
+
+    <div class="stage" id="stage">
+      <canvas id="base"></canvas>
+      <canvas id="soft"></canvas>
+      <canvas id="focus"></canvas>
+      <svg id="overlay"></svg>
+      <div id="labels"></div>
+    </div>
+
+    <aside class="plate plate-left" id="details"></aside>
+    <aside class="plate plate-right" id="news"></aside>
+
+    <footer class="readout mono" id="readout"></footer>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

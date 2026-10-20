@@ -37,10 +37,29 @@ export function closeIcon(): SVGSVGElement {
   path.setAttribute('d', 'M2 2 L12 12 M12 2 L2 12');
   path.setAttribute('stroke', 'currentColor');
   path.setAttribute('stroke-width', '1.5');
-  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linecap', 'square');
   svg.append(path);
   return svg;
 }
+
+/** A stroked 16-unit line icon. */
+export function svgIcon(d: string, size = 16): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.25');
+  path.setAttribute('stroke-linecap', 'square');
+  svg.append(path);
+  return svg;
+}
+
+export const SEARCH_ICON = 'M7 2.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9ZM10.5 10.5 14 14';
 
 export function closeButton(label: string, onClick: () => void): HTMLButtonElement {
   const b = h('button', { type: 'button', class: 'close', 'aria-label': label }, closeIcon());

@@ -23,6 +23,7 @@ export interface CountryInfo {
   officialName: string | null;
   flag: string | null; // URL of an SVG flag
   capital: string[];
+  capitalLatLng?: [number, number] | null; // [lat, lng] of capital[0], for the globe label
   region: string | null;
   subregion: string | null;
   latlng: [number, number] | null; // representative point, for globe focus

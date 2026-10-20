@@ -10,7 +10,6 @@
     "data": "node scripts/build-data.mjs"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-sans": "^5.3.0",
     "d3-geo": "^3.1.1",
     "earcut": "^3.2.4",
     "three": "^0.186.1",

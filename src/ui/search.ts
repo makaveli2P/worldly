@@ -1,7 +1,7 @@
-// Country search: a combobox in the top right. "/" focuses it. A keyboard path to every country.
+// Country search: a combobox in the header. "/" focuses it. A keyboard path to every country.
 
 import type { CountryId } from '../types';
-import { h } from './dom';
+import { h, SEARCH_ICON, svgIcon } from './dom';
 
 const MAX_RESULTS = 8;
 
@@ -55,9 +55,12 @@ export class CountrySearch {
     });
     this.list = h('ul', { class: 'search-list', id: 'search-list', role: 'listbox', 'aria-label': 'Countries' });
     const key = h('kbd', { class: 'search-key', 'aria-hidden': 'true' }, '/');
-    this.el = h('div', { class: 'search' }, this.input, key, this.list);
-    // Before the panels, so the Tab order is search, then panels.
-    root.insertBefore(this.el, root.querySelector('.panels'));
+    this.el = h('div', { class: 'search' }, svgIcon(SEARCH_ICON, 16), this.input, key, this.list);
+    // The header slot comes before the panels, so the Tab order is search, then panels.
+    const host = (root.closest('[data-ui-host]') as HTMLElement | null) ?? root;
+    const slot = host.querySelector('[data-search-slot]');
+    if (slot) slot.append(this.el);
+    else root.insertBefore(this.el, root.querySelector('.panels'));
 
     this.input.addEventListener('input', () => this.update());
     this.input.addEventListener('keydown', (e) => this.onKey(e));
@@ -101,7 +104,8 @@ export class CountrySearch {
       h(
         'li',
         { id: `search-opt-${i}`, role: 'option', 'data-id': e.id, 'aria-selected': String(i === this.active) },
-        e.name,
+        h('span', null, e.name),
+        h('span', { class: 'search-code', 'aria-hidden': 'true' }, e.id.startsWith('X-') ? '' : e.id),
       ),
     );
     if (this.input.value.trim() && !items.length) {

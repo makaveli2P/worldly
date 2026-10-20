@@ -4,6 +4,7 @@ import { feature } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { Globe } from './globe/Globe';
+import { Overlay } from './overlay';
 import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, Tooltip, mountShell } from './ui';
 import type { CountryFeature, CountryId, CountryInfo, NewsResponse } from './types';
 
@@ -38,6 +39,8 @@ async function start(): Promise<void> {
   const [topo, countries] = await Promise.all([
     getJson<WorldTopology>('/data/world.json'),
     getJson<Record<CountryId, CountryInfo>>('/data/countries.json'),
+    // The label measurements need the real font metrics.
+    document.fonts?.ready.catch(() => undefined),
   ]);
   const features = toFeatures(topo);
   const names = new Map(features.map((f) => [f.id, f.name]));
@@ -58,6 +61,8 @@ async function start(): Promise<void> {
   const globe = new Globe({
     container: shell.globe,
     features,
+    mapStyle: shell.mapStyle(),
+    theme: shell.theme(),
     onHover: (id, screen) => {
       // The selected country already has its name in the panels.
       const name = id && id !== selected ? nameOf(id) : null;
@@ -81,6 +86,33 @@ async function start(): Promise<void> {
       }
     },
   });
+
+  // ---- overlay: labels, leader lines and the readout ----
+
+  const overlay = new Overlay(shell.overlay, { countries, features, globe });
+  overlay.setTheme(shell.theme());
+  overlay.setMapStyle(shell.mapStyle());
+  overlay.setMobile(shell.isMobile());
+  shell.onThemeChange((t) => {
+    globe.setTheme(t);
+    overlay.setTheme(t);
+  });
+  shell.onMapStyleChange((s) => {
+    globe.setMapStyle(s);
+    overlay.setMapStyle(s);
+  });
+
+  // The readout writes text only when a value changes; limit it to ~15 updates a second.
+  let lastReadout = 0;
+  const updateReadout = (): void => {
+    const now = performance.now();
+    if (now - lastReadout < 66) return;
+    lastReadout = now;
+    shell.readout.update(globe.getView(), selected);
+  };
+  globe.onFrame(updateReadout);
+  // Dev-only handle for browser tests; removed from the production bundle.
+  if (import.meta.env.DEV) Object.assign(window, { __worldly: { globe, overlay } });
 
   function setPreview(id: CountryId | null): void {
     preview = id;
@@ -136,6 +168,8 @@ async function start(): Promise<void> {
     selected = id;
     window.dispatchEvent(new Event(INTERACTED_EVENT));
     globe.setSelected(id);
+    overlay.setSelected(id);
+    lastReadout = 0;
     if (info?.latlng) globe.focus(info.latlng);
     const name = nameOf(id) ?? id;
     if (info) details.show(info);
@@ -156,6 +190,9 @@ async function start(): Promise<void> {
     newsRequest?.abort();
     newsRequest = null;
     globe.setSelected(null);
+    overlay.setSelected(null);
+    lastReadout = 0;
+    shell.readout.update(globe.getView(), null);
     details.hide();
     news.hide();
     document.title = 'Worldly';
@@ -179,8 +216,23 @@ async function start(): Promise<void> {
 
   // ---- layout and input ----
 
+  // Panels slide in and out with a CSS transition. Re-read their rects for a short time
+  // after each change, so the leader lines end on the panel edge during the slide.
+  let rectsUntil = 0;
+  let rectsRaf = 0;
+  function trackPanelRects(): void {
+    overlay.setPanelRects(shell.panelRects());
+    if (performance.now() < rectsUntil) rectsRaf = requestAnimationFrame(trackPanelRects);
+    else rectsRaf = 0;
+  }
+
   function syncInsets(): void {
-    globe.setViewportInsets(shell.panelInsets());
+    const insets = shell.panelInsets();
+    globe.setViewportInsets(insets);
+    overlay.setMobile(shell.isMobile());
+    overlay.setTopInset(insets.top);
+    rectsUntil = performance.now() + 600;
+    if (!rectsRaf) trackPanelRects();
   }
 
   window.addEventListener(PANELS_CHANGE_EVENT, syncInsets);
@@ -202,6 +254,7 @@ async function start(): Promise<void> {
     once: true,
   });
 
+  syncInsets();
   loader.setAttribute('data-hidden', '');
   setTimeout(() => loader.remove(), 600);
   if (location.hash) fromHash();

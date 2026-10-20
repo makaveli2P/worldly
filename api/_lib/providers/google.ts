@@ -65,17 +65,31 @@ function preferNamed(articles: NewsArticle[], name: string): NewsArticle[] {
   return [...named, ...articles.filter((a) => !named.includes(a))];
 }
 
-export const google: Provider = {
+/** Returns true when the country has an English Google News edition. */
+export function hasEnglishEdition(country: NewsCountry): boolean {
+  const cc = country.iso2?.toUpperCase();
+  return cc !== undefined && ENGLISH_EDITIONS.has(cc);
+}
+
+/** National top stories from the country's English edition. Gives nothing for other countries. */
+export const googleEdition: Provider = {
   name: 'google',
   enabled: () => true,
   async fetchTop(country: NewsCountry, limit: number, signal: AbortSignal) {
-    const cc = country.iso2?.toUpperCase();
-    if (cc && ENGLISH_EDITIONS.has(cc)) {
-      const articles = toArticles(await getText(editionUrl(cc), signal));
-      if (articles.length > 0) return articles.slice(0, limit * 2);
-    }
+    if (!hasEnglishEdition(country)) return [];
+    const xml = await getText(editionUrl(country.iso2!.toUpperCase()), signal);
+    if (!/<rss[\s>]/i.test(xml)) throw new UpstreamError('not rss');
+    return toArticles(xml).slice(0, limit * 3);
+  },
+};
+
+/** A search for the country name in the last 3 days. Titles that name the country come first. */
+export const googleSearch: Provider = {
+  name: 'google',
+  enabled: () => true,
+  async fetchTop(country: NewsCountry, limit: number, signal: AbortSignal) {
     const xml = await getText(searchUrl(country.name), signal);
     if (!/<rss[\s>]/i.test(xml)) throw new UpstreamError('not rss');
-    return preferNamed(toArticles(xml), country.name).slice(0, limit * 2);
+    return preferNamed(toArticles(xml), country.name).slice(0, limit * 3);
   },
 };

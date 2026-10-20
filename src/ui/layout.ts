@@ -1,5 +1,5 @@
-// Shared panel frame. Desktop: two side panels. Mobile: one bottom sheet with
-// an "Overview | News" switch. Both panel classes register here.
+// Shared panel frame. Desktop: details plate on the left, news plate on the right.
+// Mobile: one bottom sheet with the country identity and an "Overview | News" switch.
 
 import { closeButton, h } from './dom';
 
@@ -26,18 +26,21 @@ export class PanelLayout {
   private readonly slots = new Map<PanelKind, Slot>();
   private readonly tabs: Record<PanelKind, HTMLButtonElement>;
   private tab: PanelKind = 'details';
+  private readonly identity: HTMLElement;
 
   constructor(host: HTMLElement) {
     this.tabs = {
       details: this.tabButton('details', 'Overview'),
       news: this.tabButton('news', 'News'),
     };
-    const tablist = h('div', { class: 'segmented', role: 'tablist', 'aria-label': 'Panel' }, this.tabs.details, this.tabs.news);
+    const tablist = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Panel' }, this.tabs.details, this.tabs.news);
     tablist.addEventListener('keydown', (e) => this.onTabKey(e));
+    this.identity = h('div', { class: 'sheet-id' });
     const head = h(
       'div',
       { class: 'sheet-head' },
       h('div', { class: 'sheet-handle', 'aria-hidden': 'true' }),
+      this.identity,
       tablist,
       closeButton('Close', () => this.closeAll()),
     );
@@ -58,12 +61,18 @@ export class PanelLayout {
       closeButton(`Close ${label.toLowerCase()}`, onClose),
       body,
     );
-    // News sits on the left, so it comes first in the sheet too.
-    if (kind === 'news') this.el.querySelector('.sheet-head')!.after(el);
+    // Details sits on the left, so it comes first in the Tab order too.
+    if (kind === 'details') this.el.querySelector('.sheet-head')!.after(el);
     else this.el.append(el);
     this.slots.set(kind, { el, body, open: false, onClose });
     this.sync();
     return body;
+  }
+
+  /** Mobile sheet: the flag and name above the tabs. Null clears it. */
+  setIdentity(node: Node | null): void {
+    if (node) this.identity.replaceChildren(node);
+    else this.identity.replaceChildren();
   }
 
   setOpen(kind: PanelKind, open: boolean): void {
@@ -82,11 +91,23 @@ export class PanelLayout {
       return out;
     }
     // offsetLeft/offsetWidth ignore the slide-in transform, so the result is stable mid-animation.
-    const news = this.slots.get('news');
-    if (news?.open) out.left = news.el.offsetLeft + news.el.offsetWidth;
     const details = this.slots.get('details');
-    if (details?.open) out.right = window.innerWidth - details.el.offsetLeft;
+    if (details?.open) out.left = details.el.offsetLeft + details.el.offsetWidth;
+    const news = this.slots.get('news');
+    if (news?.open) out.right = window.innerWidth - news.el.offsetLeft;
     return out;
+  }
+
+  /** Screen rects for the leader lines. Mobile: the whole sheet stands in for "details". */
+  rects(): { details: DOMRect | null; news: DOMRect | null } {
+    if (isMobileViewport()) {
+      return { details: this.anyOpen() ? this.el.getBoundingClientRect() : null, news: null };
+    }
+    const rect = (kind: PanelKind) => {
+      const slot = this.slots.get(kind);
+      return slot?.open ? slot.el.getBoundingClientRect() : null;
+    };
+    return { details: rect('details'), news: rect('news') };
   }
 
   private anyOpen(): boolean {

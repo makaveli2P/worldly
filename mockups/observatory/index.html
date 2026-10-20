@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0B0C0E" />
+    <title>Worldly · Dark observatory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="base"></canvas>
+      <canvas id="focus"></canvas>
+      <svg id="under"></svg>
+      <div id="labels"></div>
+    </div>
+    <svg id="overlay"></svg>
+
+    <header class="top">
+      <a class="wordmark" href="#">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <circle cx="9" cy="9" r="7.5" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <ellipse cx="9" cy="9" rx="3.2" ry="7.5" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <line x1="1.5" y1="9" x2="16.5" y2="9" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+        Worldly
+      </a>
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+          <circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" stroke-width="1.3" />
+          <line x1="9.4" y1="9.4" x2="12.5" y2="12.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+        </svg>
+        <input type="text" placeholder="Search countries" />
+        <kbd>/</kbd>
+      </label>
+      <div class="seg" role="tablist" aria-label="Map style">
+        <a role="tab" data-style="satellite" href="?style=satellite">Satellite</a>
+        <a role="tab" data-style="atlas" href="?style=atlas">Atlas</a>
+      </div>
+    </header>
+
+    <aside class="panel details" id="details"></aside>
+    <aside class="panel news" id="news"></aside>
+
+    <p class="credit" id="credit"></p>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

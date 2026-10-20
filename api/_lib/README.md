@@ -4,13 +4,29 @@
 
 ### Provider chain
 
-The handler tries each provider in this order. When a provider gives fewer than 5 stories, the next provider adds more. The handler removes duplicate titles and URLs, and removes spam and reference pages.
+The handler tries each provider in this order. When the list holds fewer than 5 stories, the next provider adds more.
 
-1. **NewsData.io**: runs only when `NEWSDATA_API_KEY` is set. It asks for the country code with `prioritydomain=top`. If that gives no stories (or the code is not supported), it searches by the country name. Each call costs one credit (the free plan gives about 200 a day).
-2. **Google News RSS**: needs no key. Countries with an English edition (IN, US, GB, AU, CA, NZ, IE, ZA, NG, KE, SG, MY, PH, PK, BW, ZW, GH, ET, UG, TZ, NA, IL) get the edition's NATION topic (domestic stories only). Other countries get a search for `"<name>"` in the last 3 days; titles that name the country come first. The feed terms allow personal, non-commercial use only.
-3. **GDELT DOC 2.0**: needs no key. It allows one request every 5 seconds and often answers 429, so it is the last choice. The wait is 2 s, and after a 429 or a timeout the API skips GDELT for 2 minutes.
+1. **Google News edition**: needs no key. A country with an English edition (IN, US, GB, AU, CA, NZ, IE, ZA, NG, KE, SG, MY, PH, PK, BW, ZW, GH, ET, UG, TZ, NA, IL) gets the edition's NATION topic (national stories only). Other countries skip this step without a request.
+2. **NewsData.io**: runs only when `NEWSDATA_API_KEY` is set. Every call has `qInTitle="<name>"` and `language=en`, so each title names the country.
+   - Call 1 adds `prioritydomain=top` (the top 10% of domains).
+   - Call 2 runs only when call 1 gives fewer than 3 usable stories. It drops `prioritydomain`.
+   - The provider does not use the `country` filter. That filter matches the publisher's country, not the subject: `country=cn` gave stories about other topics from Asian outlets.
+   - The provider removes titles that name only a longer place ("Inner Mongolia" for Mongolia, "Papua New Guinea" for Guinea).
+   - Each call costs one credit (the free plan gives about 200 a day). The server logs one line per call (`[news] newsdata call: prioritydomain+qInTitle`), without the key or the URL.
+3. **Google News search**: needs no key. A search for `"<name>"` in the last 3 days. Titles that name the country come first. The feed terms allow personal, non-commercial use only.
+4. **GDELT DOC 2.0**: needs no key. It allows one request every 5 seconds and often answers 429, so it is the last choice. The wait is 2 s, and after a 429 or a timeout the API skips GDELT for 2 minutes.
 
-Each provider has a 4 second timeout. If all providers fail, the response is `200` with `articles: []` and `provider: null`.
+Each request has a 4 second timeout. Each provider has an 8 second budget. If all providers fail, the response is `200` with `articles: []` and `provider: null`. `provider` names the provider that gave the most stories.
+
+### Filters
+
+`addDistinct` in `news.ts` applies these filters to every story, across all providers:
+
+- It drops repeated URLs and repeated titles.
+- It drops a near-duplicate: a title whose word set has a Jaccard similarity of 0.6 or more with an earlier title. The words are lowercase, without accents, punctuation or stopwords (`titleTokens` in `text.ts`).
+- It keeps at most 2 stories from one publisher. "The Hindu" and "thehindu.com" are one publisher (`publisherKey`).
+- It drops press-release wires: Business Wire, PR Newswire, GlobeNewswire, ACCESSWIRE, EIN Presswire and others (`isPressRelease`).
+- It drops spam streams, reference pages, course adverts and directory pages (`isJunk`).
 
 ### Caching
 

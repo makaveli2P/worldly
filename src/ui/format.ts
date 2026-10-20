@@ -72,3 +72,57 @@ export function timezones(zones: string[]): string | null {
 export function sentenceCase(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+// ---- Swiss panel figures: a number and its unit apart, so the unit can be grey. ----
+
+/** 1406585000 -> "1,406,585,000" */
+export function integer(n: number): string {
+  return grouped.format(n);
+}
+
+/** 1.95e13 -> ["$19.50", "tn"]; 3.9e9 -> ["$3.90", "bn"]; 2697 -> ["$2,697", ""]. */
+export function usdScaled(n: number): [value: string, unit: string] {
+  if (n >= 1e12) return [`$${(n / 1e12).toFixed(2)}`, 'tn'];
+  if (n >= 1e9) return [`$${(n / 1e9).toFixed(n >= 1e11 ? 0 : n >= 1e10 ? 1 : 2)}`, 'bn'];
+  if (n >= 1e6) return [`$${(n / 1e6).toFixed(n >= 1e8 ? 0 : 1)}`, 'mn'];
+  return [`$${grouped.format(n)}`, ''];
+}
+
+/** 3287263 -> "3,287,263"; 0.44 -> "0.44" */
+export function areaValue(n: number): string {
+  return n < 10 ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : grouped.format(n);
+}
+
+/** ["UTC+06:00", "UTC+08:00"] -> "UTC+06 – UTC+08"; one zone stays one zone. */
+export function zoneRange(zones: string[]): string | null {
+  if (zones.length === 0) return null;
+  const short = (z: string) => z.replace(/:00$/, '').replace('-', '−');
+  if (zones.length === 1) return short(zones[0]);
+  return `${short(zones[0])} – ${short(zones[zones.length - 1])}`;
+}
+
+/** [35, 105] -> "35.00°N 105.00°E" */
+export function latLng([lat, lng]: [number, number]): string {
+  const f = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(2)}°${v < 0 ? neg : pos}`;
+  return `${f(lat, 'N', 'S')} ${f(lng, 'E', 'W')}`;
+}
+
+/** Story age for the news list: "now", "45m", "2h", "3d"; older than a week -> "12 Mar". */
+export function age(iso: string | null, now = Date.now()): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const min = Math.max(0, Math.round((now - t) / 60000));
+  if (min < 1) return 'now';
+  if (min < 60) return `${min}m`;
+  if (min < 24 * 60) return `${Math.round(min / 60)}h`;
+  if (min < 7 * 24 * 60) return `${Math.round(min / 1440)}d`;
+  return shortDate.format(t);
+}
+
+/** ISO -> "09:41" in UTC. */
+export function utcTime(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}

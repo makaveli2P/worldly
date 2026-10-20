@@ -4,7 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Spin a globe, pick a country, read its facts and top news." />
-    <meta name="theme-color" content="#F4F2EC" />
+    <meta name="theme-color" content="#F4F4F1" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Set theme and map style before first paint. src/ui/prefs.ts keeps them in sync later.
+      (function () {
+        var t = null, s = null;
+        try {
+          t = localStorage.getItem('worldly:theme');
+          s = localStorage.getItem('worldly:style');
+        } catch (e) {}
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        var d = document.documentElement;
+        d.dataset.theme = t;
+        d.dataset.style = s === 'atlas' ? 'atlas' : 'satellite';
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'dark' ? '#0E0E0E' : '#F4F4F1');
+      })();
+    </script>
+    <link rel="preload" href="/src/assets/fonts/inter-tight-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/src/assets/fonts/inter-tight-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/src/assets/fonts/inter-tight-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/src/assets/fonts/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Worldly</title>
   </head>
