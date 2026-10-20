@@ -5,7 +5,7 @@ import type { GeometryCollection, Topology } from 'topojson-specification';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { Globe } from './globe/Globe';
 import { Overlay } from './overlay';
-import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, Tooltip, mountShell } from './ui';
+import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, RESET_EVENT, Tooltip, mountShell } from './ui';
 import type { CountryFeature, CountryId, CountryInfo, NewsResponse } from './types';
 
 type WorldTopology = Topology<{ countries: GeometryCollection<{ id: CountryId; name: string }> }>;
@@ -243,15 +243,27 @@ async function start(): Promise<void> {
   window.addEventListener(PANELS_CHANGE_EVENT, syncInsets);
   window.addEventListener('resize', syncInsets);
   window.addEventListener('hashchange', fromHash);
+  window.addEventListener(RESET_EVENT, resetAll);
+
+  // The wordmark and Home: back to the first-load state (view, selection, hash, search).
+  function resetAll(): void {
+    globe.resetView();
+    tooltip.hide();
+    deselect();
+    const input = document.querySelector<HTMLInputElement>('.search-input');
+    if (input) {
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.blur();
+    }
+  }
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Home' && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       // Home resets the view, like a double-click. Keep Home for text fields and the panel scroll.
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select, .panels'))) return;
       e.preventDefault();
-      globe.resetView();
-      tooltip.hide();
-      deselect();
+      resetAll();
       return;
     }
     if (e.key !== 'Escape') return;

@@ -11,6 +11,7 @@ export type { ReadoutView } from './readout';
 
 /** Dispatch on window after the first drag, click or tap; the hint fades out. */
 export const INTERACTED_EVENT = 'worldly:interacted';
+export const RESET_EVENT = 'worldly:reset';
 
 /** Space the readout keeps clear under the globe on desktop. */
 const READOUT_CLEARANCE = 48;
@@ -82,10 +83,27 @@ export function mountShell(app: HTMLElement): Shell {
   const header = h(
     'header',
     { class: 'bar' },
-    h('h1', { class: 'brand' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }), 'Worldly'),
+    h(
+      'h1',
+      { class: 'brand' },
+      h(
+        'a',
+        { class: 'brand-link', href: '/', title: 'Reset the globe' },
+        h('span', { class: 'brand-mark', 'aria-hidden': 'true' }),
+        'Worldly',
+      ),
+    ),
     h('div', { class: 'search-slot', 'data-search-slot': true }),
     h('div', { class: 'bar-tools' }, styleGroup, themeButton),
   );
+
+  // A plain click on the wordmark resets the app in place; modified clicks open "/" as usual.
+  header.querySelector('.brand-link')?.addEventListener('click', (e) => {
+    const me = e as MouseEvent;
+    if (me.button !== 0 || me.metaKey || me.ctrlKey || me.shiftKey || me.altKey) return;
+    e.preventDefault();
+    window.dispatchEvent(new Event(RESET_EVENT));
+  });
 
   const touch = window.matchMedia('(hover: none)').matches;
   const hint = h('p', { class: 'hint' }, touch ? 'Tap a country · Double-tap to reset' : 'Drag to spin · Click a country · Double-click to reset');
