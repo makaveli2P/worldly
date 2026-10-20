@@ -34,5 +34,10 @@ function apiDev(): Plugin {
 export default defineConfig(({ mode }) => {
   // Expose server-only env (NEWSDATA_API_KEY) to api handlers in dev.
   Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
-  return { plugins: [apiDev()], build: { chunkSizeWarningLimit: 700 } };
+  return {
+    plugins: [apiDev()],
+    // Scan only the app, not the design mockups in mockups/.
+    optimizeDeps: { entries: ['index.html'] },
+    build: { chunkSizeWarningLimit: 700 },
+  };
 });
