@@ -34,5 +34,5 @@ function apiDev(): Plugin {
 export default defineConfig(({ mode }) => {
   // Expose server-only env (NEWSDATA_API_KEY) to api handlers in dev.
   Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
-  return { plugins: [apiDev()] };
+  return { plugins: [apiDev()], build: { chunkSizeWarningLimit: 700 } };
 });
