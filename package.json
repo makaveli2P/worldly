@@ -1,13 +1,14 @@
 {
   "name": "worldly",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A 3D globe: spin it, pick a country, read its facts and news.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "data": "node scripts/build-data.mjs"
+    "data": "node scripts/build-data.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",
@@ -25,8 +26,10 @@
     "@types/topojson-specification": "^1.0.5",
     "@vercel/node": "^25.0.0",
     "playwright": "^1.64.1",
+    "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
+    "vitest": "^5.1.0",
     "world-atlas": "^2.0.2"
   },
   "private": true,
