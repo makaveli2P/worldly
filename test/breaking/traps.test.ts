@@ -161,6 +161,18 @@ describe('false alarms found in the research corpora and in review', () => {
     expect(classify('Teenager who planned terror attack in Sydney tells court he was radicalised')?.tier ?? 0).toBeLessThan(2);
   });
 
+  it('reads the end of a ceasefire as no de-escalation', () => {
+    expect(classify('Gaza ceasefire collapses as Israeli strikes kill 40')).toMatchObject({ family: 'conflict', tier: 2 });
+    expect(classify('Ceasefire ends as Israeli strikes kill 40 in Gaza')).toMatchObject({ family: 'conflict', tier: 2 });
+    expect(classify('Israeli strikes kill 40 in Gaza despite ceasefire talks')?.tier ?? 0).toBeLessThan(2);
+  });
+
+  it('reads title-case interstate strikes, bushfires and Guinea pigs', () => {
+    expect(classify('Jordan Strikes Syria After Church Attack')).toMatchObject({ family: 'conflict', tier: 2 });
+    expect(classify('Western Australia bushfire kills 6')).toMatchObject({ family: 'disaster', tier: 2 });
+    expect(primaryCountries('Dozens of Guinea pigs killed in shelter fire')).toEqual([]);
+  });
+
   it('reads "coup in <country>"', () => {
     expect(classify('Military coup in Niger')).toMatchObject({ family: 'politics', tier: 3 });
     expect(classify('Attempted coup in Bolivia fails')?.tier ?? 0).toBeLessThan(2);

@@ -76,7 +76,7 @@ const RULES: Rule[] = [
   { family: 'conflict', tier: 1, re: /\braids?\b|\bclashes\b|\bambush\w*|\bmilitants?\b|\binsurgents?\b|\bjihadists?\b|\bbandits\b|\boffensive\b|\brebels?\b.*\b(?:kill\w*|seize\w*|capture\w*)/i },
   { family: 'attack', tier: 2, re: /\bterror(?:ist)? attack\b|\bmass shooting\b|\bschool shooting\b|\bsuicide (?:bomb\w*|attack)\b|\bcar bomb\b|\bbombing\b|\bmassacre\b|\bgunmen\b|\bhostages? (?:taken|seized|held)\b|\btakes? hostages?\b|\bshooting (?:kills|leaves)\b|\bstabbing attack\b/i },
   { family: 'attack', tier: 1, re: /\bshooting\b|\bgunman\b|\b(?:shooter|attacker)\b.*\bkill\w*|\bopens? fire\b|\bstabbing\b|\bknife attack\b|\battack\b.*\bkill\w*|\bkill\w*\b.*\battack\b/i },
-  { family: 'disaster', tier: 2, re: /\bearthquake\b|\bquake\b|\btsunami\b|\bhurricane\b|\btyphoon\b|\bcyclone\b|\bvolcan\w+ erupt\w*|\beruption\b|\bfloods?\b|\bflooding\b|\bflooded\b|\bflash floods?\b|\blandslides?\b|\bmudslides?\b|\bavalanche\b|\btornado(?:es)?\b|\bheat ?wave\b.*\b(?:kill\w*|dead|deaths)\b|\bwildfires?\b.*\b(?:kill\w*|dead|evacuat\w*)\b|\bstorm\b.*\b(?:kill\w*|dead)\b/i },
+  { family: 'disaster', tier: 2, re: /\bearthquake\b|\bquake\b|\btsunami\b|\bhurricane\b|\btyphoon\b|\bcyclone\b|\bvolcan\w+ erupt\w*|\beruption\b|\bfloods?\b|\bflooding\b|\bflooded\b|\bflash floods?\b|\blandslides?\b|\bmudslides?\b|\bavalanche\b|\btornado(?:es)?\b|\bheat ?wave\b.*\b(?:kill\w*|dead|deaths)\b|\b(?:wildfires?|bushfires?|forest fires?)\b.*\b(?:kill\w*|dead|evacuat\w*)\b|\bstorm\b.*\b(?:kill\w*|dead)\b/i },
   { family: 'accident', tier: 2, re: /\b(?:plane|jet|airliner|helicopter|air) crash\b|\bcrash(?:es)?\b.*\b(?:plane|jet|airliner|flight)\b|\btrains? (?:crash|collision|collide|derail\w*)\b|\bcollision (?:of|between) (?:two )?(?:[\p{L}-]+ )*trains?\b|\b(?:ferry|boat|ship|vessel) (?:sinks|sank|sinking|capsiz\w*|crash|collision|disaster)\b|\bcapsiz\w*|\bshipwreck\w*|\bboat\b.*\b(?:dead|killed|drown\w*|missing)\b|\b(?:dead|killed|drown\w*)\b.*\b(?:boat|ship|vessel)\b|\bstampede\b|\b(?:building|bridge|dam|mine|tower) collapse\b|\bcollapse\b.*\bkill\w*|\bexplosion\b|\bblast\b|(?<!\bopen(?:s|ed|ing)? )\b(?:fire|blaze) (?:kills|killed|at|in|engulfs|rips through|sweeps|guts)\b|\bkill\w* in (?:a )?(?:fire|blaze)\b|\b(?:building|house|factory|hospital|hotel|market|tower|apartment) fire\b|\bpile-?ups?\b|\bbus (?:crash|plunge\w*)\b/iu },
 ];
 
@@ -167,6 +167,20 @@ function countryCoup(title: string, matches: CountryMatch[]): boolean {
   );
 }
 
+/**
+ * "Jordan Strikes Syria": one country strikes another. A title-case title capitalises every word,
+ * so the rule needs a country on each side of the verb, not only a capital letter.
+ */
+function countryStrikesCountry(title: string, matches: CountryMatch[]): boolean {
+  const named = matches.filter((m) => m.weight > 0 && (m.kind === 'name' || m.kind === 'demonym'));
+  for (let i = 0; i + 1 < named.length; i++) {
+    const a = named[i];
+    const b = named[i + 1];
+    if (a.id !== b.id && /^\s+(?:strikes|bombs|attacks|shells|launches strikes on|launches strikes against)\s+(?:the\s+)?$/i.test(title.slice(a.end, b.index))) return true;
+  }
+  return false;
+}
+
 // "Chinese jets invade Taiwan's airspace" is an incursion, not an invasion.
 const NOT_INVASION_TARGET = /^(?:['’]s)?\s+(?:air\s*space|air defen[cs]e|ADIZ|waters|territorial|maritime|exclusive economic zone|EEZ|privacy|space)\b/i;
 
@@ -194,7 +208,8 @@ const FEATURE_START = /^(?:how|why|what|who|when|where|inside|explainer|analysis
 // "may" in lower case only: "May" is also the month.
 const MODAL_MAY = /\bmay\b/;
 // De-escalation: a story about the end of an event supports it but never starts an alert.
-const DEESCALATE = /\b(?:halts?|halted|ceasefire|truce|peace|talks|negotiat\w*|ends?|ended|suspend\w*|pauses?|paused|lifts?|lifted|aid (?:arrives|convoy|package|pledge)|rebuild\w*|recover\w*|return\w*|reopen\w*|compensation|probe|investigat\w*|damage (?:to )?crops|study|climate change|freed|released|release of|swap|breakthrough)\b/i;
+// The end of a ceasefire is no de-escalation: "Gaza ceasefire collapses as strikes kill 40".
+const DEESCALATE = /\b(?:halts?|halted|(?:ceasefire|truce)(?! (?:collapse[sd]?|breaks down|broke down|shattered|in tatters|ends|ended|over))|peace|talks|negotiat\w*|(?<!(?:ceasefire|truce) )(?:ends?|ended)|suspend\w*|pauses?|paused|lifts?|lifted|aid (?:arrives|convoy|package|pledge)|rebuild\w*|recover\w*|return\w*|reopen\w*|compensation|probe|investigat\w*|damage (?:to )?crops|study|climate change|freed|released|release of|swap|breakthrough)\b/i;
 // An attack report that names only injuries, or one or two deaths: "mass shooting leaves 4 injured".
 const INJURED = /\b(?:injur\w*|wounded|hurt)\b/i;
 const DEATH_WORD = /\b(?:kill\w*|dead|dies|died|death\w*|fatal\w*)\b/i;
@@ -214,6 +229,7 @@ export function classify(title: string): Classification | null {
   const hits: Rule[] = RULES.filter((r) => r.re.test(title));
   if (headOfStateEvent(title, matches) || leaderDeath(title, matches) || countryCoup(title, matches)) hits.push({ family: 'politics', tier: 3, re: /./ });
   if (warOnCountry(title, matches)) hits.push({ family: 'conflict', tier: 3, re: /./ });
+  if (countryStrikesCountry(title, matches)) hits.push({ family: 'conflict', tier: 2, re: /./, interstate: true });
   if (!hits.length) return null;
 
   const countries = new Set(matches.filter((m) => m.weight > 0).map((m) => m.id));

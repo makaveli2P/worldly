@@ -32,7 +32,7 @@ const BLOCK_PHRASES = [
   'Jerusalem Post', 'Kyiv Independent', 'Kyiv Post', 'Moscow Times', 'Tehran Times', 'Bangkok Post', 'Jakarta Post',
   'Arab News', 'Irish Times', 'Sydney Morning Herald', 'Paris Saint-Germain', 'Paris Hilton', 'Real Madrid',
   'England cricket', 'US Open', 'U.S. Open', 'French Open', 'Australian Open', 'Gulf of Oman', 'Sea of Japan',
-  'Irish Sea', 'Chinese New Year', 'French Polynesian',
+  'Irish Sea', 'Chinese New Year', 'French Polynesian', 'Guinea pig', 'Guinea pigs',
 ];
 
 // Names that are more often something else. They count only with country context.
