@@ -66,6 +66,9 @@ export function asMbfcTable(value: unknown): MbfcTable | null {
  * A host under a "stop parent" (indiatimes.com) never falls back to that parent.
  * A host on the deny list (news.google.com, msn.com, ...), or under one, gets no rating.
  * A host on the wrongRecords list gets no MBFC lean (its record names another outlet).
+ * A blog subdomain ("blogs.timesofisrael.com") holds user posts, so it gets no rating.
+ * An MBFC record with no lean (the Questionable, Conspiracy-Pseudoscience, Satire and Pro-Science
+ * classes) gives lean null with rater 'MBFC' and its page link, so the UI can show "No MBFC lean".
  * A publisher name is used only when the domain is null, and only through a short hand allowlist.
  */
 export function createBiasLookup(mbfc: MbfcTable | null, state: StateTable, r: BiasRules) {
@@ -90,7 +93,7 @@ export function createBiasLookup(mbfc: MbfcTable | null, state: StateTable, r: B
       const key = fold(name).replace(/\s+/g, ' ').trim();
       host = Object.hasOwn(r.names, key) ? r.names[key] : null;
     }
-    if (!host || deny.has(host)) return null;
+    if (!host || deny.has(host) || /^blogs?\./.test(host)) return null;
     const hosts = chain(host);
     // A subdomain of a platform ("someone.medium.com") is the platform too.
     if (hosts.some((h) => deny.has(h))) return null;
@@ -104,10 +107,8 @@ export function createBiasLookup(mbfc: MbfcTable | null, state: StateTable, r: B
         const rec = Object.hasOwn(mbfc.hosts, h) ? mbfc.hosts[h] : undefined;
         if (!rec) continue;
         const [, value, slug] = rec;
-        if (value === -2 || value === -1 || value === 0 || value === 1 || value === 2) {
-          lean = value;
-          ref = slug ? mbfcUrl(slug) : null;
-        }
+        if (value === -2 || value === -1 || value === 0 || value === 1 || value === 2) lean = value;
+        ref = slug ? mbfcUrl(slug) : null;
         break;
       }
     }
@@ -121,12 +122,13 @@ export function createBiasLookup(mbfc: MbfcTable | null, state: StateTable, r: B
       }
     }
 
-    if (lean === null && !tag) return null;
+    // A record with no lean still counts when it has a page: MBFC rates the outlet in another class.
+    if (lean === null && !ref && !tag) return null;
     return {
       lean,
       leanLabel: lean === null ? null : LEAN_LABEL[lean],
-      rater: lean === null ? null : 'MBFC',
-      ref: lean === null ? null : ref,
+      rater: lean === null && !ref ? null : 'MBFC',
+      ref,
       state: tag?.state ?? null,
       stateLabel: tag?.label ?? null,
     };

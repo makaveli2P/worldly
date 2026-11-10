@@ -72,7 +72,8 @@ export interface NewsArticle {
 /**
  * Publisher-level rating, never a rating of the article.
  * `lean` comes from MBFC (a US scale). `state` comes from the State Media Monitor.
- * `rater` and `ref` are null when only a state tag exists.
+ * `rater` and `ref` are null when only a state tag exists. `lean` is null with `rater` 'MBFC' when MBFC
+ * rates the outlet outside the left-right scale (Questionable, Conspiracy-Pseudoscience, Satire, Pro-Science).
  */
 export interface ArticleBias {
   lean: -2 | -1 | 0 | 1 | 2 | null;

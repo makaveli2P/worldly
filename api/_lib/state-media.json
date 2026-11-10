@@ -2,7 +2,7 @@
  "source": "State Media Monitor Global Dataset 2026",
  "citation": "Dragomir, M. (2026). State Media Monitor Global Dataset 2026 (Version 2026.1) [Data set]. Media and Journalism Research Center (MJRC). https://doi.org/10.5281/zenodo.23863495, CC BY 4.0. Worldly added domain names.",
  "licence": "CC BY 4.0",
- "generatedAt": "2026-11-10T15:19:54.297Z",
+ "generatedAt": "2026-11-10T17:47:19.770Z",
  "hosts": {
   "1news.co.nz": [
    "ISM",
@@ -382,6 +382,12 @@
    "Korean Broadcasting System (KBS)",
    "KOR"
   ],
+  "kcna.kp": [
+   "SC",
+   "SMM-0464",
+   "Korean Central Broadcasting Committee (KCBC)",
+   "PRK"
+  ],
   "kuna.net.kw": [
    "SC",
    "SMM-0222",
@@ -604,6 +610,12 @@
    "Radio New Zealand (RNZ)",
    "NZL"
   ],
+  "rodong.rep.kp": [
+   "SC",
+   "SMM-0467",
+   "Rodong Sinmun",
+   "PRK"
+  ],
   "rt.com": [
    "SC",
    "SMM-0135",
@@ -742,6 +754,18 @@
    "The Islamic Ideology Dissemination Organization (IIDO)",
    "IRN"
   ],
+  "telesurenglish.net": [
+   "SC",
+   "SMM-0634",
+   "Sistema Nacional de Medios Públicos (former SiBCI)",
+   "VEN"
+  ],
+  "telesurtv.net": [
+   "SC",
+   "SMM-0634",
+   "Sistema Nacional de Medios Públicos (former SiBCI)",
+   "VEN"
+  ],
   "thenationalnews.com": [
    "CaPu",
    "SMM-0254",
@@ -832,6 +856,12 @@
    "Vlaamse Radio- en Televisieomroeporganisatie (VRT)",
    "BEL"
   ],
+  "vtv.gob.ve": [
+   "SC",
+   "SMM-0634",
+   "Sistema Nacional de Medios Públicos (former SiBCI)",
+   "VEN"
+  ],
   "wam.ae": [
    "SC",
    "SMM-0253",
@@ -863,6 +893,12 @@
    "FIN"
   ],
   "yna.co.kr": [
+   "IP",
+   "SMM-0479",
+   "Yonhap News Agency",
+   "KOR"
+  ],
+  "yonhapnews.co.kr": [
    "IP",
    "SMM-0479",
    "Yonhap News Agency",

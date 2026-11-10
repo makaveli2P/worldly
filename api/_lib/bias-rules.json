@@ -65,6 +65,8 @@
   ],
   "aliases": {
     "bbc.co.uk": "bbc.com",
+    "msnbc.com": "ms.now",
+    "yonhapnews.co.kr": "en.yna.co.kr",
     "politi.co": "politico.com",
     "cbs.com": "cbsnews.com",
     "dailymail.co.uk": "dailymail.com",

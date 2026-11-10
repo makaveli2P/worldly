@@ -166,7 +166,7 @@ export class NewsPanel {
 
   /** Attribution for the ratings, only for the data that the list shows. */
   private credits(articles: NewsArticle[]): HTMLElement | null {
-    const lean = articles.some((a) => a.bias?.lean !== null && a.bias?.lean !== undefined);
+    const lean = articles.some((a) => a.bias?.rater === 'MBFC');
     const state = articles.some((a) => a.bias?.state);
     if (!lean && !state) return null;
     const link = (href: string, text: string) => h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, text);
@@ -215,6 +215,7 @@ export class NewsPanel {
 }
 
 const LEAN_STEPS = [-2, -1, 0, 1, 2] as const;
+const OTHER_CLASS_NOTE = 'MBFC rates this publisher outside the left-right scale (for example Questionable, Satire or Pro-Science)';
 
 /**
  * The row under a headline: the publisher lean on a 5-step scale with "MBFC" as a link to the
@@ -224,21 +225,29 @@ function ratingRow(a: NewsArticle): HTMLElement | null {
   const b = a.bias;
   if (!b) return null;
   const hasLean = b.lean !== null && b.leanLabel !== null;
-  if (!hasLean && !b.stateLabel) return null;
-  const lean =
-    hasLean &&
-    h(
-      'span',
-      { class: 'lean', role: 'img', 'aria-label': `Publisher lean: ${b.leanLabel!.toLowerCase()}, rated by MBFC` },
+  // MBFC rates some outlets outside the left-right scale (Questionable, Satire, Pro-Science, ...).
+  const otherClass = !hasLean && b.rater === 'MBFC' && !!b.ref;
+  if (!hasLean && !otherClass && !b.stateLabel) return null;
+  const lean = hasLean
+    ? h(
+        'span',
+        { class: 'lean', role: 'img', 'aria-label': `Publisher lean: ${b.leanLabel!.toLowerCase()}, rated by MBFC` },
+        h(
+          'span',
+          { class: 'lean-scale', 'aria-hidden': 'true' },
+          LEAN_STEPS.map((step) => h('span', { class: step === b.lean ? 'lean-cell lean-cell--on' : 'lean-cell' })),
+        ),
+        h('span', { class: 'lean-label', 'aria-hidden': 'true' }, b.leanLabel!),
+      )
+    : otherClass &&
       h(
         'span',
-        { class: 'lean-scale', 'aria-hidden': 'true' },
-        LEAN_STEPS.map((step) => h('span', { class: step === b.lean ? 'lean-cell lean-cell--on' : 'lean-cell' })),
-      ),
-      h('span', { class: 'lean-label', 'aria-hidden': 'true' }, b.leanLabel!),
-    );
+        { class: 'lean lean--other', title: OTHER_CLASS_NOTE },
+        h('span', { class: 'lean-label', 'aria-hidden': 'true' }, 'Other class'),
+        h('span', { class: 'sr-only' }, OTHER_CLASS_NOTE),
+      );
   const rater =
-    hasLean &&
+    (hasLean || otherClass) &&
     b.ref &&
     h('a', { class: 'lean-rater mono', href: b.ref, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `MBFC rating of ${a.source}` }, 'MBFC');
   const stateText: Record<string, string> = {

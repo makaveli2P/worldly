@@ -15,6 +15,9 @@ const mbfc: MbfcTable = {
     'thedailystar.com': ['Daily Star NY (test)', 0, 'test-daily-star'],
     'thenationalherald.com': ['National Herald US (test)', 2, 'test-national-herald'],
     'tass.com': ['TASS (test)', null, 'test-tass'],
+    'foxnews.com': ['Fox News (test)', null, 'test-fox-news'],
+    'nolink.example': ['No page (test)', null, ''],
+    'timesofisrael.com': ['Times of Israel (test)', 1, 'test-toi'],
     'bbc.com': ['BBC (test)', 0, 'test-bbc'],
     'indiatimes.com': ['India Times (test)', 1, 'test-india-times'],
     'investing.com': ['Investing (test)', 0, 'test-investing'],
@@ -81,8 +84,35 @@ describe('lookupBias: fixed cases from the review', () => {
     expect(lookup('finance.yahoo.com')).toBeNull();
   });
 
-  it('tass.com -> STATE-CONTROLLED, with no MBFC lean', () => {
-    expect(lookup('tass.com')).toEqual({ lean: null, leanLabel: null, rater: null, ref: null, state: 'state-controlled', stateLabel: 'STATE-CONTROLLED' });
+  it('tass.com -> STATE-CONTROLLED, with no MBFC lean but the MBFC page', () => {
+    expect(lookup('tass.com')).toEqual({
+      lean: null,
+      leanLabel: null,
+      rater: 'MBFC',
+      ref: 'https://mediabiasfactcheck.com/test-tass/',
+      state: 'state-controlled',
+      stateLabel: 'STATE-CONTROLLED',
+    });
+  });
+
+  it('foxnews.com (an MBFC record with no lean, no state tag) still gets a row with the MBFC page', () => {
+    expect(lookup('foxnews.com')).toEqual({
+      lean: null,
+      leanLabel: null,
+      rater: 'MBFC',
+      ref: 'https://mediabiasfactcheck.com/test-fox-news/',
+      state: null,
+      stateLabel: null,
+    });
+  });
+
+  it('an MBFC record with no lean and no page gives no row', () => {
+    expect(lookup('nolink.example')).toBeNull();
+  });
+
+  it('a blog subdomain gets no rating of the parent outlet', () => {
+    expect(lookup('timesofisrael.com')?.lean).toBe(1);
+    expect(lookup('blogs.timesofisrael.com')).toBeNull();
   });
 
   it('bbc.co.uk -> PUBLIC tag, and the lean of bbc.com through the alias', () => {
