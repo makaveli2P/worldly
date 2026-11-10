@@ -38,4 +38,11 @@ describe('replays of real inputs', () => {
     expect(r.alerts).toEqual([]);
     expect(r.sources).toEqual({ ok: 24, total: 27 });
   });
+
+  it('2026-11-10 15:45Z live: the pile-ups on DW, Sky and Euronews are major again with the same key; the 1-death Spain explosion gives nothing', () => {
+    const r = replay('live-2026-11-10T1545Z');
+    expect(brief('live-2026-11-10T1545Z')).toEqual(['BGR:major:accident:news']);
+    expect(r.alerts[0].key).toBe('BGR-accident-20261110');
+    expect(r.alerts[0].outlets).toBe(3);
+  });
 });
