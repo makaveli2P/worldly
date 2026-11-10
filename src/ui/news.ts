@@ -29,6 +29,8 @@ export class NewsPanel {
   private readonly breaking = h('div', { class: 'news-brk-slot' });
   private alert: BreakingAlert | null = null;
   private ageTimer = 0;
+  /** The list on screen, so a change of the BREAKING row can show it again without its duplicate. */
+  private shown: { res: NewsResponse; countryName: string } | null = null;
 
   constructor(root: HTMLElement, opts: { onClose: () => void }) {
     this.layout = getLayout(root);
@@ -50,6 +52,7 @@ export class NewsPanel {
     this.alert = alert;
     clearInterval(this.ageTimer);
     this.ageTimer = 0;
+    this.refilter(prev);
     if (!alert) {
       this.breaking.replaceChildren();
       return;
@@ -102,6 +105,26 @@ export class NewsPanel {
     if (link && link !== document.activeElement && link.getAttribute('aria-label') !== label) link.setAttribute('aria-label', label);
   }
 
+  /** Shows the list again when the story that the BREAKING row repeats changes. Focus in the list goes to the heading. */
+  private refilter(prev: BreakingAlert | null): void {
+    const shown = this.shown;
+    if (!shown) return;
+    const hidden = (alert: BreakingAlert | null) => this.visible(shown.res.articles, alert).length;
+    if (hidden(prev) === hidden(this.alert)) return;
+    const hadFocus = this.content.contains(document.activeElement);
+    this.show(shown.res, shown.countryName);
+    if (hadFocus) this.heading.focus({ preventScroll: true });
+  }
+
+  /** The stories to show: the list without a story that tells the BREAKING row again (same link or headline). */
+  private visible(articles: readonly NewsArticle[], alert: BreakingAlert | null): NewsArticle[] {
+    const list = articles.slice(0, 5);
+    if (!alert) return list;
+    const rest = list.filter((a) => !tellsAlert(a, alert));
+    // The row is the story: when it is the only story, keep the list as it is.
+    return rest.length > 0 ? rest : list;
+  }
+
   private breakingLabel(a: BreakingAlert, now: number): string {
     const when = ageWords(a.since, now);
     const tail = [a.source, when].filter(Boolean).join(', ');
@@ -109,6 +132,7 @@ export class NewsPanel {
   }
 
   showLoading(countryName: string): void {
+    this.shown = null;
     const rows = Array.from({ length: 5 }, (_, i) =>
       h(
         'li',
@@ -121,7 +145,8 @@ export class NewsPanel {
   }
 
   show(res: NewsResponse, countryName: string): void {
-    const articles = res.articles.slice(0, 5);
+    this.shown = { res, countryName };
+    const articles = this.visible(res.articles, this.alert);
     if (articles.length === 0) {
       this.render(countryName, '00', h('p', { class: 'note' }, 'No recent coverage.'), this.footer(res));
       return;
@@ -180,6 +205,7 @@ export class NewsPanel {
   }
 
   showError(countryName: string, retry: () => void): void {
+    this.shown = null;
     const btn = h('button', { type: 'button', class: 'text-link' }, 'Retry');
     btn.addEventListener('click', () => {
       retry();
@@ -190,6 +216,7 @@ export class NewsPanel {
   }
 
   hide(): void {
+    this.shown = null;
     this.setBreaking(null);
     this.layout.setOpen('news', false);
   }
@@ -212,6 +239,22 @@ export class NewsPanel {
     this.content.replaceChildren(content, ...foot.filter((x): x is HTMLElement => x !== null));
     this.layout.setOpen('news', true);
   }
+}
+
+/** Lowercase words of 3 or more letters or digits, for the duplicate test. */
+function words(title: string): Set<string> {
+  return new Set(title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3));
+}
+
+/** True when a story is the alert story: the same link, or a headline with a word overlap (Dice) of 0.6 or more. */
+export function tellsAlert(a: Pick<NewsArticle, 'url' | 'title'>, alert: Pick<BreakingAlert, 'url' | 'headline'>): boolean {
+  const bare = (u: string) => u.replace(/#.*$/, '').replace(/\/+$/, '');
+  if (bare(a.url) === bare(alert.url)) return true;
+  const x = words(a.title);
+  const y = words(alert.headline);
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared += 1;
+  return x.size + y.size > 0 && (2 * shared) / (x.size + y.size) >= 0.6;
 }
 
 const LEAN_STEPS = [-2, -1, 0, 1, 2] as const;
