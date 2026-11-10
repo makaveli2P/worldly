@@ -96,8 +96,8 @@ The server caches the news for each country for 3 hours, and the Vercel CDN cach
 
 How it works:
 
-1. The server reads 23 feeds in parallel: 15 front-page feeds of 11 outlets (BBC News, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India, The New York Times) and 8 Google News editions (World, US, GB, IN, AU, CA, ZA, SG). It also reads Wikipedia "In the news" (ITN), GDACS and USGS.
-2. A classifier gives each headline a kind (`conflict`, `attack`, `disaster`, `accident`, `politics`) and a tier. Tier 3 is a coup, the death or removal of a head of state, an invasion, or 50 or more dead. Tier 2 is a deadly strike, a mass shooting, or a deadly earthquake or crash.
+1. The server reads 24 feeds in parallel: 16 front-page feeds of 12 outlets (BBC News, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India, The New York Times, Euronews) and 8 Google News editions (World, US, GB, IN, AU, CA, ZA, SG). It also reads Wikipedia "In the news" (ITN), GDACS and USGS. NHK has no English feed that works (its English JSON stopped on 5 September 2026), so the server does not read NHK.
+2. A classifier gives each headline a kind (`conflict`, `attack`, `disaster`, `accident`, `politics`) and a tier. Tier 3 is a coup, the death or removal of a current head of state, the start of an invasion, or 50 or more dead. Tier 2 is a deadly strike, a mass shooting, or a deadly earthquake or crash.
 3. A word-boundary matcher finds the country where the event happens. It uses an alias table of names, demonyms, places and leaders, so "Woman" does not match Oman and "Paris, Texas" is the US.
 4. The detector groups headlines into stories. A story counts the independent outlets. Outlets that carry one wire story word for word count as one. Two outlets must agree on the tier.
 5. Levels:
@@ -106,20 +106,23 @@ How it works:
    - GDACS and USGS never start an alert. A red level can raise a deadly disaster story to critical. An orange or red level lets 2 outlets confirm a disaster.
    - Wars on the ITN "Ongoing" list give at most `major`, and only for a large escalation.
 6. An alert ends 24 hours after its first evidence. A critical alert drops to major when no headline is newer than 6 hours. A story that ITN reported more than 36 hours ago is a follow-up and gives no alert.
+7. The `key` is the country, the kind and the UTC day of the first evidence (`BGR-accident-20261110`). New outlets do not change it.
 
 Limits:
 
 - Precision comes first: the detector prefers a miss to a false alarm. It reads English headlines only, so an event that only local or non-English media report can come late or not at all.
 - The server keeps no state. A Vercel CDN region caches the answer for 5 minutes (`s-maxage=300`). When fewer than half of the sources answer, the cache is 60 seconds.
+- A story near the threshold (3 outlets) can come and go between polls, when one headline leaves a feed or one feed is slow.
 - The rules are regular expressions. When a false alarm happens, save the inputs and add a test (see below).
+- The leader names come from `public/data/countries.json`. A new leader is unknown until the next `npm run data`.
 
 Tools:
 
-- `npx tsx test/breaking/snapshot.ts`: a live run that prints the flagged headlines and the alerts. `--save <name>` saves the inputs to `test/breaking/fixtures/`. `--replay <file>` runs the detector on a saved file.
+- `npx tsx test/breaking/snapshot.ts`: a live run that prints the flagged headlines, the candidates and the response. `--save <name>` saves the flagged headlines to `test/breaking/fixtures/<name>.json` (5 to 10 KB). `--replay <file>` runs the detector on a saved file.
 - `node scripts/build-aliases.mjs`: builds `api/_lib/breaking/aliases.json` from `public/data/countries.json`. Run it after `npm run data`, and commit the JSON.
 - Optional env: `BREAKING_CONTACT` (a contact address or URL that the server adds to its Wikipedia User-Agent, as the Wikimedia policy asks) and `BREAKING_USER_AGENT`.
 
-Terms: the feed terms of Google News, The Times of India, Al Jazeera and The Guardian allow personal use only. The owner accepts this risk for this non-commercial site. Show BBC stories as "BBC News", with no BBC logo.
+Terms: the feed terms of Google News, The Times of India, Al Jazeera and The Guardian allow personal use only, and the terms of other feeds were not all checked. The owner accepts this risk for this non-commercial site. Show BBC stories as "BBC News", with no BBC logo.
 
 ## Refresh the country data
 
