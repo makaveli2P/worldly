@@ -22,10 +22,11 @@ export async function GET(request: Request): Promise<Response> {
   if (!country) return json({ error: 'unknown country' }, 400, 'no-store');
 
   try {
-    const { news, state } = await getNewsResult(country);
+    const { news, state, untranslated } = await getNewsResult(country);
     // No source answered and no earlier list exists: 503, so the CDN can serve its stale copy (stale-if-error).
     if (state === 'failed' && news.articles.length === 0) return json({ error: 'news sources unavailable' }, 503, 'no-store');
-    return json(news, 200, state === 'ok' && news.provider ? SUCCESS_CACHE : FAILURE_CACHE);
+    // A list whose translation failed gets the short cache too, so the CDN asks again soon.
+    return json(news, 200, state === 'ok' && news.provider && !untranslated ? SUCCESS_CACHE : FAILURE_CACHE);
   } catch {
     console.warn(`[news] unexpected failure for ${country.id}`);
     return json({ error: 'news sources unavailable' }, 503, 'no-store');

@@ -11,6 +11,7 @@ import { outletItems } from './providers/outlets.js';
 import type { Candidate, NewsCountry } from './providers/types.js';
 import { pick, rankContext, rankHybrid, rankPool, type Cluster, type RankContext } from './rank.js';
 import { fold, relevance } from './text.js';
+import { translateTitles } from './translate.js';
 
 export const MAX_ARTICLES = 5;
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -26,6 +27,12 @@ const MIN_SEARCH_ITEMS = 20;
 const MIN_FALLBACK_MS = 600;
 /** The whole build, NewsData fallback included, ends by this time. */
 const TOTAL_BUDGET_MS = 4000;
+/** The translation of the picked titles waits at most this long. */
+const TRANSLATE_TIMEOUT_MS = 1500;
+/** The translation gets at least this long, also after a late NewsData answer. */
+const TRANSLATE_MIN_MS = 500;
+/** The whole build, translation included, ends by this time (TOTAL_BUDGET_MS + 1 s). */
+const BUILD_END_MS = TOTAL_BUDGET_MS + 1000;
 /** A last good list stands in for a failed rebuild for at most this long (as stale-if-error). */
 const LAST_GOOD_MS = 24 * 60 * 60 * 1000;
 
@@ -198,6 +205,19 @@ function toArticle(cl: Cluster): NewsArticle {
   };
 }
 
+/**
+ * Gives the non-English titles of the picked list in English (DeepL, src/types.ts NewsArticle).
+ * It runs after the pick, so the clusters and the dedupe use the original titles. On a failure the titles stay as they are.
+ */
+async function translated(articles: NewsArticle[], elapsedMs: number): Promise<{ articles: NewsArticle[]; failed: boolean }> {
+  if (!articles.some((a) => a.lang)) return { articles, failed: false };
+  const timeoutMs = Math.min(TRANSLATE_TIMEOUT_MS, Math.max(TRANSLATE_MIN_MS, BUILD_END_MS - elapsedMs));
+  // translateTitles never throws on an upstream failure. This guard keeps the news response for any other fault.
+  const result = await translateTitles(articles, { timeoutMs }).catch(() => null);
+  if (!result) return { articles, failed: true };
+  return { articles: articles.map((a, i) => (result.titles[i].translatedBy ? { ...a, ...result.titles[i] } : a)), failed: result.failed };
+}
+
 /** The provider label: the feed family that gave most of the picked stories. */
 function providerOf(picked: readonly Cluster[]): NewsProvider | null {
   if (picked.length === 0) return null;
@@ -218,6 +238,11 @@ export type BuildState = 'ok' | 'degraded' | 'failed';
 export interface NewsResult {
   news: NewsResponse;
   state: BuildState;
+  /**
+   * True when the translation failed: the list is good, but its native titles are not in English.
+   * The list then stays in memory and on the CDN for 60 s only, so a later request tries the translation again.
+   */
+  untranslated?: boolean;
 }
 
 async function build(country: NewsCountry): Promise<NewsResult> {
@@ -245,10 +270,10 @@ async function build(country: NewsCountry): Promise<NewsResult> {
   }
 
   debugLog(country, picked, pools);
-  const articles = picked.map(toArticle);
+  const { articles, failed: untranslated } = await translated(picked.map(toArticle), Date.now() - started);
   const news: NewsResponse = { country: country.id, articles, provider: providerOf(picked), fetchedAt: new Date().toISOString() };
   const state: BuildState = pools.ok === 0 ? 'failed' : pools.google ? 'ok' : 'degraded';
-  return { news, state };
+  return { news, state, untranslated };
 }
 
 interface CacheEntry {
@@ -294,7 +319,7 @@ export function getNewsResult(country: NewsCountry): Promise<NewsResult> {
   cache.set(country.id, entry);
   value.then(
     (result) => {
-      if (result.state !== 'ok' || result.news.provider === null) entry.expires = Date.now() + FAILURE_TTL_MS;
+      if (result.state !== 'ok' || result.news.provider === null || result.untranslated) entry.expires = Date.now() + FAILURE_TTL_MS;
     },
     () => cache.delete(country.id),
   );
