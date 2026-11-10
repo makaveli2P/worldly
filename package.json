@@ -2,6 +2,7 @@
   "name": "worldly",
   "version": "0.2.0",
   "description": "A 3D globe: spin it, pick a country, read its facts and news.",
+  "license": "MIT",
   "scripts": {
     "predev": "node scripts/build-bias.mjs --quiet",
     "dev": "vite",
