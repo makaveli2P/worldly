@@ -42,7 +42,9 @@ const TIER1 = new Set([
 
 const SPORT = /\b(?:vs\.?|match|cup|league|squad|coach|rugby|cricket|football|soccer|nba|nfl|nhl|mlb|fifa|uefa|olympics?|tennis|golf|f1|formula 1|grand prix|wicket|innings|striker|midfielder|t20|odi|test (?:match|series)|qualifiers?|fixtures?|semi-?finals?|quarter-?finals?|7s|bundesliga|ligue 1|la liga|serie a|premier league|brasileirao|copa|futbol|futebol|fussball|wwe|ufc|boxing|marathon|grand slam|playoffs?|touchdown|quarterback|transfer window|world series|pga|lpga|liv golf|nascar|motogp|bowl|sevens|team to face|injur(?:y|ies) crisis|line-?up|friendl(?:y|ies)|game time|goalkeeper|winger|national team|selecao|derby|kick-?off|tournament|championships?|medals?|athletes?|dortmund|bayern|real madrid|fc barcelona|barca|man utd|manchester united|manchester city|arsenal|chelsea|liverpool fc|juventus|psg|flamengo|palmeiras|corinthians|all blacks|wallabies|springboks)\b/i;
 const SOFT = /\b(?:celebrity|celebrities|actress|actor|singer|rapper|kardashian|taylor swift|horoscope|recipes?|travel guide|travel|hotels?|resorts?|luxury|fashion|tips|how to|things to do|what to know before buying|review|deals?|discount|sale|black friday|ps5|playstation|xbox|iphone|guitar|netflix|box office|trailer|red carpet|dating|wedding|divorce|bollywood|hollywood|k-?pop|influencer|lottery|jackpot|ucapan|beauty|skincare|nonstop|flights? to|airfares?|cruises?|vacations?|getaways?|concerts?|tour dates|album|best \w+ (?:to buy|in \d{4})|\d+ (?:best|things|ways|reasons|places))\b/i;
-const OPINION = /^(?:opinion|commentary|analysis|editorial|column|view|letters?|op-ed)\b|\bop-ed\b|^(?:opinion|analysis)\s*[|:]/i;
+// Service items in native-language feeds: weather, prices of goods, lottery, horoscope, history features.
+const SOFT_NATIVE = /الطقس|أسعار|سعر (?:الذهب|الدولار|الفراخ|اللحوم)|حظك|\bwetter\b|horoskop|\blotto\b|\bclima\b|hor[oó]scopo|loter[ií]a|mega-?sena|previs[aã]o do tempo|m[ée]t[ée]o|\bprix du\b|天気|運勢|天气|星座|погода|гороскоп|курс (?:доллара|валют)|from the front page|on this day|this day in history|michelin|restaurants?/i;
+const OPINION =/^(?:opinion|commentary|analysis|editorial|column|view|letters?|op-ed)\b|\bop-ed\b|^(?:opinion|analysis)\s*[|:]/i;
 
 const CJK = /[぀-ヿ㐀-鿿가-힯]/;
 const STOP = new Set(
@@ -50,6 +52,28 @@ const STOP = new Set(
 );
 
 const stem = (w: string) => (w.length > 5 && w.endsWith('ing') ? w.slice(0, -3) : w.length > 4 && w.endsWith('es') ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w);
+
+// Words that headlines use for one thing. Each maps to one token.
+const SYNONYM: Record<string, string> = {
+  blast: 'explosion', blasts: 'explosion', explosions: 'explosion', explodes: 'explosion', exploded: 'explosion',
+  factory: 'plant', factories: 'plant', plants: 'plant',
+  kills: 'kill', killed: 'kill', killing: 'kill', dead: 'kill', dies: 'kill', died: 'kill', deaths: 'kill', death: 'kill',
+  quake: 'earthquake', quakes: 'earthquake', earthquakes: 'earthquake', tremor: 'earthquake',
+  polls: 'election', poll: 'election', vote: 'election', votes: 'election', elections: 'election',
+  resigns: 'resign', resigned: 'resign', resignation: 'resign', quits: 'resign',
+  arrested: 'arrest', arrests: 'arrest', detained: 'arrest', detains: 'arrest',
+  pm: 'premier',
+  fridge: 'fridge', fridges: 'fridge', freezer: 'fridge', freezers: 'fridge', refrigerator: 'fridge', refrigeration: 'fridge',
+  hack: 'hack', hacks: 'hack', hacking: 'hack', hacked: 'hack', hackers: 'hack', cyberattack: 'hack', cyberattacks: 'hack',
+};
+
+// Phrases that headlines use for one thing, replaced before the split into words.
+const PHRASES: [RegExp, string][] = [
+  [/\bhead of state\b/g, 'president'],
+  [/\bhead of government\b/g, 'premier'],
+  [/\bprime minister\b/g, 'premier'],
+  [/\bcyber[- ]attacks?\b/g, 'hack'],
+];
 
 /** Stemmed word tokens of a title. CJK titles give character bigrams. */
 export function storyTokens(title: string): Set<string> {
@@ -60,8 +84,10 @@ export function storyTokens(title: string): Set<string> {
     for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
     return out;
   }
-  const words = t.replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}]+/u);
-  return new Set(words.filter((w) => w.length > 1 && !STOP.has(w)).map(stem));
+  let plain = t.replace(/['’]s\b/g, '');
+  for (const [re, to] of PHRASES) plain = plain.replace(re, to);
+  const words = plain.split(/[^\p{L}\p{N}]+/u);
+  return new Set(words.filter((w) => w.length > 1 && !STOP.has(w)).map((w) => SYNONYM[w] ?? stem(w)));
 }
 
 /** The words of the country's aliases, which do not count when two titles are compared. */
@@ -111,6 +137,8 @@ export interface Cluster {
   rel: number;
   pen: number;
   score: number;
+  /** The score that won the pick step (lower for a third story on one event). Set by pick(). */
+  pickScore: number;
   /** The representative as a member, for the same-story test of the pick step. */
   repMember: Member;
 }
@@ -192,6 +220,7 @@ export function cluster(cands: readonly Candidate[], ctx: RankContext): Cluster[
         rel: 0,
         pen: 1,
         score: 0,
+        pickScore: 0,
         repMember: m,
       });
     }
@@ -238,8 +267,9 @@ export function score(cl: Cluster, ctx: RankContext): number {
   cl.rel = national || named ? 1 : rels.includes('trap') ? 0 : REL_OTHER;
 
   let pen = 1;
-  if (m.every((x) => SPORT.test(x.title))) pen *= PEN_SPORT;
-  if (SOFT.test(cl.rep.title)) pen *= PEN_SOFT;
+  // Sport: the representative, or most members, read as sport.
+  if (SPORT.test(cl.rep.title) || m.filter((x) => SPORT.test(x.title)).length * 2 > m.length) pen *= PEN_SPORT;
+  if (SOFT.test(cl.rep.title) || SOFT_NATIVE.test(cl.rep.title)) pen *= PEN_SOFT;
   if (OPINION.test(cl.rep.title)) pen *= PEN_OPINION;
   if (listsCountry(cl.rep.title, ctx.name)) pen *= PEN_LIST;
   if (Number.isFinite(cl.topRank) && !national && !named) pen *= PEN_WORLD;
@@ -249,33 +279,76 @@ export function score(cl: Cluster, ctx: RankContext): number {
   return cl.score;
 }
 
-/** True when two clusters tell one story: their seeds or representatives pass the same-story test. */
-function sameCluster(a: Cluster, b: Cluster, ignore: ReadonlySet<string>): boolean {
-  for (const x of [a.seed, a.repMember]) for (const y of [b.seed, b.repMember]) if (sameStory(x, y, ignore) > 0) return true;
-  return false;
+/** Dice overlap and shared count of two token sets, without the ignored words. */
+function overlap(a: Member, b: Member, ignore: ReadonlySet<string>): { shared: number; dice: number } {
+  const sa = [...a.tokens].filter((w) => !ignore.has(w));
+  const sb = new Set([...b.tokens].filter((w) => !ignore.has(w)));
+  let shared = 0;
+  for (const w of sa) if (sb.has(w)) shared += 1;
+  return { shared, dice: sa.length + sb.size > 0 ? (2 * shared) / (sa.length + sb.size) : 0 };
 }
 
 /**
- * Picks up to `max` clusters in the given order.
- * Pass 1 takes at most 1 cluster per publisher; pass 2 allows a second one, only to fill the list.
- * A cluster that tells the same story as a picked cluster is skipped.
+ * True when two clusters tell one story: their seeds or representatives pass the same-story test,
+ * or, a little looser for the pick step, share 2 words with a Dice overlap of 0.25 or more.
  */
-export function pick(ordered: readonly Cluster[], max = 5, ignore: ReadonlySet<string> = new Set()): Cluster[] {
+function sameCluster(a: Cluster, b: Cluster, ignore: ReadonlySet<string>): boolean {
+  for (const x of [a.seed, a.repMember]) {
+    for (const y of [b.seed, b.repMember]) {
+      if (sameStory(x, y, ignore) > 0) return true;
+      const o = overlap(x, y, ignore);
+      if (o.shared >= 2 && o.dice >= 0.25) return true;
+    }
+  }
+  return false;
+}
+
+/** True when 2 picked stories already share a capitalised name with this one (one event, many angles). */
+function crowded(picked: readonly Cluster[], cl: Cluster): boolean {
+  for (const w of cl.repMember.caps) if (picked.filter((p) => p.repMember.caps.has(w)).length >= 2) return true;
+  return false;
+}
+
+/** A third story on one event (a shared capitalised name) counts at this share of its score. */
+export const CROWD_FACTOR = 0.6;
+
+/**
+ * Picks up to `max` clusters, greedily: the lowest tier first, then the best score.
+ * Pass 1 takes at most 1 cluster per publisher; pass 2 allows a second one, only to fill the list.
+ * A cluster that tells the same story as a picked cluster is skipped. A cluster that shares a
+ * capitalised name with 2 picked clusters counts at CROWD_FACTOR of its score.
+ * The result is in tier order, then score order. `tier` defaults to 0 for every cluster.
+ */
+export function pick(
+  clusters: readonly Cluster[],
+  max = 5,
+  ignore: ReadonlySet<string> = new Set(),
+  tier: (cl: Cluster) => number = () => 0,
+): Cluster[] {
   const picked: Cluster[] = [];
   const perPublisher = new Map<string, number>();
   for (const pass of [1, 2]) {
-    for (const cl of ordered) {
-      if (picked.length >= max) break;
-      if (cl.score <= 0 || picked.includes(cl)) continue;
-      const key = publisherKey(cl.rep.source);
-      if ((perPublisher.get(key) ?? 0) >= pass) continue;
-      if (picked.some((p) => sameCluster(p, cl, ignore))) continue;
-      picked.push(cl);
-      perPublisher.set(key, (perPublisher.get(key) ?? 0) + 1);
+    while (picked.length < max) {
+      let best: Cluster | null = null;
+      let bestKey: [number, number] = [Infinity, -Infinity];
+      for (const cl of clusters) {
+        if (cl.score <= 0 || picked.includes(cl)) continue;
+        if ((perPublisher.get(publisherKey(cl.rep.source)) ?? 0) >= pass) continue;
+        if (picked.some((p) => sameCluster(p, cl, ignore))) continue;
+        const key: [number, number] = [tier(cl), cl.score * (crowded(picked, cl) ? CROWD_FACTOR : 1)];
+        if (key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] > bestKey[1])) {
+          best = cl;
+          bestKey = key;
+        }
+      }
+      if (!best) break;
+      best.pickScore = bestKey[1];
+      picked.push(best);
+      const k = publisherKey(best.rep.source);
+      perPublisher.set(k, (perPublisher.get(k) ?? 0) + 1);
     }
   }
-  // Pass 2 adds at the end. Put the list back in the given order (score order).
-  return picked.sort((a, b) => ordered.indexOf(a) - ordered.indexOf(b));
+  return picked.sort((a, b) => tier(a) - tier(b) || b.score - a.score);
 }
 
 /** Clusters, scores and sorts one pool of candidates. */
@@ -352,12 +425,21 @@ export function rankHybrid(englishCands: readonly Candidate[], nativeCands: read
   const nativeAll = rankPool(nativeCands, ctx);
   const all = [...english, ...nativeAll];
   const strong = english.filter((cl) => cl.score >= STRONG_SCORE);
-  if (strong.length >= MIN_STRONG_ENGLISH || nativeAll.length === 0) {
+  // Count distinct strong stories: two clusters of one story count once, and a third angle
+  // on one event counts only when it stays strong at CROWD_FACTOR.
+  const strongPicked = pick(strong, max, ctx.ignore).filter((cl) => cl.pickScore >= STRONG_SCORE);
+  if (strongPicked.length >= MIN_STRONG_ENGLISH || nativeAll.length === 0) {
     return { clusters: pick(english, max, ctx.ignore), native: new Set(), all };
   }
   // A native story that an English story already tells (same native rank through the boost) is skipped.
   const nativeClusters = nativeAll.filter((cl) => !(Number.isFinite(cl.nationRank) && covered.has(cl.nationRank)));
-  const weak = english.filter((cl) => cl.score < STRONG_SCORE);
-  const clusters = pick([...strong, ...nativeClusters, ...weak], max, ctx.ignore);
+  const weak = english.filter((cl) => !strongPicked.includes(cl));
+  // Tiers: strong English stories, then native stories, then weak English stories.
+  const tierOf = new Map<Cluster, number>([
+    ...strongPicked.map((c) => [c, 0] as const),
+    ...nativeClusters.map((c) => [c, 1] as const),
+    ...weak.map((c) => [c, 2] as const),
+  ]);
+  const clusters = pick([...tierOf.keys()], max, ctx.ignore, (c) => tierOf.get(c) ?? 3);
   return { clusters, native: new Set(clusters.filter((cl) => nativeClusters.includes(cl))), all };
 }
