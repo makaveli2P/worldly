@@ -73,11 +73,13 @@ Other commands:
 `GET /api/news?country=<ISO3>` returns up to 5 stories, in order of importance. The server starts all sources at the same time and uses what arrives in 3 seconds:
 
 1. Google News edition (no key): the national stories (NATION) and the front page (Top stories) of the country's English edition.
-2. Google News search (no key): English titles that name the country, from the last day.
-3. Front-page feeds of 11 outlets (no key): BBC, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India and The New York Times. Only titles that name the country count.
+2. Google News search (no key): English titles that name the country, from the last day. For a country whose name is also the name of other places or people (Georgia, Jordan, Niger, Chad, Palestine), the search also asks for the capital or the demonym.
+3. Front-page feeds of 11 outlets (no key): BBC, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India and The New York Times. Only titles that name the country count. NHK is not in the list: its English JSON feed and its Japanese RSS feed stopped in August and September 2026.
 4. Native edition (no key): for a country with no English edition, the national stories in the country's language.
 
-The server groups the stories of all feeds into clusters (one cluster for each event). It gives each cluster a score from the number of outlets, the rank in Google's national feed, the outlet type and the age. It lowers the score of sport, celebrity, opinion and market-data items. Then it picks 5 clusters, with 1 story for each publisher on the first pass.
+The server groups the stories of all feeds into clusters (one cluster for each event). It gives each cluster a score from the number of outlets, the rank in Google's national feed, the outlet type and the age. It lowers the score of sport, celebrity, opinion and market-data items, and it drops company filings, earthquake bots and posts from social platforms. Then it picks 5 clusters, with 1 story for each publisher on the first pass. A story that does not name the country needs a minimum score, so a small country can show fewer than 5 stories.
+
+A title matches a country by its name, demonym, capital or leader, as whole words (`api/_lib/news-aliases.json`). `npm run aliases` builds that file from `scripts/news-aliases-base.json` and the leaders in `public/data/countries.json`. Run it after `npm run data`. The script keeps a leader's surname alone only when the surname is not a common word or name (so "Friday" and "Schmidt" never match).
 
 A country with no English edition (for example Germany, Japan or Mexico) gets English stories first. An English story that names a person or place from the native top 20 gets that native rank. A native-language story fills the list only when fewer than 3 English stories are strong. It has a language tag (for example "DE").
 
@@ -100,6 +102,8 @@ The MBFC terms do not allow redistribution, and this repo is public. So the MBFC
 - The script gets the data from the official MBFC RapidAPI product. It does this only when `RAPIDAPI_KEY` is set and the table is missing or older than 25 days. The free plan allows 3 requests a month.
 - With no key, the script does nothing in about 50 ms. The lean stays hidden, and the state media tags still work.
 - If a fetch fails, the script keeps the old table and exits with code 0. It never prints the key.
+- When 2 MBFC records share a host (for example 2 TV stations on one site), the record that fits the host name wins. If none fits, the host gets no rating. `bias-rules.json` "wrongRecords" lists hosts whose record names another outlet. They get no lean.
+- The script keeps the raw response in `node_modules/.cache/worldly/mbfc-raw.json` and the count of each raw "Bias" value in `mbfc-values.json`. `npm run bias -- --rebuild` builds the table again from that response, with no request.
 - On Vercel, the script fetches only for a production build. It keeps the last good table in `node_modules/.cache/worldly`, which Vercel keeps between builds.
 
 The State Media Monitor table (`api/_lib/state-media.json`, CC BY 4.0) is in git. `npm run bias -- --smm` builds it again from the dataset and the hand map `scripts/bias-smm-domains.json` (State Media Monitor id to hosts).
@@ -125,7 +129,7 @@ The key stays on the server.
 
 ### Cache
 
-- The server keeps each list in memory for 10 minutes.
+- The server keeps each list in memory for 10 minutes. When Google does not answer, it keeps a list for 1 minute only, and it shows the last good list (at most 24 hours old) if it has one. When no source answers and no earlier list exists, the API answers 503, so that the CDN can serve its older copy.
 - The Vercel CDN keeps it for 15 minutes, and can serve it for 30 more minutes while it gets a new one.
 - The browser keeps a list for at most 10 minutes.
 
