@@ -1,8 +1,10 @@
 // GET /api/news?country=<CountryId> -> NewsResponse
 import { findCountry, getNews } from './_lib/news.js';
 
-const SUCCESS_CACHE = 'public, s-maxage=10800, stale-while-revalidate=86400';
-const FAILURE_CACHE = 'public, s-maxage=300';
+// Vercel removes s-maxage and stale-while-revalidate before the browser, so the browser keeps 60 s.
+// Worst case for the list a user sees: 10 min server memory + 15 min fresh + 30 min stale.
+const SUCCESS_CACHE = 'public, max-age=60, s-maxage=900, stale-while-revalidate=1800, stale-if-error=86400';
+const FAILURE_CACHE = 'public, s-maxage=60';
 
 function json(body: unknown, status: number, cacheControl: string): Response {
   return new Response(JSON.stringify(body), {

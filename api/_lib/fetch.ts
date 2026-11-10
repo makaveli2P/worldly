@@ -9,6 +9,11 @@ const USER_AGENT = 'Mozilla/5.0 (compatible; Worldly/0.1)';
  * the URL (which can hold an API key) and the body never reach logs.
  */
 export async function getText(url: string, signal: AbortSignal, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<string> {
+  return (await getTextAt(url, signal, timeoutMs)).text;
+}
+
+/** As getText, and also gives the final URL after redirects. */
+export async function getTextAt(url: string, signal: AbortSignal, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<{ text: string; url: string }> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -24,7 +29,12 @@ export async function getText(url: string, signal: AbortSignal, timeoutMs = PROV
     await response.body?.cancel().catch(() => {});
     throw new UpstreamError(`http ${response.status}`);
   }
-  return response.text();
+  try {
+    return { text: await response.text(), url: response.url || url };
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'Error';
+    throw new UpstreamError(name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network error');
+  }
 }
 
 export async function getJson(url: string, signal: AbortSignal, timeoutMs?: number): Promise<unknown> {

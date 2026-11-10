@@ -1,8 +1,9 @@
-// NewsData.io. Used only when NEWSDATA_API_KEY is set. Each call costs one credit.
-import type { NewsArticle } from '../../../src/types';
+// NewsData.io. Used only when NEWSDATA_API_KEY is set, and only as a fallback. Each call costs one credit.
+// The free plan delays data by 12 hours, so a result stays in memory for 6 hours.
+import { publisherHost } from '../domain.js';
 import { getJson } from '../fetch.js';
 import { cleanText, isPressRelease, namesCountry, safeUrl, titleKey, toIso } from '../text.js';
-import { UpstreamError, type NewsCountry, type Provider } from './types.js';
+import { UpstreamError, type Candidate, type NewsCountry } from './types.js';
 
 const BASE = 'https://newsdata.io/api/1/latest';
 
@@ -14,6 +15,8 @@ interface NewsDataResult {
   pubDate?: unknown;
   image_url?: unknown;
   duplicate?: unknown;
+  source_url?: unknown;
+  source_priority?: unknown;
 }
 
 // Proper names for publishers whose NewsData source_name is a raw id or misspelt ("Brietbart", "Skynew").
@@ -102,17 +105,30 @@ function pubDate(value: unknown): string | null {
   return toIso(iso);
 }
 
-async function call(country: NewsCountry, params: Record<string, string>, signal: AbortSignal): Promise<NewsArticle[]> {
+/** True when NEWSDATA_API_KEY is set. */
+export function newsdataEnabled(): boolean {
+  return apiKey() !== undefined;
+}
+
+async function call(country: NewsCountry, params: Record<string, string>, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
   const key = apiKey();
   if (!key) return [];
   // One line per call, so credit use shows in the logs. The key and the URL stay out.
-  console.info(`[news] newsdata call: ${Object.keys(params).sort().join('+')}`);
-  const search = new URLSearchParams({ apikey: key, language: 'en', size: '10', removeduplicate: '1', ...params });
-  const data = (await getJson(`${BASE}?${search}`, signal)) as { status?: unknown; results?: unknown };
+  console.info(`[news] newsdata call for ${country.id}: ${Object.keys(params).sort().join('+')}`);
+  const search = new URLSearchParams({
+    apikey: key,
+    qInTitle: `"${country.name}"`,
+    language: 'en',
+    excludecategory: 'sports,entertainment,lifestyle',
+    removeduplicate: '1',
+    size: '10',
+    ...params,
+  });
+  const data = (await getJson(`${BASE}?${search}`, signal, timeoutMs)) as { status?: unknown; results?: unknown };
   if (data.status !== 'success') throw new UpstreamError('status not success');
   if (!Array.isArray(data.results)) return [];
   const seen = new Set<string>();
-  const articles: NewsArticle[] = [];
+  const articles: Candidate[] = [];
   for (const raw of data.results as NewsDataResult[]) {
     if (raw.duplicate === true) continue;
     const url = safeUrl(raw.link);
@@ -129,41 +145,54 @@ async function call(country: NewsCountry, params: Record<string, string>, signal
     const key = titleKey(title);
     if (seen.has(key)) continue;
     seen.add(key);
+    const priority = typeof raw.source_priority === 'number' ? raw.source_priority : undefined;
     articles.push({
       title,
       url,
       source,
+      // source_url can be https://news.google.com for an item that NewsData took from Google News.
+      domain: publisherHost(raw.source_url, url),
       publishedAt: pubDate(raw.pubDate),
       imageUrl: safeUrl(raw.image_url),
+      feed: 'newsdata',
+      rank: null,
+      outlets: [source],
+      lang: null,
+      ...(priority !== undefined ? { priority } : {}),
     });
   }
   return articles;
 }
 
-// Fewer stories than this from the first call starts a second call (one more credit).
-const MIN_FROM_FIRST_CALL = 3;
-
 /**
- * Two calls at most, both with the country name in the title (qInTitle):
- * 1. Only the top 10% of domains (prioritydomain=top).
- * 2. When call 1 gives fewer than 3 stories: all domains.
- * The country filter is not used. It matches the publisher's country, not the subject,
- * so `country=cn` gave stories about other topics from Asian outlets.
+ * One call with the country name in the title (qInTitle), English, the top 10% of domains,
+ * and no sport, entertainment or lifestyle. A second call without prioritydomain runs only
+ * when the first gives nothing. The `country` filter is not used: it matches the publisher's
+ * country, not the subject.
  */
-export const newsdata: Provider = {
-  name: 'newsdata',
-  enabled: () => apiKey() !== undefined,
-  async fetchTop(country: NewsCountry, limit: number, signal: AbortSignal) {
-    const qInTitle = `"${country.name}"`;
-    let articles = await call(country, { qInTitle, prioritydomain: 'top' }, signal);
-    if (articles.length < MIN_FROM_FIRST_CALL) {
-      try {
-        const more = await call(country, { qInTitle }, signal);
-        articles = [...articles, ...more];
-      } catch (err) {
-        if (articles.length === 0) throw err;
-      }
-    }
-    return articles.slice(0, limit * 3);
-  },
-};
+async function fetchCountry(country: NewsCountry, timeoutMs: number): Promise<Candidate[]> {
+  const first = await call(country, { prioritydomain: 'top' }, AbortSignal.timeout(timeoutMs), timeoutMs);
+  if (first.length > 0) return first;
+  return call(country, {}, AbortSignal.timeout(timeoutMs), timeoutMs);
+}
+
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const FAILURE_TTL_MS = 10 * 60 * 1000;
+const cache = new Map<string, { expires: number; value: Promise<Candidate[]> }>();
+
+/** NewsData stories for a country. A result stays in memory for 6 hours, because the data is 12 hours late. */
+export function newsdata(country: NewsCountry, timeoutMs: number): Promise<Candidate[]> {
+  if (!newsdataEnabled()) return Promise.resolve([]);
+  const now = Date.now();
+  const hit = cache.get(country.id);
+  if (hit && hit.expires > now) return hit.value;
+  const entry = { expires: now + CACHE_TTL_MS, value: fetchCountry(country, timeoutMs) };
+  cache.set(country.id, entry);
+  entry.value.catch(() => {
+    entry.expires = Date.now() + FAILURE_TTL_MS;
+  });
+  if (cache.size > 300) {
+    for (const [k, v] of cache) if (v.expires <= now) cache.delete(k);
+  }
+  return entry.value;
+}
