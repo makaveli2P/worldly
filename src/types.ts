@@ -74,3 +74,29 @@ export interface NewsResponse {
   provider: NewsProvider | null; // null when every provider failed
   fetchedAt: string; // ISO 8601
 }
+
+// ---------- Breaking news (GET /api/breaking) ----------
+
+export type BreakingLevel = 'critical' | 'major';
+export type BreakingKind = 'conflict' | 'attack' | 'disaster' | 'accident' | 'politics';
+
+export interface BreakingAlert {
+  key: string; // stable id of the story: the same across polls while the story lasts
+  country: CountryId; // ISO3 id as in public/data/countries.json
+  level: BreakingLevel;
+  kind: BreakingKind;
+  headline: string; // plain text, at most 200 chars
+  url: string; // the article (or the GDACS/USGS/Wikipedia page)
+  source: string; // "BBC News"
+  since: string; // ISO 8601, first evidence
+  updatedAt: string; // ISO 8601, newest evidence
+  outlets: number;
+  basis: ('news' | 'itn' | 'gdacs' | 'usgs')[];
+}
+
+/** Response of GET /api/breaking. At most 3 alerts, most severe first. [] on a quiet day. */
+export interface BreakingResponse {
+  alerts: BreakingAlert[];
+  generatedAt: string; // ISO 8601
+  sources: { ok: number; total: number } | null; // upstream sources that answered; null after a failure
+}
