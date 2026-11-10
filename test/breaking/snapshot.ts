@@ -2,6 +2,7 @@
 //
 //   npx tsx test/breaking/snapshot.ts                    live run: print the sources, the flagged headlines and the alerts
 //   npx tsx test/breaking/snapshot.ts --save <name>      live run, and save the inputs to test/breaking/fixtures/<name>.json
+//   npx tsx test/breaking/snapshot.ts --save <name> --wide   also save every headline that names a country
 //   npx tsx test/breaking/snapshot.ts --replay <file>    run the detector on a saved fixture
 //
 // The tool sends a generic User-Agent. Set BREAKING_USER_AGENT to send another one.
@@ -36,7 +37,7 @@ async function main() {
     const save = flag('--save');
     if (save) {
       const path = join(HERE, 'fixtures', `${save}.json`);
-      writeFileSync(path, `${JSON.stringify(toFixture(inputs, flag('--note') ?? ''), null, 0)}\n`);
+      writeFileSync(path, `${JSON.stringify(toFixture(inputs, flag('--note') ?? '', args.includes('--wide')), null, 0)}\n`);
       console.log(`saved ${path}`);
     }
   }

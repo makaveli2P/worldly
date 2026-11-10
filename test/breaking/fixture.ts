@@ -3,8 +3,11 @@
 // A fixture keeps only what the detector reads: per feed the position, title, date, outlet and link
 // of each headline from the last 48 hours that classify() flags. The detector skips every other
 // headline. That keeps a snapshot at a few KB of headlines, with no article text.
+// With `wide`, a fixture also keeps every headline that names a country, so that a later rule
+// change can be checked against headlines that the rules did not flag on the day of the save.
 import { classify } from '../../api/_lib/breaking/classify.js';
 import { CONFIG } from '../../api/_lib/breaking/detect.js';
+import { namesAnyCountry } from '../../api/_lib/breaking/match.js';
 import { FEEDS } from '../../api/_lib/breaking/sources.js';
 import type { BreakingInputs, Hazard, Headline, Itn } from '../../api/_lib/breaking/types.js';
 
@@ -21,13 +24,15 @@ export interface Fixture {
 }
 
 /** Makes a fixture from live inputs. */
-export function toFixture(inputs: BreakingInputs, note: string): Fixture {
+export function toFixture(inputs: BreakingInputs, note: string, wide = false): Fixture {
   const feeds: Record<string, Row[]> = {};
   for (const h of inputs.headlines) {
     const time = h.publishedAt ? Date.parse(h.publishedAt) : NaN;
     if (Number.isFinite(time) && inputs.now - time > CONFIG.lookbackHours * 3.6e6) continue;
-    if (classify(h.title) === null) continue;
-    (feeds[h.feed] ??= []).push([h.position, h.title, h.publishedAt, h.kind === 'gn' ? h.publisher : '', h.url]);
+    const flagged = classify(h.title) !== null;
+    if (!flagged && !(wide && namesAnyCountry(h.title))) continue;
+    // The link of a headline that is not flagged is left out: it is the largest part of a row.
+    (feeds[h.feed] ??= []).push([h.position, h.title, h.publishedAt, h.kind === 'gn' ? h.publisher : '', flagged ? h.url : '']);
   }
   return { note, now: new Date(inputs.now).toISOString(), sources: inputs.sources, itn: inputs.itn, hazards: inputs.hazards, feeds };
 }
