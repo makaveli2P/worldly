@@ -16,7 +16,7 @@ export const PEN_SOFT = 0.5;
 export const PEN_OPINION = 0.7;
 export const PEN_LIST = 0.5;
 export const PEN_WORLD = 0.3;
-/** An English cluster with at least this score is "strong". */
+/** An English cluster with at least this score is "strong", when more than 1 outlet covers it (or the boost links it). */
 export const STRONG_SCORE = 0.45;
 /** With fewer strong English clusters than this, native-language stories fill the list. */
 export const MIN_STRONG_ENGLISH = 3;
@@ -41,9 +41,20 @@ const TIER1 = new Set([
 ]);
 
 const SPORT = /\b(?:vs\.?|match|cup|league|squad|coach|rugby|cricket|football|soccer|nba|nfl|nhl|mlb|fifa|uefa|olympics?|tennis|golf|f1|formula 1|grand prix|wicket|innings|striker|midfielder|t20|odi|test (?:match|series)|qualifiers?|fixtures?|semi-?finals?|quarter-?finals?|7s|bundesliga|ligue 1|la liga|serie a|premier league|brasileirao|copa|futbol|futebol|fussball|wwe|ufc|boxing|marathon|grand slam|playoffs?|touchdown|quarterback|transfer window|world series|pga|lpga|liv golf|nascar|motogp|bowl|sevens|team to face|injur(?:y|ies) crisis|line-?up|friendl(?:y|ies)|game time|goalkeeper|winger|national team|selecao|derby|kick-?off|tournament|championships?|medals?|athletes?|dortmund|bayern|real madrid|fc barcelona|barca|man utd|manchester united|manchester city|arsenal|chelsea|liverpool fc|juventus|psg|flamengo|palmeiras|corinthians|all blacks|wallabies|springboks)\b/i;
-const SOFT = /\b(?:celebrity|celebrities|actress|actor|singer|rapper|kardashian|taylor swift|horoscope|recipes?|travel guide|travel|hotels?|resorts?|luxury|fashion|tips|how to|things to do|what to know before buying|review|deals?|discount|sale|black friday|ps5|playstation|xbox|iphone|guitar|netflix|box office|trailer|red carpet|dating|wedding|divorce|bollywood|hollywood|k-?pop|influencer|lottery|jackpot|ucapan|beauty|skincare|nonstop|flights? to|airfares?|cruises?|vacations?|getaways?|concerts?|tour dates|album|best \w+ (?:to buy|in \d{4})|\d+ (?:best|things|ways|reasons|places))\b/i;
+const SOFT = /\b(?:celebrity|celebrities|actress|actor|singer|rapper|kardashian|taylor swift|horoscope|recipes?|travel guide|travel|hotels?|resorts?|luxury|fashion|tips|how to|things to do|what to know before buying|review|deals?|discount|sale|black friday|ps5|playstation|xbox|iphone|guitar|netflix|box office|trailer|red carpet|dating|wedding|divorce|bollywood|hollywood|k-?pop|influencer|lottery|jackpot|bikini|swimsuit|flaunts?|stuns|showbiz|paparazzi|honeymoon|steals? (?:the )?spotlight|ucapan|beauty|skincare|nonstop|flights? to|airfares?|cruises?|vacations?|getaways?|concerts?|tour dates|album|best \w+ (?:to buy|in \d{4})|\d+ (?:best|things|ways|reasons|places))\b/i;
 // Service items in native-language feeds: weather, prices of goods, lottery, horoscope, history features.
-const SOFT_NATIVE = /الطقس|أسعار|سعر (?:الذهب|الدولار|الفراخ|اللحوم)|حظك|\bwetter\b|horoskop|\blotto\b|\bclima\b|hor[oó]scopo|loter[ií]a|mega-?sena|previs[aã]o do tempo|m[ée]t[ée]o|\bprix du\b|天気|運勢|天气|星座|погода|гороскоп|курс (?:доллара|валют)|from the front page|on this day|this day in history|michelin|restaurants?/i;
+const SOFT_NATIVE = /الطقس|أسعار|سعر (?:الذهب|الدولار|الفراخ|اللحوم)|حظك|\bwetter\b|horoskop|\blotto\b|\bclima\b|hor[oó]scopo|loter[ií]a|mega-?sena|previs[aã]o do tempo|m[ée]t[ée]o|\bprix du\b|天気|運勢|天气|星座|気象予報士|冷え込み|最高気温|погода|гороскоп|курс (?:доллара|валют)|from the front page|on this day|this day in history|michelin|restaurants?/i;
+// Sport publishers: a story from them is sport, whatever its title says ("Church scores four after Fiji fight").
+const SPORT_SOURCE = /(?:^|[^a-z])sports?(?:[^a-z]|$)|foxsports|skysports|nbcsports|cbssports|eurosport|sportingnews|sportstar|sportskeeda|espn|the athletic|rugbypass|planet rugby|cricbuzz|cricinfo|wisden|goal\.com|\bmarca\b|\bole\b|lance!|ge\.globo|nrl\.com|wwos|motorsport|autosport|golf digest|golfweek|tennis\.com/i;
+// Weather and service sites in native-language feeds.
+const SERVICE_SOURCE = /tenki\.jp|weathernews|ウェザーニュース|wetter\.com|wetteronline|meteored|tempo\.com|climatempo|accuweather/i;
+// Market-data sites whose items are stock notes, not national news.
+const TICKER_SOURCES = new Set([
+  'gurufocus', 'tradingview', 'marketscreener', 'benzinga', 'seeking alpha', 'zacks', 'zacks investment research',
+  'simply wall st', 'simply wall st.', 'marketbeat', 'stocktitan', 'stock titan', 'investing.com', 'the motley fool',
+  'motley fool', 'tipranks', 'insider monkey', 'etf daily news', 'defense world', 'stocktwits', 'finimize', 'gurufocus.com',
+]);
+const TICKER = /\((?:NYSE|NASDAQ|Nasdaq|TSX|TSXV|ASX|LSE|OTC|OTCQX|TSE|HKEX|NSE|BSE|NYSE American)\s*:\s*[A-Z0-9.]{1,6}\)/;
 const OPINION =/^(?:opinion|commentary|analysis|editorial|column|view|letters?|op-ed)\b|\bop-ed\b|^(?:opinion|analysis)\s*[|:]/i;
 
 const CJK = /[぀-ヿ㐀-鿿가-힯]/;
@@ -63,6 +74,7 @@ const SYNONYM: Record<string, string> = {
   resigns: 'resign', resigned: 'resign', resignation: 'resign', quits: 'resign',
   arrested: 'arrest', arrests: 'arrest', detained: 'arrest', detains: 'arrest',
   pm: 'premier',
+  intention: 'intent', intends: 'intent', intend: 'intent',
   fridge: 'fridge', fridges: 'fridge', freezer: 'fridge', freezers: 'fridge', refrigerator: 'fridge', refrigeration: 'fridge',
   hack: 'hack', hacks: 'hack', hacking: 'hack', hacked: 'hack', hackers: 'hack', cyberattack: 'hack', cyberattacks: 'hack',
 };
@@ -73,6 +85,8 @@ const PHRASES: [RegExp, string][] = [
   [/\bhead of government\b/g, 'premier'],
   [/\bprime minister\b/g, 'premier'],
   [/\bcyber[- ]attacks?\b/g, 'hack'],
+  [/\bvice[- ]president\b/g, 'vp'],
+  [/\bstep(?:s|ping|ped)? down\b/g, 'resign'],
 ];
 
 /** Stemmed word tokens of a title. CJK titles give character bigrams. */
@@ -264,12 +278,17 @@ export function score(cl: Cluster, ctx: RankContext): number {
   const national = m.some((x) => x.feed === 'nation');
   const rels = m.map((x) => relevance(x.title, ctx.name, ctx.aliases));
   const named = rels.includes('yes');
-  cl.rel = national || named ? 1 : rels.includes('trap') ? 0 : REL_OTHER;
+  // A homonym or a longer place in the shown title ("Mexico, NY") decides, because users read that title.
+  const trapped = !national && relevance(cl.rep.title, ctx.name, ctx.aliases) === 'trap';
+  cl.rel = trapped ? 0 : national || named ? 1 : rels.includes('trap') ? 0 : REL_OTHER;
 
   let pen = 1;
   // Sport: the representative, or most members, read as sport.
-  if (SPORT.test(cl.rep.title) || m.filter((x) => SPORT.test(x.title)).length * 2 > m.length) pen *= PEN_SPORT;
-  if (SOFT.test(cl.rep.title) || SOFT_NATIVE.test(cl.rep.title)) pen *= PEN_SOFT;
+  const sportSource = SPORT_SOURCE.test(cl.rep.source) || SPORT_SOURCE.test(cl.rep.domain ?? '');
+  if (SPORT.test(cl.rep.title) || sportSource || m.filter((x) => SPORT.test(x.title)).length * 2 > m.length) pen *= PEN_SPORT;
+  const ticker = TICKER_SOURCES.has(fold(cl.rep.source).trim()) || TICKER.test(cl.rep.title);
+  const service = SOFT_NATIVE.test(cl.rep.title) || SERVICE_SOURCE.test(cl.rep.source);
+  if (SOFT.test(cl.rep.title) || service || ticker) pen *= PEN_SOFT;
   if (OPINION.test(cl.rep.title)) pen *= PEN_OPINION;
   if (listsCountry(cl.rep.title, ctx.name)) pen *= PEN_LIST;
   if (Number.isFinite(cl.topRank) && !national && !named) pen *= PEN_WORLD;
@@ -413,18 +432,26 @@ export interface Ranked {
 /**
  * Ranks the stories of a country with no English edition (owner decision: hybrid).
  * English stories come first, ranked with help from the native NATION feed (shared proper names).
- * Native stories fill the list only when fewer than 3 English clusters score 0.45 or more.
+ * Native stories fill the list only when fewer than 3 English clusters are strong (see isStrong).
  */
+/**
+ * A strong English story: a score of STRONG_SCORE or more, and more than 1 outlet or a link to a
+ * native top-20 story. A fresh story from one outlet scores 0.45 on recency alone, which is not coverage.
+ */
+export function isStrong(cl: Cluster): boolean {
+  return cl.score >= STRONG_SCORE && (cl.outlets >= 2 || Number.isFinite(cl.boostRank));
+}
+
 export function rankHybrid(englishCands: readonly Candidate[], nativeCands: readonly Candidate[], ctx: RankContext, max = 5): Ranked {
   const rankOf = linkNative(nativeCands, ctx.ignore);
   const covered = new Set<number>();
   const english = rankPool(englishCands, ctx, (cl) => {
     cl.boostRank = rankOf(cl.members);
   });
-  for (const cl of english) if (Number.isFinite(cl.boostRank) && cl.score >= STRONG_SCORE) covered.add(cl.boostRank);
+  for (const cl of english) if (Number.isFinite(cl.boostRank) && isStrong(cl)) covered.add(cl.boostRank);
   const nativeAll = rankPool(nativeCands, ctx);
   const all = [...english, ...nativeAll];
-  const strong = english.filter((cl) => cl.score >= STRONG_SCORE);
+  const strong = english.filter(isStrong);
   // Count distinct strong stories: two clusters of one story count once, and a third angle
   // on one event counts only when it stays strong at CROWD_FACTOR.
   const strongPicked = pick(strong, max, ctx.ignore).filter((cl) => cl.pickScore >= STRONG_SCORE);

@@ -52,6 +52,13 @@ describe('same-story test', () => {
     expect(sameCandidates(a, b, ctx.ignore)).toBe(true);
   });
 
+  it('treats "step down" as "resign" and "intent" as "intention"', () => {
+    const idn = rankContext('Indonesia', ['Indonesia', 'Indonesian', 'Jakarta', 'Prabowo'], NOW);
+    const a = cand('Indonesia VP expresses intent to step down in talks with President, official says');
+    const b = cand('Gibran joins Prabowo at Palace after expressing intention to resign');
+    expect(sameCandidates(a, b, idn.ignore)).toBe(true);
+  });
+
   it('does not match different stories that share only the country', () => {
     expect(sameCandidates(cand('Germany raises pension age to 68'), cand('Germany beats France in handball final'), ctx.ignore)).toBe(false);
   });
@@ -110,12 +117,28 @@ describe('score', () => {
     expect(rankPool([cand('Germany squad named for World Cup qualifier in Berlin')], ctx)[0].score).toBeCloseTo(base * 0.5, 1);
     expect(rankPool([cand('Ten luxury hotels in Germany for a winter getaway')], ctx)[0].score).toBeLessThan(base * 0.6);
     expect(rankPool([cand('Opinion: Germany must rethink its rent caps now')], ctx)[0].score).toBeLessThan(base * 0.8);
+    expect(rankPool([cand('Church scores four after Germany fight', { source: 'Fox Sports' })], ctx)[0].score).toBeCloseTo(base * 0.5, 1);
+    expect(rankPool([cand('Germany opens new freight corridor to Poland', { source: 'Transport Topics' })], ctx)[0].score).toBeCloseTo(base, 1);
+    expect(rankPool([cand('Star steals spotlight in bikini on beach in Germany')], ctx)[0].score).toBeLessThan(base * 0.6);
   });
 
   it('scores 0 for a homonym or a longer place, and 0.3 for a title that does not name the country', () => {
     const mex = rankContext('Mexico', ['Mexico', 'Mexican'], NOW);
     expect(rankPool([cand('New Mexico governor signs water bill')], mex)[0].score).toBe(0);
     expect(rankPool([cand('Rain falls on the plains again tonight')], mex)[0].rel).toBe(0.3);
+  });
+
+  it('scores 0 when the shown title names only a US town ("Mexico, NY")', () => {
+    const mex = rankContext('Mexico', ['Mexico', 'Mexican'], NOW);
+    const ranked = rankPool(
+      [
+        cand('Watertown woman dies in Mexico, NY crash on Main Street', { publishedAt: hoursAgo(1) }),
+        cand('Woman dies in Mexico crash on Main Street', { publishedAt: hoursAgo(3) }),
+      ],
+      mex,
+    );
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].score).toBe(0);
   });
 
   it('decays with age (half-life 12 h)', () => {
@@ -176,5 +199,25 @@ describe('hybrid (no English edition)', () => {
     const r = rankHybrid(english, [native('Regierung beschließt Rentenreform', 1)], ctx);
     expect(r.clusters.every((c) => c.rep.lang === null)).toBe(true);
     expect(r.native.size).toBe(0);
+  });
+
+  it('does not count a fresh story from 1 outlet as strong coverage', () => {
+    const lone = (t: string, s: string) => cand(t, { source: s, publishedAt: hoursAgo(0) });
+    const english = [
+      lone('Germany passes rent cap law after long fight', 'Reuters'),
+      lone('Germany orders new air defence systems for army', 'DW'),
+      lone('German exports fall for third month in a row', 'Bloomberg'),
+    ];
+    for (const cl of rankPool(english, ctx)) expect(cl.score).toBeGreaterThanOrEqual(0.45);
+    const r = rankHybrid(english, [native('Regierung beschließt große Rentenreform', 1)], ctx);
+    expect(r.native.size).toBe(1);
+  });
+});
+
+describe('market-data filler', () => {
+  it('penalises stock notes by source or by an exchange ticker', () => {
+    const base = rankPool([cand('Germany passes new law on rent caps in big cities')], ctx)[0].score;
+    expect(rankPool([cand('Quantinuum expands quantum work with German partner', { source: 'GuruFocus' })], ctx)[0].score).toBeLessThan(base * 0.6);
+    expect(rankPool([cand('Acme Corp (NASDAQ: ACME) opens German plant')], ctx)[0].score).toBeLessThan(base * 0.6);
   });
 });

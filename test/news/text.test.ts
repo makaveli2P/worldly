@@ -23,6 +23,14 @@ describe('word-boundary country match', () => {
     expect(namesCountry('Mexico and New Mexico share a border', 'Mexico')).toBe(true);
   });
 
+  it('ignores a US town with a country name ("Mexico, NY")', () => {
+    expect(namesCountry('Watertown Woman Dies in Mexico, NY Crash on Main Street', 'Mexico')).toBe(false);
+    expect(namesCountry('Fire destroys barn in Cuba, N.Y.', 'Cuba')).toBe(false);
+    expect(relevance('Watertown Woman Dies in Mexico, NY Crash', 'Mexico', ['Mexico', 'Mexican'])).toBe('trap');
+    expect(namesCountry('Mexico, Texas agree on water deal', 'Mexico')).toBe(true);
+    expect(namesCountry('Mexico, in turn, raises tariffs', 'Mexico')).toBe(true);
+  });
+
   it('keeps the older longer-place and homonym rules', () => {
     expect(namesCountry('Inner Mongolia herders face drought', 'Mongolia')).toBe(false);
     expect(namesCountry('Papua New Guinea votes', 'Guinea')).toBe(false);

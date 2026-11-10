@@ -254,10 +254,26 @@ export function listsCountry(title: string, name: string): boolean {
   return items >= 3;
 }
 
+// US state abbreviations as titles write them after a town: "Mexico, NY", "Peru, Ind.", "Cuba, N.Y.".
+// Full state names are not here: "Mexico, Texas agree ..." names two parties, not a town.
+const US_STATE =
+  '(?:A[LKZR]|C[AOT]|DE|DC|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOT]|N[EVHJMYCD]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[TA]|W[AVIY]' +
+  '|(?:Ala|Ariz|Ark|Calif|Colo|Conn|Del|Fla|Ga|Ill|Ind|Kan|Ky|La|Md|Mass|Mich|Minn|Miss|Mo|Mont|Neb|Nev|Okla|Ore|Pa|Tenn|Va|Vt|Wash|Wis|Wyo)\\.' +
+  '|N\\.[YJHMCD]\\.|S\\.[CD]\\.|W\\.Va\\.|R\\.I\\.)';
+
+/**
+ * Removes "<country>, <US state>" from a title, because that names a US town ("Mexico, NY", "Peru, Indiana").
+ * The input has no accents. The match is case-sensitive, so "Mexico, in turn" stays.
+ */
+function withoutUsTown(text: string, name: string): string {
+  const n = name.normalize('NFKD').replace(/[̀-ͯ]/g, '');
+  return text.replace(new RegExp(`(?<![\\p{L}])${escapeRe(n)},\\s*${US_STATE}(?![\\p{L}])`, 'gu'), ' ');
+}
+
 /** True when the title names the country itself, not only a longer place name that holds it. Whole words only. */
 export function namesCountry(title: string, name: string): boolean {
   const n = fold(name);
-  let t = fold(title);
+  let t = fold(withoutUsTown(title.normalize('NFKD').replace(/[̀-ͯ]/g, ''), name));
   for (const longer of LONGER_PLACES[n] ?? []) t = t.split(longer).join(' ');
   if (!hasWord(t, n)) return false;
   const other = HOMONYMS[n];
@@ -285,8 +301,8 @@ const BLOCK_PHRASES = [
  */
 export function relevance(title: string, name: string, aliases: readonly string[]): 'yes' | 'trap' | 'no' {
   const n = fold(name);
-  const raw = title.normalize('NFKD').replace(/[̀-ͯ]/g, '');
-  let plain = fold(title);
+  const raw = withoutUsTown(title.normalize('NFKD').replace(/[̀-ͯ]/g, ''), name);
+  let plain = fold(raw);
   let cased = raw;
   for (const p of [...BLOCK_PHRASES, ...(LONGER_PLACES[n] ?? [])]) {
     plain = plain.split(p).join(' ');
