@@ -63,9 +63,28 @@ export interface NewsArticle {
   source: string; // publisher name, e.g. "The Hindu"
   publishedAt: string | null; // ISO 8601
   imageUrl: string | null;
+  domain?: string | null; // publisher host, for example "theguardian.com"
+  lang?: string | null; // BCP-47 code when the title is not English, else null
+  outlets?: number | null; // distinct outlets that cover the same story (cluster size)
+  bias?: ArticleBias | null;
 }
 
-export type NewsProvider = 'newsdata' | 'google' | 'gdelt';
+/**
+ * Publisher-level rating, never a rating of the article.
+ * `lean` comes from MBFC (a US scale). `state` comes from the State Media Monitor.
+ * `rater` and `ref` are null when only a state tag exists.
+ */
+export interface ArticleBias {
+  lean: -2 | -1 | 0 | 1 | 2 | null;
+  leanLabel: string | null; // "Left", "Lean left", "Centre", "Lean right", "Right"
+  rater: 'MBFC' | null;
+  ref: string | null; // the MBFC page of the outlet
+  state: 'state-controlled' | 'captured' | 'public' | null;
+  stateLabel: string | null; // "STATE-CONTROLLED", "CAPTURED", "PUBLIC"
+}
+
+/** 'feeds' = outlet front-page RSS feeds (BBC, Al Jazeera, ...). 'gdelt' is no longer used by the server. */
+export type NewsProvider = 'newsdata' | 'google' | 'gdelt' | 'feeds';
 
 /** Response of GET /api/news?country=<CountryId> */
 export interface NewsResponse {

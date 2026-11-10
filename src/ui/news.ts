@@ -9,6 +9,7 @@ const PROVIDER_LABEL: Record<NewsProvider, string> = {
   google: 'Google News',
   newsdata: 'NewsData.io',
   gdelt: 'GDELT',
+  feeds: 'publisher feeds',
 };
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
