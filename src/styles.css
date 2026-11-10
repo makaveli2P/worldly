@@ -419,6 +419,12 @@ a {
   opacity: 0;
 }
 
+/* Satellite style: the readout bar also holds the imagery credit (src/ui/credit.ts), so it is taller.
+   The hint sits above it. Mobile has its own value. Keep these in step with the .hint position. */
+:root[data-style='satellite'] .hint {
+  bottom: 88px;
+}
+
 .loader {
   position: absolute;
   top: 50%;
@@ -498,9 +504,28 @@ a {
   display: none;
 }
 
-/* The first-use hint sits above the taller bar. */
-:root[data-style='satellite'] .hint {
-  bottom: 88px;
+/* Narrow desktop (768-1143px) with open plates: the free column between the plates is narrower than
+   the credit (it is 360px at 1144px). The credit then goes to one line in the strip under the plates
+   (each plate ends 24px above the bottom), over the full width and above the plates. The plates cover
+   the readout values at these widths, and the SEL value is in the plates, so the values hide. */
+@media (min-width: 768px) and (max-width: 1143px) {
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout {
+    bottom: 3px;
+    z-index: 3; /* .panels is z-index 2: the credit stays on top if a plate grows into the strip */
+    width: max-content; /* with left: 50%, the box would otherwise stop at half the viewport width */
+    max-width: calc(100vw - 2 * var(--edge));
+    padding: 2px 8px;
+  }
+
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout-values,
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .credit-extra {
+    display: none;
+  }
+
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .credit {
+    max-width: none;
+    margin: 0;
+  }
 }
 
 /* ---------- Tooltip ---------- */
@@ -1119,6 +1144,13 @@ a {
   :root {
     --edge: 16px;
     --bar: 104px;
+    --sheet-height: 46vh; /* the bottom sheet (.panels); the credit button sits above it */
+  }
+
+  @supports (height: 1dvh) {
+    :root {
+      --sheet-height: 46dvh;
+    }
   }
 
   .bar {
@@ -1175,6 +1207,10 @@ a {
     bottom: 24px;
   }
 
+  :root[data-style='satellite'] .hint {
+    bottom: 40px; /* above the credit button */
+  }
+
   /* Mobile: no readout values. The bar keeps only a short credit button at the bottom right,
      above the sheet when the sheet is open. The button opens the full credit. */
   .readout {
@@ -1189,7 +1225,7 @@ a {
   }
 
   .ui:has(.panels[data-open]) .readout {
-    bottom: calc(46dvh + 8px);
+    bottom: calc(var(--sheet-height) + 8px);
   }
 
   :root[data-style='atlas'] .readout,
@@ -1243,14 +1279,9 @@ a {
     display: block;
   }
 
-  :root[data-style='satellite'] .hint {
-    bottom: 40px;
-  }
-
   .panels {
     inset: auto 0 0 0;
-    height: 46vh;
-    height: 46dvh;
+    height: var(--sheet-height);
     display: flex;
     flex-direction: column;
     background: var(--panel);
