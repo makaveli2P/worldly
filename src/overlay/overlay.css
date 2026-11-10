@@ -318,16 +318,18 @@
 
 .wo-alert-edge-lbl {
   position: absolute;
-  top: -6px;
+  top: -7px;
+  padding: 1px 4px;
   font-weight: 600;
   font-size: 10px;
   line-height: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   white-space: nowrap;
-  /* The name sits on the canvas, outside the globe: ink with a paper halo, as the leader lines. */
+  /* Ink on a small paper chip. The name can sit on the canvas or, when the globe fills the view, on the
+     imagery. A halo reads as grey on dark imagery in the light theme; the chip reads the same on both. */
   color: var(--wo-ink);
-  text-shadow: 0 0 2px var(--wo-paper), 0 0 1px var(--wo-paper), 0 0 3px var(--wo-paper);
+  background: var(--wo-paper);
 }
 
 .wo-alert-edge[data-side='l'] .wo-alert-edge-lbl {
