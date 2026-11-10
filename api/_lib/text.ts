@@ -96,7 +96,8 @@ const JUNK_ADVERT = /\b(?:university|universidad|bachelor'?s program|master'?s p
 
 /** True for spam streams, reference pages, course adverts and other items that are not news. */
 export function isJunk(title: string, source: string): boolean {
-  if (title.split(' ').length < 4) return true;
+  // Chinese, Japanese and Korean titles have few or no spaces: count characters instead.
+  if (/[぀-ヿ㐀-鿿가-힯]/.test(title) ? title.length < 8 : title.split(' ').length < 4) return true;
   if (JUNK_TITLE.test(title) || JUNK_SOURCE.test(source) || JUNK_ADVERT.test(title)) return true;
   // Directory pages repeat one tag: "Firm Mongolia (asialaw): Mongolia (asialaw)".
   const tags = title.match(/\([^)]{2,40}\)/g) ?? [];
@@ -109,16 +110,28 @@ const GENERIC_FIRST_WORD = new Set([
   'democratic', 'federated', 'british', 'french', 'american', 'northern', 'heard',
 ]);
 
-const fold = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+/** Lowercase, with no accents. */
+export const fold = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
 
-/** True when the text names the place: the full name, or a distinct first word ("Siachen"). */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * True when `word` occurs in `text` as a whole word: no letter or digit touches it on either side.
+ * So "Oman" does not match "Woman", "India" does not match "Indiana" and "Iran" does not match "Tirana".
+ */
+export function hasWord(text: string, word: string): boolean {
+  if (!word) return false;
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(word)}(?![\\p{L}\\p{N}])`, 'u').test(text);
+}
+
+/** True when the text names the place: the full name, or a distinct first word ("Siachen"). Whole words only. */
 export function mentions(text: string, name: string): boolean {
   const t = fold(text);
   const n = fold(name);
-  if (t.includes(n)) return true;
+  if (hasWord(t, n)) return true;
   const first = n.split(/[\s,]+/)[0];
   if (first.length < 5 || GENERIC_FIRST_WORD.has(first)) return false;
-  return new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(t);
+  return hasWord(t, first);
 }
 
 // Wire services that carry company press releases, not news.
@@ -199,6 +212,7 @@ const LONGER_PLACES: Record<string, string[]> = {
   georgia: ['south georgia'],
   macedonia: ['north macedonia'],
   jersey: ['new jersey'],
+  mexico: ['new mexico', 'gulf of mexico'],
 };
 
 // Words that show a title is about another place or a person with the country's name.
@@ -240,12 +254,101 @@ export function listsCountry(title: string, name: string): boolean {
   return items >= 3;
 }
 
-/** True when the title names the country itself, not only a longer place name that holds it. */
+/** True when the title names the country itself, not only a longer place name that holds it. Whole words only. */
 export function namesCountry(title: string, name: string): boolean {
   const n = fold(name);
   let t = fold(title);
   for (const longer of LONGER_PLACES[n] ?? []) t = t.split(longer).join(' ');
-  if (!t.includes(n)) return false;
+  if (!hasWord(t, n)) return false;
   const other = HOMONYMS[n];
   return !(other && other.test(t));
 }
+
+// Phrases that hold an alias of another country, or of no country. They are removed before an alias match.
+const BLOCK_PHRASES = [
+  'latin america', 'south america', 'north america', 'central america', 'bank of america', 'american airlines',
+  'native american', 'african american', 'asian american', 'latin american', 'south american', 'central american',
+  'american express', 'captain america', 'washington post', 'times of india', 'indian ocean', 'indian wells',
+  'west indies', 'new south wales', 'prince of wales', 'south china sea', 'east china sea', 'south china morning post',
+  'gulf of guinea', 'chinese taipei', 'georgia tech', 'georgia state', 'paris saint-germain', 'paris saint germain',
+  'paris hilton', 'turkey day', 'jersey city', 'new england', 'english premier league',
+  'air france', 'air india', 'air china', 'air canada', 'air new zealand', 'japan airlines', 'turkish airlines',
+  'qatar airways', 'singapore airlines', 'british airways', 'american eagle', 'china eastern', 'china southern',
+];
+
+/**
+ * How a title relates to a country, from its aliases (name, demonym, capital, leader):
+ * - 'yes': the title names the country or an alias, as a whole word.
+ * - 'trap': the only match is a longer place ("New Mexico") or a homonym ("Michael Jordan").
+ * - 'no': no alias in the title.
+ * An alias of 3 letters or fewer, or in capitals ("US", "UK", "DRC"), must match with its case.
+ */
+export function relevance(title: string, name: string, aliases: readonly string[]): 'yes' | 'trap' | 'no' {
+  const n = fold(name);
+  const raw = title.normalize('NFKD').replace(/[̀-ͯ]/g, '');
+  let plain = fold(title);
+  let cased = raw;
+  for (const p of [...BLOCK_PHRASES, ...(LONGER_PLACES[n] ?? [])]) {
+    plain = plain.split(p).join(' ');
+    cased = cased.replace(new RegExp(escapeRe(p), 'gi'), ' ');
+  }
+  const other = HOMONYMS[n];
+  const shouty = raw === raw.toUpperCase();
+  let found = false;
+  for (const alias of aliases) {
+    const a = alias.normalize('NFKD').replace(/[̀-ͯ]/g, '');
+    const strict = a.length <= 3 || (a === a.toUpperCase() && /\p{Lu}/u.test(a));
+    if (strict ? !shouty && hasWord(cased, a) : hasWord(plain, fold(a))) {
+      found = true;
+      break;
+    }
+  }
+  if (found) return other && other.test(fold(title)) ? 'trap' : 'yes';
+  // The raw name is in the title, but only inside a blocked or longer place.
+  return hasWord(fold(title), n) ? 'trap' : 'no';
+}
+
+/**
+ * Proper names in a title: capitalised words of 4 or more letters that are not the first word.
+ * A title in Title Case gives none, because there every word has a capital.
+ * Names in `ignore` (folded) do not count.
+ */
+export function properNames(title: string, ignore: ReadonlySet<string> = new Set()): Set<string> {
+  const words = title.split(/\s+/).filter(Boolean);
+  // Title Case capitalises every word of 4 or more letters. Sentence case leaves some in lower case.
+  const lettered = words.filter((w) => /^\p{L}/u.test(w) && w.length >= 4);
+  if (lettered.length >= 3 && lettered.every((w) => /^\p{Lu}/u.test(w))) return new Set();
+  const out = new Set<string>();
+  for (let i = 1; i < words.length; i++) {
+    // A word after a colon or a dash starts a new sentence, so its capital says nothing.
+    if (/[:|–—]$/.test(words[i - 1]) || words[i - 1] === '-') continue;
+    const word = words[i]
+      .replace(/^["“‘'(«]+/, '')
+      .replace(/[.,:;!?"”’')»]+$/, '')
+      .replace(/['’]s$/, '');
+    if (!/^\p{Lu}[\p{L}'’-]{3,}$/u.test(word)) continue;
+    const w = fold(word.replace(/[-'’]+$/, ''));
+    if (w.length < 4 || GENERIC_NAMES.has(w) || ignore.has(w)) continue;
+    out.add(w);
+  }
+  return out;
+}
+
+// Capitalised words that do not identify a story: titles, institutions, months and days, in several languages.
+const GENERIC_NAMES = new Set([
+  'president', 'minister', 'prime', 'government', 'police', 'court', 'supreme', 'congress', 'senate', 'parliament',
+  'state', 'states', 'national', 'federal', 'republic', 'union', 'european', 'europe', 'world', 'news', 'live', 'update',
+  'updates', 'breaking', 'watch', 'video', 'photos', 'report', 'says', 'after', 'with', 'from', 'this', 'that', 'what',
+  'will', 'when', 'where', 'here', 'there', 'they', 'their', 'over', 'into', 'about', 'more', 'than', 'year', 'week',
+  'today', 'first', 'last', 'north', 'south', 'east', 'west', 'city', 'county', 'party', 'army', 'military', 'bank',
+  'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  'januar', 'februar', 'marz', 'juni', 'juli', 'oktober', 'dezember', 'janvier', 'fevrier', 'mars', 'avril', 'juin',
+  'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre', 'enero', 'febrero', 'marzo', 'abril', 'mayo',
+  'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre', 'janeiro', 'fevereiro', 'marco',
+  'maio', 'junho', 'julho', 'setembro', 'outubro', 'novembro', 'dezembro',
+  'presidente', 'prasident', 'ministro', 'ministerin', 'regierung', 'governo', 'gobierno',
+  'gouvernement', 'polizei', 'policia', 'bundesregierung', 'kanzler', 'premier', 'premiere', 'deutschland',
+  'brasil', 'mexico', 'indonesia', 'france', 'germany', 'brazil', 'japan', 'china', 'russia', 'ukraine', 'trump',
+  'putin', 'opinion', 'analysis', 'exclusive', 'explainer', 'editorial',
+]);
