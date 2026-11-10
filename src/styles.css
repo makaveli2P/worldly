@@ -1080,6 +1080,18 @@ a {
   text-underline-offset: 2px;
 }
 
+/* Touch layouts: the MBFC link is a 24 px target (WCAG 2.5.8). The negative margin keeps the row on the 8 px grid. */
+@media (max-width: 767px), (pointer: coarse) {
+  .lean-rater {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 24px;
+    margin: -4px 0;
+  }
+}
+
 .lean-rater:hover {
   color: var(--ink);
   text-decoration-color: currentColor;
