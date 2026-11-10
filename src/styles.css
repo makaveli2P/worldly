@@ -968,7 +968,7 @@ a {
   border-top: 1px solid var(--rule);
 }
 
-.story a,
+.story-link,
 .story--skeleton {
   display: grid;
   grid-template-columns: 24px 1fr;
@@ -977,12 +977,17 @@ a {
   text-decoration: none;
 }
 
-.story a:hover {
+/* The whole row lights up, the rating row too. */
+.story:not(.story--skeleton):hover {
   background: var(--hover);
 }
 
 .story a:focus-visible {
   outline-offset: -2px;
+}
+
+.story--rated .story-link {
+  padding-bottom: 8px;
 }
 
 .story .n {
@@ -1011,9 +1016,102 @@ a {
   white-space: nowrap;
 }
 
-.story .t {
+.story .meta-r {
   flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.story .t,
+.story .outlets {
   font-size: 11px;
+}
+
+.story .lang-tag {
+  align-self: center;
+  padding: 0 4px;
+  border: 1px solid var(--rule);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ink);
+}
+
+/* Publisher rating under the headline: lean scale, label, rater link, state tag. */
+.story-rating {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 0 24px 16px 48px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.lean {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lean-scale {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.lean-cell {
+  width: 8px;
+  height: 4px;
+  background: color-mix(in srgb, var(--ink) 22%, var(--panel));
+}
+
+.lean-cell--on {
+  height: 8px;
+  background: var(--ink);
+}
+
+.lean-rater {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+
+.lean-rater:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
+.state-tag {
+  padding: 0 4px;
+  border: 1px solid var(--ink);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.news-credits {
+  padding: 12px 24px;
+  border-top: 1px solid var(--rule);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.news-credits a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+
+.news-credits a:hover {
+  color: var(--accent-text);
+  text-decoration-color: currentColor;
 }
 
 .story-title {
@@ -1029,7 +1127,7 @@ a {
   letter-spacing: -0.005em;
 }
 
-.story a:hover .story-title {
+.story-link:hover .story-title {
   color: var(--accent-text);
 }
 
@@ -1274,9 +1372,22 @@ a {
     border-top: 0;
   }
 
-  .story a,
+  .story-link,
   .story--skeleton {
     padding: 12px 16px 16px;
+  }
+
+  .story--rated .story-link {
+    padding-bottom: 8px;
+  }
+
+  .story-rating {
+    padding: 0 16px 16px 40px;
+  }
+
+  .news-credits {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 

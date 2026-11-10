@@ -132,16 +132,19 @@ async function start(): Promise<void> {
 
   // ---- news ----
 
-  const newsCache = new Map<CountryId, NewsResponse>();
+  // A cached list lives at most 10 minutes, so a later visit gets fresh news.
+  const NEWS_CACHE_MS = 10 * 60 * 1000;
+  const newsCache = new Map<CountryId, { data: NewsResponse; at: number }>();
   let newsRequest: AbortController | null = null;
 
   async function loadNews(id: CountryId, name: string): Promise<void> {
     newsRequest?.abort();
     const cached = newsCache.get(id);
-    if (cached) {
-      news.show(cached, name);
+    if (cached && Date.now() - cached.at < NEWS_CACHE_MS) {
+      news.show(cached.data, name);
       return;
     }
+    newsCache.delete(id);
     const ctrl = new AbortController();
     newsRequest = ctrl;
     news.showLoading(name);
@@ -150,7 +153,7 @@ async function start(): Promise<void> {
       if (!res.ok) throw new Error(`news ${res.status}`);
       const data = (await res.json()) as NewsResponse;
       // Keep an empty result out of the cache, so a later visit tries again.
-      if (data.articles.length > 0) newsCache.set(id, data);
+      if (data.articles.length > 0) newsCache.set(id, { data, at: Date.now() });
       if (selected === id) news.show(data, name);
     } catch (err) {
       if (ctrl.signal.aborted) return;

@@ -1,6 +1,6 @@
 // Right plate (desktop) / "News" tab (mobile): top stories for one country, numbered 01-05.
 
-import type { NewsProvider, NewsResponse } from '../types';
+import type { NewsArticle, NewsProvider, NewsResponse } from '../types';
 import { h } from './dom';
 import { age, utcTime } from './format';
 import { getLayout, type PanelLayout } from './layout';
@@ -50,12 +50,15 @@ export class NewsPanel {
     const now = Date.now();
     const items = articles.map((a, i) => {
       const when = age(a.publishedAt, now);
+      const lang = a.lang ? a.lang.toLowerCase() : null;
+      const outlets = typeof a.outlets === 'number' && a.outlets >= 3 ? a.outlets : null;
+      const rating = ratingRow(a);
       return h(
         'li',
-        { class: 'story' },
+        { class: rating ? 'story story--rated' : 'story' },
         h(
           'a',
-          { href: a.url, target: '_blank', rel: 'noopener noreferrer' },
+          { class: 'story-link', href: a.url, target: '_blank', rel: 'noopener noreferrer' },
           h('span', { class: 'n mono', 'aria-hidden': 'true' }, pad2(i + 1)),
           h(
             'span',
@@ -64,14 +67,37 @@ export class NewsPanel {
               'span',
               { class: 'meta' },
               h('span', { class: 'src' }, a.source),
-              when && h('span', { class: 't mono' }, when),
+              h(
+                'span',
+                { class: 'meta-r' },
+                lang && h('span', { class: 'lang-tag mono', title: `Title in ${languageName(lang)}`, 'aria-hidden': 'true' }, lang.slice(0, 2).toUpperCase()),
+                lang && h('span', { class: 'sr-only' }, `, in ${languageName(lang)}, `),
+                outlets !== null && h('span', { class: 'outlets mono' }, `${outlets} outlets`),
+                when && h('span', { class: 't mono' }, when),
+              ),
             ),
-            h('span', { class: 'story-title' }, a.title),
+            h('span', { class: 'story-title', lang: lang ?? null }, a.title),
           ),
         ),
+        rating,
       );
     });
-    this.render(countryName, pad2(articles.length), h('ol', { class: 'stories' }, items), this.footer(res));
+    this.render(countryName, pad2(articles.length), h('ol', { class: 'stories' }, items), this.credits(articles), this.footer(res));
+  }
+
+  /** Attribution for the ratings, only for the data that the list shows. */
+  private credits(articles: NewsArticle[]): HTMLElement | null {
+    const lean = articles.some((a) => a.bias?.lean !== null && a.bias?.lean !== undefined);
+    const state = articles.some((a) => a.bias?.state);
+    if (!lean && !state) return null;
+    const link = (href: string, text: string) => h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, text);
+    return h(
+      'p',
+      { class: 'news-credits' },
+      'Ratings are for the publisher, not the story. ',
+      lean && h('span', null, 'Lean: ', link('https://mediabiasfactcheck.com', 'Media Bias/Fact Check'), ' (US scale). '),
+      state && h('span', null, 'State media: ', link('https://statemediamonitor.com', 'State Media Monitor'), ' (MJRC, CC BY 4.0).'),
+    );
   }
 
   showError(countryName: string, retry: () => void): void {
@@ -100,10 +126,70 @@ export class NewsPanel {
     );
   }
 
-  private render(countryName: string, count: string, content: HTMLElement, foot: HTMLElement | null): void {
+  private render(countryName: string, count: string, content: HTMLElement, ...foot: (HTMLElement | null)[]): void {
     this.country.textContent = `, ${countryName}`;
     this.count.textContent = count;
-    this.content.replaceChildren(content, foot ?? '');
+    this.content.replaceChildren(content, ...foot.filter((x): x is HTMLElement => x !== null));
     this.layout.setOpen('news', true);
+  }
+}
+
+const LEAN_STEPS = [-2, -1, 0, 1, 2] as const;
+
+/**
+ * The row under a headline: the publisher lean on a 5-step scale with "MBFC" as a link to the
+ * rating page, and the State Media Monitor tag. Null for an outlet with no data.
+ */
+function ratingRow(a: NewsArticle): HTMLElement | null {
+  const b = a.bias;
+  if (!b) return null;
+  const hasLean = b.lean !== null && b.leanLabel !== null;
+  if (!hasLean && !b.stateLabel) return null;
+  const lean =
+    hasLean &&
+    h(
+      'span',
+      { class: 'lean', role: 'img', 'aria-label': `Publisher lean: ${b.leanLabel!.toLowerCase()}, rated by MBFC` },
+      h(
+        'span',
+        { class: 'lean-scale', 'aria-hidden': 'true' },
+        LEAN_STEPS.map((step) => h('span', { class: step === b.lean ? 'lean-cell lean-cell--on' : 'lean-cell' })),
+      ),
+      h('span', { class: 'lean-label', 'aria-hidden': 'true' }, b.leanLabel!),
+    );
+  const rater =
+    hasLean &&
+    b.ref &&
+    h('a', { class: 'lean-rater mono', href: b.ref, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `MBFC rating of ${a.source}` }, 'MBFC');
+  const stateText: Record<string, string> = {
+    'state-controlled': 'State-controlled media',
+    captured: 'Captured media',
+    public: 'Public service media',
+  };
+  const tag =
+    b.stateLabel &&
+    h(
+      'span',
+      { class: 'state-tag mono', title: `${stateText[b.state ?? ''] ?? b.stateLabel}, per State Media Monitor` },
+      h('span', { 'aria-hidden': 'true' }, b.stateLabel),
+      h('span', { class: 'sr-only' }, `${stateText[b.state ?? ''] ?? b.stateLabel}, per State Media Monitor`),
+    );
+  return h('div', { class: 'story-rating' }, lean, rater, tag);
+}
+
+const languageNames = (() => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' });
+  } catch {
+    return null;
+  }
+})();
+
+/** "de" -> "German". Falls back to the code. */
+function languageName(code: string): string {
+  try {
+    return languageNames?.of(code) ?? code;
+  } catch {
+    return code;
   }
 }
