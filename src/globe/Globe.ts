@@ -744,7 +744,20 @@ export class Globe {
 
   /** Current raise of the selected country in earth radii (0..Globe.RAISE), for project(). */
   selectedLift(): number {
-    const i = this.slots.findIndex((s) => s.index === this.selectedIndex && s.index >= 0);
+    return this.liftAt(this.selectedIndex);
+  }
+
+  /**
+   * Current raise of any country in earth radii (0..Globe.RAISE), for project(). A hovered, previewed or
+   * selected country rises, and a country that rose falls back. 0 for a country with no raise.
+   */
+  liftOf(id: CountryId): number {
+    return this.liftAt(this.indexOf(id));
+  }
+
+  private liftAt(index: number): number {
+    if (index < 0) return 0;
+    const i = this.slots.findIndex((s) => s.index === index);
     return i < 0 ? 0 : this.slotUniforms.uSlotAmount.value[i] * LIFT;
   }
 
