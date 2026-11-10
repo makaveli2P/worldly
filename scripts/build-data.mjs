@@ -153,6 +153,9 @@ const GOVERNMENT_OVERRIDES = {
   SLB: { headOfGovernment: 'Jeremiah Manele', headOfGovernmentTitle: 'Prime Minister' },
   MUS: { headOfGovernment: 'Navin Ramgoolam', headOfGovernmentTitle: 'Prime Minister' },
   COD: { headOfGovernment: 'Judith Suminwa', headOfGovernmentTitle: 'Prime Minister' },
+  // The Wikidata item of the current holder (Q98053664, since 2020-08-02) has the label "Hugo Chávez".
+  // Mark Phillips is the Prime Minister, sworn in again on 2025-09-08 (Wikipedia, checked 2026-11-10).
+  GUY: { headOfGovernment: 'Mark Phillips', headOfGovernmentTitle: 'Prime Minister' },
 };
 
 // Government type for UN members where Wikidata P122 gives nothing.
