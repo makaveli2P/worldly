@@ -512,6 +512,15 @@ a {
   animation-duration: 1600ms;
 }
 
+/* After a user action the dots are still. A hover on the chip still blinks it 3 times. */
+:root[data-alerts-calm] .brk-dot {
+  animation: none;
+}
+
+:root[data-alerts-calm] .brk[data-pulse] .brk-dot {
+  animation: brk-dot 1600ms ease-in-out 3;
+}
+
 @keyframes brk-dot {
   0%,
   100% {
