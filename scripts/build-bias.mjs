@@ -14,13 +14,16 @@
 //   --smm            Also rebuild state-media.json from the Zenodo CSV.
 //   --smm-csv <file> Use a local copy of the CSV (implies --smm).
 //   --force          Fetch MBFC even when the table is younger than 25 days.
+//   --rebuild        Build the MBFC table again from the last RapidAPI response in the cache. No request.
 //   --input <file>   Build the MBFC table from a local JSON file in the RapidAPI shape. For tests.
 //   --quiet          Print only warnings and the result of a fetch.
 //
 // The script is safe with no key: it does nothing and exits 0. It never prints the key.
 // When a fetch fails, it keeps the old table and exits 0.
 // On Vercel it fetches only for a production build, and it keeps the last good table in
-// node_modules/.cache/worldly, which Vercel keeps between builds.
+// node_modules/.cache/worldly, which Vercel keeps between builds. The raw response goes there too
+// (mbfc-raw.json, never in git), so that --rebuild can apply new rules without a request, and the
+// set of "Bias" values goes to mbfc-values.json, so that a person can check the lean mapping.
 
 import { copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -34,6 +37,8 @@ const SMM_MAP = join(ROOT, 'scripts/bias-smm-domains.json');
 const CACHE_DIR = join(ROOT, 'node_modules/.cache/worldly');
 const CACHE_MBFC = join(CACHE_DIR, 'mbfc.json');
 const CACHE_META = join(CACHE_DIR, 'mbfc-meta.json');
+const CACHE_RAW = join(CACHE_DIR, 'mbfc-raw.json');
+const CACHE_VALUES = join(CACHE_DIR, 'mbfc-values.json');
 
 const RAPID_HOST = 'media-bias-fact-check-ratings-api2.p.rapidapi.com';
 const RAPID_URL = `https://${RAPID_HOST}/fetch-data`;
@@ -189,17 +194,46 @@ const field = (r, ...names) => {
   return undefined;
 };
 
+/** "the-straits-times-bias-and-credibility" -> "straitstimes". Lowercase letters and digits only. */
+const compact = (s) =>
+  fold(s)
+    .replace(/-?(?:bias(?:-and-credibility|-rating)?|media-bias)$/, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .replace(/^the(?=.{3})/, '');
+
+/** The first label of the registrable domain: "news.straitstimes.com" -> "straitstimes". */
+export function hostLabel(host) {
+  const parts = host.split('.');
+  const two = parts.slice(-2).join('.');
+  const twoLevel = /^(?:co|com|org|net|ac|gov|or|ne|go)\.[a-z]{2}$/.test(two);
+  return parts[parts.length - (twoLevel ? 3 : 2)] ?? host;
+}
+
+/** How well a record fits its host: 2 = slug or name is the host label, 1 = starts with it, 0 = neither. */
+export function hostFit(host, rec) {
+  const label = compact(hostLabel(host));
+  const names = [compact(rec.slug), compact(rec.name)].filter(Boolean);
+  if (names.some((n) => n === label)) return 2;
+  if (label.length >= 4 && names.some((n) => n.startsWith(label))) return 1;
+  return 0;
+}
+
 /**
  * Builds the compact MBFC table from API records.
  * - Hosts on the deny list (aggregators, platforms) are dropped.
  * - A record whose Source URL has a path ("cbsnews.com/atlanta") is dropped, unless the host has no
  *   bare record and all its path records agree on the lean.
+ * - When 2 or more bare records share a host (sister stations, renamed papers), the record whose slug or
+ *   name fits the host label wins. With no single best fit, the host is dropped: a wrong outlet's
+ *   rating is worse than none.
  * - bias-rules.json "pathRecords" maps a host to one path record ("www3.nhk.or.jp" -> NHK World).
- * Returns {table, stats, unknown}.
+ * Returns {table, stats, unknown, values, warnings}. `values` counts each raw "Bias" value.
  */
 export function buildMbfcTable(records, rules, now = new Date()) {
   const deny = new Set(rules.deny ?? []);
   const unknown = new Map();
+  const values = new Map();
+  const warnings = [];
   const byHost = new Map();
   const byFull = new Map();
   let skipped = 0;
@@ -207,14 +241,15 @@ export function buildMbfcTable(records, rules, now = new Date()) {
     const parts = splitSourceUrl(field(r, 'Source URL', 'source_url', 'Source Url', 'url', 'domain'));
     const name = String(field(r, 'Source', 'source', 'name') ?? '').trim().slice(0, 120);
     const biasValue = field(r, 'Bias', 'bias');
+    const valueKey = String(biasValue ?? '(empty)').slice(0, 60);
+    values.set(valueKey, (values.get(valueKey) ?? 0) + 1);
     if (!parts || !name) {
       skipped += 1;
       continue;
     }
     let lean = mapLean(biasValue);
     if (lean === undefined) {
-      const k = String(biasValue ?? '(empty)').slice(0, 60);
-      unknown.set(k, (unknown.get(k) ?? 0) + 1);
+      unknown.set(valueKey, (unknown.get(valueKey) ?? 0) + 1);
       lean = null;
     }
     const rec = { name, lean, slug: mbfcSlug(field(r, 'MBFC URL', 'mbfc_url', 'MBFC Url', 'mbfc url')), path: parts.path };
@@ -226,12 +261,29 @@ export function buildMbfcTable(records, rules, now = new Date()) {
 
   const hosts = {};
   let droppedPath = 0;
+  let droppedClash = 0;
   for (const [host, recs] of byHost) {
     const bare = recs.filter((x) => x.path === '');
     let pick = null;
-    if (bare.length > 0) {
+    if (bare.length === 1) {
       pick = bare[0];
+      droppedPath += recs.length - 1;
+      // "New Straits Times" on straitstimes.com: the name holds the host label with an extra word. A person checks it.
+      const label = compact(hostLabel(host));
+      const n = compact(pick.name);
+      if (label.length >= 4 && n !== label && n.endsWith(label) && hostFit(host, pick) < 2) {
+        warnings.push(`${host}: the record "${pick.name}" may be another outlet`);
+      }
+    } else if (bare.length > 1) {
       droppedPath += recs.length - bare.length;
+      const fits = bare.map((x) => hostFit(host, x));
+      const best = Math.max(...fits);
+      const top = bare.filter((_, i) => fits[i] === best);
+      if (best > 0 && top.length === 1) pick = top[0];
+      else {
+        droppedClash += 1;
+        warnings.push(`${host}: ${bare.length} records (${bare.map((x) => `"${x.name}"`).join(', ')}), none fits the host; dropped`);
+      }
     } else if (recs.every((x) => x.lean === recs[0].lean)) {
       pick = recs[0];
     } else {
@@ -247,8 +299,10 @@ export function buildMbfcTable(records, rules, now = new Date()) {
   const withLean = Object.values(sorted).filter((t) => t[1] !== null).length;
   return {
     table: { v: 1, generatedAt: now.toISOString(), hosts: sorted },
-    stats: { records: records.length, hosts: Object.keys(sorted).length, withLean, droppedPath, skipped },
+    stats: { records: records.length, hosts: Object.keys(sorted).length, withLean, droppedPath, droppedClash, skipped },
     unknown,
+    values,
+    warnings,
   };
 }
 
@@ -364,6 +418,7 @@ async function saveMbfc(table, cache) {
   }
 }
 
+/** Fetches the records. Returns the parsed body and the record list. */
 async function fetchMbfc(key) {
   const res = await fetch(RAPID_URL, {
     headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': RAPID_HOST, 'user-agent': USER_AGENT, accept: 'application/json' },
@@ -373,7 +428,10 @@ async function fetchMbfc(key) {
     await res.body?.cancel().catch(() => {});
     throw new Error(`http ${res.status}`);
   }
-  const data = await res.json();
+  return recordsOf(await res.json());
+}
+
+function recordsOf(data) {
   const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.results) ? data.results : null;
   if (!list) throw new Error('unexpected response shape');
   return list;
@@ -381,12 +439,21 @@ async function fetchMbfc(key) {
 
 async function buildMbfc(records, source) {
   const rules = JSON.parse(await readFile(RULES, 'utf8'));
-  const { table, stats, unknown } = buildMbfcTable(records, rules);
+  const { table, stats, unknown, values, warnings } = buildMbfcTable(records, rules);
   for (const [value, n] of unknown) warn(`MBFC: unknown bias value "${value}" (${n} records): no lean`);
+  // The full set of raw values, so that a person can check the lean mapping against the live data.
+  log(`MBFC: bias values: ${[...values].sort((a, b) => b[1] - a[1]).map(([v, n]) => `${v}=${n}`).join(', ')}`);
+  for (const w of warnings.slice(0, QUIET ? 0 : 50)) log(`MBFC: check ${w}`);
+  if (warnings.length > 0) warn(`MBFC: ${warnings.length} host warnings (run "npm run bias -- --rebuild" without --quiet to list them)`);
   if (stats.hosts < MIN_RECORDS) throw new Error(`only ${stats.hosts} hosts`);
   await saveMbfc(table, source === 'RapidAPI');
+  try {
+    await writeAtomic(CACHE_VALUES, `${JSON.stringify({ at: new Date().toISOString(), source, values: Object.fromEntries(values), warnings }, null, 1)}\n`);
+  } catch {
+    // No cache folder. The log above has the values.
+  }
   console.log(
-    `[bias] MBFC (${source}): ${stats.records} records -> ${stats.hosts} hosts, ${stats.withLean} with a lean, ${stats.droppedPath} path records dropped`,
+    `[bias] MBFC (${source}): ${stats.records} records -> ${stats.hosts} hosts, ${stats.withLean} with a lean, ${stats.droppedPath} path records and ${stats.droppedClash} host clashes dropped`,
   );
 }
 
@@ -402,6 +469,15 @@ async function mbfc() {
   if (input) {
     const data = JSON.parse(await readFile(input, 'utf8'));
     await buildMbfc(Array.isArray(data) ? data : data.data ?? [], 'local file');
+    return;
+  }
+  if (flag('rebuild')) {
+    const raw = await readJson(CACHE_RAW);
+    if (!raw) {
+      warn('MBFC: no cached RapidAPI response (node_modules/.cache/worldly/mbfc-raw.json). Kept the table.');
+      return;
+    }
+    await buildMbfc(recordsOf(raw), 'RapidAPI');
     return;
   }
 
@@ -432,7 +508,14 @@ async function mbfc() {
   }
   console.log('[bias] MBFC: fetch from RapidAPI (this can take 20 s)');
   try {
-    await buildMbfc(await fetchMbfc(key), 'RapidAPI');
+    const records = await fetchMbfc(key);
+    try {
+      // The raw response stays in the build cache (git-ignored) for --rebuild. Never in the repo.
+      await writeAtomic(CACHE_RAW, JSON.stringify(records));
+    } catch {
+      // No cache folder. The table is still built.
+    }
+    await buildMbfc(records, 'RapidAPI');
   } catch (err) {
     // Never print the key or the response body.
     const reason = err instanceof Error ? err.message : 'error';

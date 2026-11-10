@@ -30,6 +30,8 @@ export interface StateTable {
 
 export interface BiasRules {
   deny: string[];
+  /** Hosts whose MBFC record names another outlet. They get no lean; a state tag still applies. */
+  wrongRecords?: string[];
   aliases: Record<string, string>;
   stopParents: string[];
   names: Record<string, string>;
@@ -62,11 +64,13 @@ export function asMbfcTable(value: unknown): MbfcTable | null {
  * Makes a lookup function from the tables. Pure, so tests can pass synthetic tables.
  * Order: the exact host, then each parent down to the registrable domain, each with its alias.
  * A host under a "stop parent" (indiatimes.com) never falls back to that parent.
- * A host on the deny list (news.google.com, msn.com, ...) gets no rating.
+ * A host on the deny list (news.google.com, msn.com, ...), or under one, gets no rating.
+ * A host on the wrongRecords list gets no MBFC lean (its record names another outlet).
  * A publisher name is used only when the domain is null, and only through a short hand allowlist.
  */
 export function createBiasLookup(mbfc: MbfcTable | null, state: StateTable, r: BiasRules) {
   const deny = new Set(r.deny);
+  const wrong = new Set(r.wrongRecords ?? []);
   const stopParents = new Set(r.stopParents);
 
   function chain(host: string): string[] {
@@ -88,12 +92,15 @@ export function createBiasLookup(mbfc: MbfcTable | null, state: StateTable, r: B
     }
     if (!host || deny.has(host)) return null;
     const hosts = chain(host);
+    // A subdomain of a platform ("someone.medium.com") is the platform too.
+    if (hosts.some((h) => deny.has(h))) return null;
 
     let lean: ArticleBias['lean'] = null;
     let ref: string | null = null;
     if (mbfc) {
       // The first record found decides, even when it has no lean (Questionable, Satire, ...).
       for (const h of hosts) {
+        if (wrong.has(h)) break;
         const rec = Object.hasOwn(mbfc.hosts, h) ? mbfc.hosts[h] : undefined;
         if (!rec) continue;
         const [, value, slug] = rec;

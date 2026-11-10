@@ -18,7 +18,12 @@ const mbfc: MbfcTable = {
     'bbc.com': ['BBC (test)', 0, 'test-bbc'],
     'indiatimes.com': ['India Times (test)', 1, 'test-india-times'],
     'investing.com': ['Investing (test)', 0, 'test-investing'],
-    'news.yahoo.com': ['Yahoo (test)', -1, 'test-yahoo'],
+    'yahoo.com': ['Yahoo (test)', -1, 'test-yahoo'],
+    // Records that the builder drops. Here they test the runtime deny list.
+    'news.google.com': ['Google News (test)', 0, 'test-google-news'],
+    'medium.com': ['Medium (test)', 0, 'test-medium'],
+    // A host clash: the record names another outlet (bias-rules.json wrongRecords).
+    'straitstimes.com': ['Other Straits paper (test)', 0, 'test-other-straits'],
   },
 };
 
@@ -56,9 +61,24 @@ describe('lookupBias: fixed cases from the review', () => {
     expect(lookup('nationalheraldindia.com', 'National Herald')).toBeNull();
   });
 
-  it('news.google.com -> no rating', () => {
+  it('news.google.com -> no rating, even with a record in the table', () => {
     expect(lookup('news.google.com', 'Google News')).toBeNull();
     expect(lookup('https://news.google.com/rss/articles/abc')).toBeNull();
+  });
+
+  it('a subdomain of a denied platform -> no rating', () => {
+    expect(lookup('medium.com')).toBeNull();
+    expect(lookup('x.medium.com')).toBeNull();
+  });
+
+  it('a host on wrongRecords -> no MBFC lean (straitstimes.com)', () => {
+    expect(lookup('straitstimes.com')).toBeNull();
+  });
+
+  it('Yahoo News: news.yahoo.com and its editions take the yahoo.com record; finance.yahoo.com does not', () => {
+    expect(lookup('news.yahoo.com')?.lean).toBe(-1);
+    expect(lookup('uk.news.yahoo.com')?.lean).toBe(-1);
+    expect(lookup('finance.yahoo.com')).toBeNull();
   });
 
   it('tass.com -> STATE-CONTROLLED, with no MBFC lean', () => {

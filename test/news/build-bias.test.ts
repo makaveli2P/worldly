@@ -9,7 +9,13 @@ interface Builder {
   buildMbfcTable(
     records: Record<string, unknown>[],
     rules: unknown,
-  ): { table: { v: 1; hosts: Record<string, [string, number | null, string]> }; stats: Record<string, number>; unknown: Map<string, number> };
+  ): {
+    table: { v: 1; hosts: Record<string, [string, number | null, string]> };
+    stats: Record<string, number>;
+    unknown: Map<string, number>;
+    values: Map<string, number>;
+    warnings: string[];
+  };
   parseCsv(text: string): Record<string, string>[];
   buildStateTable(rows: Record<string, string>[], map: Record<string, string[]>): { table: { hosts: Record<string, string[]> }; warnings: string[] };
 }
@@ -93,9 +99,44 @@ describe('buildMbfcTable', () => {
     expect(stats.skipped).toBe(1);
   });
 
+  it('counts every raw bias value', () => {
+    const { values } = b.buildMbfcTable(records, rules);
+    expect(values.get('Left')).toBe(4);
+    expect(values.get('Sideways')).toBe(1);
+  });
+
   it('stores only the slug of an MBFC page', () => {
     expect(b.mbfcSlug('https://mediabiasfactcheck.com/the-guardian/')).toBe('the-guardian');
     expect(b.mbfcSlug('https://example.com/the-guardian/')).toBe('');
+  });
+});
+
+describe('buildMbfcTable: two bare records on one host', () => {
+  it('takes the record that fits the host label, not the first one', () => {
+    const { table } = b.buildMbfcTable(
+      [
+        rec('New Straits Paper', 'straitspaper.com', 'Least Biased', 'new-straits-paper'),
+        rec('The Straits Paper', 'https://www.straitspaper.com', 'Right-Center', 'the-straits-paper'),
+      ],
+      rules,
+    );
+    expect(table.hosts['straitspaper.com']).toEqual(['The Straits Paper', 1, 'the-straits-paper']);
+  });
+
+  it('drops the host with a warning when no record fits', () => {
+    const { table, warnings, stats } = b.buildMbfcTable(
+      [rec('WAAA - Town News', 'townhomepage.com', 'Left-Center', 'waaa'), rec('WBBB - Town News', 'townhomepage.com', 'Center', 'wbbb')],
+      rules,
+    );
+    expect(table.hosts['townhomepage.com']).toBeUndefined();
+    expect(stats.droppedClash).toBe(1);
+    expect(warnings[0]).toContain('townhomepage.com');
+  });
+
+  it('warns when a single record has an extra word before the host label', () => {
+    const { table, warnings } = b.buildMbfcTable([rec('New Foo Paper', 'foopaper.com', 'Least Biased', 'new-foo-paper')], rules);
+    expect(table.hosts['foopaper.com']).toBeDefined();
+    expect(warnings.some((w) => w.includes('foopaper.com'))).toBe(true);
   });
 });
 
