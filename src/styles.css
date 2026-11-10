@@ -1227,7 +1227,7 @@ a {
     height: 12px;
     border: 1px solid currentColor;
     border-radius: 50%;
-    font: 500 8px/1 var(--mono);
+    font: 600 8px/1 var(--sans); /* a mono face here would load one more font file on mobile */
   }
 
   .credit-text {
