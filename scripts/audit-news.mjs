@@ -58,7 +58,13 @@ const SOFT = /\b(?:celebrity|actress|actor|singer|star's|kardashian|horoscope|re
 
 const fold = (s) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
 const CJK = /[぀-ヿ㐀-鿿가-힯]/;
-const STOP = new Set('a an and are as at be by for from has have in into is it its of on or over says said than that the their this to was were will with after amid new up out about'.split(' '));
+// English function words, and those of the native editions (es, pt, fr, de, it, id), so that two native
+// titles do not count as one story because both say "de", "el" and "la".
+const STOP = new Set(
+  ('a an and are as at be by for from has have in into is it its of on or over says said than that the their this to was were will with after amid new up out about ' +
+    'de del el la las los lo y en por con para una un que se su sus al le les des du et pour sur au aux dans est o os da do das dos em no na nas nos com uma um ao ' +
+    'der die das und den dem des ein eine im zu von mit auf ist il di che per yang dan di ke dari untuk dengan').split(' '),
+);
 function tokens(title) {
   const t = fold(title);
   if (CJK.test(t)) {
