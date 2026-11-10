@@ -15,7 +15,7 @@ export interface FeedSource {
 
 const GN_EDITIONS = ['US', 'GB', 'IN', 'AU', 'CA', 'ZA', 'SG'];
 
-/** 15 outlet front pages and 8 Google News editions (tested 2026-11-10). */
+/** 16 outlet front pages (12 outlets) and 8 Google News editions (tested 2026-11-10). */
 export const FEEDS: FeedSource[] = [
   { id: 'bbc_top', kind: 'front', publisher: 'BBC News', edition: null, url: 'https://feeds.bbci.co.uk/news/rss.xml' },
   { id: 'bbc_world', kind: 'front', publisher: 'BBC News', edition: null, url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
@@ -32,6 +32,8 @@ export const FEEDS: FeedSource[] = [
   { id: 'cbc_world', kind: 'front', publisher: 'CBC News', edition: null, url: 'https://www.cbc.ca/webfeed/rss/rss-world' },
   { id: 'toi_world', kind: 'front', publisher: 'The Times of India', edition: null, url: 'https://timesofindia.indiatimes.com/rssfeeds/296589292.cms' },
   { id: 'nyt_world', kind: 'front', publisher: 'The New York Times', edition: null, url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml' },
+  // euronews.com/rss answers 406 to a server; the FeedBurner copy works (tested 2026-11-10).
+  { id: 'euronews', kind: 'front', publisher: 'Euronews', edition: null, url: 'https://feeds.feedburner.com/euronews/en/home/' },
   { id: 'gn_world', kind: 'gn', publisher: null, edition: 'WORLD', url: 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en' },
   ...GN_EDITIONS.map((cc): FeedSource => ({
     id: `gn_top_${cc.toLowerCase()}`,

@@ -36,7 +36,7 @@ describe('GET /api/breaking', () => {
     expect(r.status).toBe(200);
     expect(r.cache).toBe('public, s-maxage=300, stale-while-revalidate=900, stale-if-error=3600');
     expect(r.body.alerts).toEqual([]);
-    expect(r.body.sources).toEqual({ ok: 25, total: 26 }); // the empty ITN answer counts as failed
+    expect(r.body.sources).toEqual({ ok: 26, total: 27 }); // the empty ITN answer counts as failed
     expect(r.body.generatedAt).toBe(new Date(NOW).toISOString());
   });
 
@@ -64,7 +64,7 @@ describe('GET /api/breaking', () => {
     const r = await get();
     expect(r.status).toBe(200);
     expect(r.cache).toBe('public, s-maxage=60');
-    expect(r.body.sources).toEqual({ ok: 2, total: 26 });
+    expect(r.body.sources).toEqual({ ok: 2, total: 27 });
     expect(r.body.alerts).toEqual([]);
   });
 
@@ -74,6 +74,6 @@ describe('GET /api/breaking', () => {
     const { GET } = await import('../../api/breaking.js');
     await Promise.all([GET(), GET()]);
     await GET();
-    expect(fetchMock).toHaveBeenCalledTimes(26);
+    expect(fetchMock).toHaveBeenCalledTimes(27);
   });
 });
