@@ -69,6 +69,19 @@ describe('classify: head of state', () => {
     expect(tier('Pope Francis dies aged 88')).toBe(3);
     expect(tier('Putin says Ukraine strike killed 12')).toBeLessThan(3);
     expect(tier('Trump says Israel, Gulf allies must repay Iran war cost')).toBe(0);
+    expect(tier('Peña resigns after bank collapse')).toBe(3);
+    expect(tier('President Trump shot at rally in Pennsylvania')).toBe(3);
+  });
+
+  it('rejects an active verb with an object', () => {
+    expect(tier('Trump quits Paris climate deal')).toBe(0);
+    expect(tier('US President Trump quits Paris climate deal')).toBe(0);
+    expect(tier('Trump shot down claims of a rift')).toBe(0);
+    expect(tier('Salvadoran President Bukele arrested gang leaders, police say')).toBe(0);
+    expect(tier('Putin ousted defence minister in reshuffle')).toBe(0);
+    expect(tier('Paraguay president quits party over bank bill')).toBe(0);
+    expect(tier('Paraguay president ousted by Congress')).toBe(3);
+    expect(tier('Peru president arrested, prosecutors say')).toBe(3);
   });
 });
 

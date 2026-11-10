@@ -80,8 +80,19 @@ const NOT_HEAD = /\b(?:former|ex|late|then|deputy|vice|university|college|school
 const ROLE_VERB = /\b(?:dies|died|has died|is dead|dead|killed|assassinated|shot dead|shot|resigns|resigned|quits|steps down|stepped down|ousted|impeached|arrested|detained|removed from office|flees|fled|toppled|deposed|overthrown|captured)\b/i;
 // A speaker verb between the title and the event verb: "president says 12 killed".
 const SPEAKER = /\b(?:says?|said|tells?|told|warns?|claims?|announces?|confirms?|calls?|urges?|vows?|denies|orders?|meets?|visits?|condemns?|accuses?|blames?|mourns?|pays|praises?|hails?|names?|appoints?|reacts?|responds?)\b|[:;]/i;
-const LEADER_EVENT = /^\s*(?:,[^,]{1,40},\s*)?(?:has\s+|is\s+|was\s+)?(?:dies|died|dead|killed|assassinated|shot dead|shot)\b/i;
+// A current leader named by the alias table, then a death or removal verb: "Putin dies", "Peña resigns".
+const LEADER_EVENT = /^\s*(?:,[^,]{1,40},\s*)?(?:has\s+|is\s+|was\s+|has been\s+)?(dies|died|dead|killed|assassinated|shot dead|shot|resigns|resigned|quits|steps down|ousted|impeached|arrested|deposed|toppled|overthrown)\b/i;
 const LEADER_EVENT_BEFORE = /\b(?:assassination of|death of|killing of)\s+(?:\p{L}+\s+){0,2}$/iu;
+// Verbs that can also be active with an object: "Trump toppled statue", "Trump quits Paris deal",
+// "President Bukele arrested gang leaders", "Trump shot down claims".
+const TRANSITIVE = /^(?:killed|shot|resigns|resigned|quits|steps down|stepped down|ousted|arrested|detained|captured|toppled|deposed|overthrown)$/i;
+// After such a verb, the event reading needs the end of the title, a punctuation mark, or one of these words.
+const EVENT_TAIL = /^(?:\s*$|\s*[,.;:!?|()"'‘’“”—–-]|\s+(?:after|amid|as|at|in|by|following|over|from (?:office|power|post)|under|while|during|on|near|outside|inside|with|alongside|and|aged|hours|days|minutes|today|tonight|yesterday|reports?|says?|said)\b)/i;
+
+/** True when the role verb, followed by `tail`, reads as an event and not as an active verb with an object. */
+function eventReading(verb: string, tail: string): boolean {
+  return !TRANSITIVE.test(verb) || EVENT_TAIL.test(tail);
+}
 
 /** Tier 3 politics: a current head of state or government is killed, dies or is removed. */
 function headOfStateEvent(title: string, matches: CountryMatch[]): boolean {
@@ -112,12 +123,13 @@ function headOfStateEvent(title: string, matches: CountryMatch[]): boolean {
     const v = ROLE_VERB.exec(rest);
     if (!v) continue;
     if (SPEAKER.test(rest.slice(0, v.index))) continue;
+    if (!eventReading(v[0], title.slice(subjectEnd + v.index + v[0].length))) continue;
     return true;
   }
   return false;
 }
 
-/** Tier 3 politics: "Putin dies", "Netanyahu assassinated", "Pope Francis dies". */
+/** Tier 3 politics: "Putin dies", "Netanyahu assassinated", "Pope Francis dies", "Peña resigns". */
 function leaderDeath(title: string, matches: CountryMatch[]): boolean {
   for (const m of matches) {
     if (m.kind !== 'leader' && m.kind !== 'surname') continue;
@@ -126,7 +138,9 @@ function leaderDeath(title: string, matches: CountryMatch[]): boolean {
     let rest = title.slice(m.end);
     // "Pope Francis dies": a name can follow the title word.
     if (m.text === 'Pope') rest = rest.replace(/^\s+\p{Lu}\p{Ll}+(?:\s+[IVXL]+)?(?=\s|,)/u, '');
-    if (LEADER_EVENT.test(rest) || LEADER_EVENT_BEFORE.test(title.slice(0, m.index))) return true;
+    const e = LEADER_EVENT.exec(rest);
+    if (e && eventReading(e[1], rest.slice(e[0].length))) return true;
+    if (LEADER_EVENT_BEFORE.test(title.slice(0, m.index))) return true;
   }
   return false;
 }
