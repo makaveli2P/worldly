@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "data": "node scripts/build-data.mjs",
+    "texture": "node scripts/build-texture.mjs",
     "test": "vitest run"
   },
   "dependencies": {

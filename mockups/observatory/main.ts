@@ -26,6 +26,7 @@ import { feature } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { buildGlobeGeometry } from '../../src/globe/geometry';
+import { TEXTURES } from '../../src/globe/textureManifest';
 import * as fmt from '../../src/ui/format';
 import type { CountryFeature, CountryInfo } from '../../src/types';
 
@@ -354,7 +355,7 @@ async function start() {
     return g;
   };
 
-  const tex = style === 'satellite' ? await loadTexture('/textures/earth-4k.jpg') : null;
+  const tex = style === 'satellite' ? await loadTexture(TEXTURES.m.url) : null;
   if (tex) {
     tex.colorSpace = NoColorSpace;
     tex.minFilter = LinearMipmapLinearFilter;

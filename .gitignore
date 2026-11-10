@@ -6,3 +6,4 @@ dist
 _shots
 .env*
 !.env.example
+.cache/
