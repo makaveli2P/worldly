@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mockBreaking } from '../../src/dev/breaking-mock';
 import {
+  MAX_AGE_MS,
   MAX_ALERTS,
   POLL_BACKOFF_MS,
   POLL_MS,
@@ -11,6 +12,7 @@ import {
   nextPollDelay,
   parseAlert,
   parseBreakingResponse,
+  sameView,
   sortAlerts,
   stripBadge,
   visibleAlerts,
@@ -104,13 +106,32 @@ describe('order and filters', () => {
       ],
       new Set(['d']),
       resolve,
+      NOW,
     );
     expect(list.map((a) => [a.key, a.country])).toEqual([['b', 'JPN']]);
   });
 
   it('shows at most MAX_ALERTS', () => {
     const list = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((c) => alert({ key: c, country: c }));
-    expect(visibleAlerts(list, new Set(), (id) => id)).toHaveLength(MAX_ALERTS);
+    expect(visibleAlerts(list, new Set(), (id) => id, NOW)).toHaveLength(MAX_ALERTS);
+  });
+
+  it('drops an alert with no evidence in the last 24 hours', () => {
+    const list = [
+      alert({ key: 'fresh', country: 'JPN', since: iso(60 * 30), updatedAt: iso(60 * 23) }),
+      alert({ key: 'stale', country: 'FRA', since: iso(60 * 30), updatedAt: iso(MAX_AGE_MS / 60_000 + 1) }),
+    ];
+    expect(visibleAlerts(list, new Set(), resolve, NOW).map((a) => a.key)).toEqual(['fresh']);
+  });
+
+  it('compares what the chip shows, but not the age', () => {
+    const a = [alert({ key: 'a', country: 'JPN' }), alert({ key: 'b', country: 'FRA' })];
+    expect(sameView(a, a.map((x) => ({ ...x, updatedAt: iso(0), outlets: 9 })))).toBe(true);
+    expect(sameView(a, [a[1], a[0]])).toBe(false);
+    expect(sameView(a, a.slice(0, 1))).toBe(false);
+    expect(sameView(a, [{ ...a[0], headline: 'New headline' }, a[1]])).toBe(false);
+    expect(sameView(a, [{ ...a[0], level: 'critical' }, a[1]])).toBe(false);
+    expect(sameView(a, [a[0], { ...a[1], url: 'https://example.com/b' }])).toBe(false);
   });
 
   it('finds the keys that are new', () => {
@@ -167,6 +188,11 @@ describe('nextPollDelay', () => {
 
   it('backs off to 15 minutes after 3 failures in a row', () => {
     expect(nextPollDelay(3, 0.5)).toBe(POLL_BACKOFF_MS);
+  });
+
+  it('polls every 15 minutes while the page is hidden', () => {
+    expect(nextPollDelay(0, 0.5, true)).toBe(POLL_BACKOFF_MS);
+    expect(nextPollDelay(0, 0.5, false)).toBe(POLL_MS);
   });
 });
 

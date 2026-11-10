@@ -12,6 +12,8 @@ export const POLL_BACKOFF_MS = 15 * 60_000;
 export const BACKOFF_AFTER = 3;
 /** On a return to the tab, the feed polls at once when the last poll is older than this. */
 export const REFRESH_ON_SHOW_MS = 60_000;
+/** The UI drops an alert when its newest evidence is older than this, also when the server still sends it. */
+export const MAX_AGE_MS = 24 * 60 * 60_000;
 
 export const DISMISSED_KEY = 'worldly:breaking-dismissed';
 export const ANNOUNCED_KEY = 'worldly:breaking-announced';
@@ -69,17 +71,19 @@ export function sortAlerts(alerts: readonly BreakingAlert[]): BreakingAlert[] {
 
 /**
  * The alerts the UI shows: known countries only (ids go through `resolve`), no dismissed keys,
- * one alert per country (the most severe), sorted, at most MAX_ALERTS.
+ * no evidence older than MAX_AGE_MS, one alert per country (the most severe), sorted, at most MAX_ALERTS.
  */
 export function visibleAlerts(
   alerts: readonly BreakingAlert[],
   dismissed: ReadonlySet<string>,
   resolve: (id: string) => CountryId | null,
+  now = Date.now(),
 ): BreakingAlert[] {
   const out: BreakingAlert[] = [];
   const seen = new Set<CountryId>();
   for (const a of sortAlerts(alerts)) {
     if (dismissed.has(a.key)) continue;
+    if (now - Date.parse(a.updatedAt) > MAX_AGE_MS) continue;
     const id = resolve(a.country);
     if (!id || seen.has(id)) continue;
     seen.add(id);
@@ -87,6 +91,28 @@ export function visibleAlerts(
     if (out.length >= MAX_ALERTS) break;
   }
   return out;
+}
+
+/**
+ * True when two lists show the same thing in the chip: the same alerts in the same order, with the
+ * same level, country, headline and link. The age is not compared: the age tick updates it in place.
+ */
+export function sameView(a: readonly BreakingAlert[], b: readonly BreakingAlert[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((x, i) => {
+      const y = b[i];
+      return (
+        x.key === y.key &&
+        x.level === y.level &&
+        x.country === y.country &&
+        x.headline === y.headline &&
+        x.url === y.url &&
+        x.source === y.source &&
+        x.since === y.since
+      );
+    })
+  );
 }
 
 /** Keys in `alerts` that are not in `known`, in the order of `alerts`. */
@@ -132,9 +158,12 @@ export function stripBadge(title: string): string {
   return title.replace(BADGE, '');
 }
 
-/** Delay before the next poll: 5 minutes ±10 %, or 15 minutes after BACKOFF_AFTER failures in a row. */
-export function nextPollDelay(failures: number, random: number): number {
-  const base = failures >= BACKOFF_AFTER ? POLL_BACKOFF_MS : POLL_MS;
+/**
+ * Delay before the next poll: 5 minutes ±10 %. It is 15 minutes after BACKOFF_AFTER failures in a row,
+ * and while the page is hidden (one slow poll, so that the title badge can show a new alert).
+ */
+export function nextPollDelay(failures: number, random: number, hidden = false): number {
+  const base = hidden || failures >= BACKOFF_AFTER ? POLL_BACKOFF_MS : POLL_MS;
   return Math.round(base * (0.9 + 0.2 * Math.min(1, Math.max(0, random))));
 }
 
