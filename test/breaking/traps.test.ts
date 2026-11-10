@@ -155,6 +155,12 @@ describe('false alarms found in the research corpora and in review', () => {
     expect(classify("Earthquake of magnitude 7 strikes China's Tibet, killing 16, Xinhua reports")).toMatchObject({ family: 'disaster', tier: 2 });
   });
 
+  it('keeps an event at a court or with an appeal for help', () => {
+    expect(classify('Gunmen kill 12 at court building in Pakistan')).toMatchObject({ family: 'attack', tier: 2 });
+    expect(classify('Appeal for blood donors as quake kills 60 in Turkey')).toMatchObject({ family: 'disaster', tier: 3 });
+    expect(classify('Teenager who planned terror attack in Sydney tells court he was radicalised')?.tier ?? 0).toBeLessThan(2);
+  });
+
   it('reads "coup in <country>"', () => {
     expect(classify('Military coup in Niger')).toMatchObject({ family: 'politics', tier: 3 });
     expect(classify('Attempted coup in Bolivia fails')?.tier ?? 0).toBeLessThan(2);
