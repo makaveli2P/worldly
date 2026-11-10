@@ -21,6 +21,8 @@ export interface Shell {
   /** Full-viewport layer above the globe and below the panels: labels and leader lines. */
   overlay: HTMLElement;
   ui: HTMLElement;
+  /** Header slot for the breaking-news chip: grid column 2 on desktop, a third header row on mobile. */
+  breakingSlot: HTMLElement;
   readout: { update(view: ReadoutView, selectedId: string | null): void };
   panelInsets(): { left: number; right: number; top: number; bottom: number };
   /** Screen rects of the open panels (mobile: the sheet is "details"). Null when closed. */
@@ -80,6 +82,9 @@ export function mountShell(app: HTMLElement): Shell {
     themeButton.replaceChildren(svgIcon(next === 'dark' ? MOON : SUN, 16));
   };
 
+  // Empty until an alert comes. Tab order: brand, search, breaking, map style, theme.
+  const breakingSlot = h('div', { class: 'brk-slot', 'data-breaking-slot': true });
+
   const header = h(
     'header',
     { class: 'bar' },
@@ -94,6 +99,7 @@ export function mountShell(app: HTMLElement): Shell {
       ),
     ),
     h('div', { class: 'search-slot', 'data-search-slot': true }),
+    breakingSlot,
     h('div', { class: 'bar-tools' }, styleGroup, themeButton),
   );
 
@@ -112,6 +118,14 @@ export function mountShell(app: HTMLElement): Shell {
   app.append(globe, overlay, ui);
 
   const layout = getLayout(ui);
+  // The plates come before the readout and its credit links in the Tab order, as on the screen.
+  // .panels has z-index 2, so the change of DOM order does not change the paint order.
+  ui.append(readout.el);
+  // The credit wraps to 2 or 3 lines, so the readout height changes with the width.
+  // The satellite hint sits above the readout through --readout-h (src/styles.css).
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => ui.style.setProperty('--readout-h', `${readout.el.offsetHeight}px`)).observe(readout.el);
+  }
   syncStyle(prefs.mapStyle);
   syncTheme(prefs.theme);
   prefs.onMapStyleChange(syncStyle);
@@ -122,6 +136,7 @@ export function mountShell(app: HTMLElement): Shell {
     globe,
     overlay,
     ui,
+    breakingSlot,
     readout,
     panelInsets: () => {
       const insets = layout.insets();

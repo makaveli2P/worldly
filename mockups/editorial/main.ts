@@ -24,6 +24,7 @@ import { feature } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { buildGlobeGeometry } from '../../src/globe/geometry';
+import { TEXTURES } from '../../src/globe/textureManifest';
 import * as fmt from '../../src/ui/format';
 import type { CountryFeature, CountryId, CountryInfo } from '../../src/types';
 
@@ -294,7 +295,7 @@ async function start(): Promise<void> {
   const scene = new Scene();
   const globe = new Scene();
   scene.add(globe);
-  const tex = await new TextureLoader().loadAsync('/textures/earth-4k.jpg');
+  const tex = await new TextureLoader().loadAsync(TEXTURES.m.url);
   tex.colorSpace = NoColorSpace;
   tex.anisotropy = 8;
 

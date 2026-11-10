@@ -153,7 +153,17 @@ function densify(r: PlaneRing): PlaneRing {
 
 /** Splits every edge longer than MAX_EDGE. Splits depend on the edge only, so the result has no T-junctions. */
 function refine(lon: number[], lat: number[], tris: number[]): number[] {
-  const long = (a: number, b: number) => edgeLength(lon[a], lat[a], lon[b], lat[b]) > MAX_EDGE;
+  // The same test as edgeLength(...) > MAX_EDGE, but on squared lengths and with one cosine per vertex.
+  // cos(min(|y0|, |y1|)) = max(cos|y0|, cos|y1|), because cos falls on 0..90°.
+  const max2 = MAX_EDGE * MAX_EDGE;
+  const cosLat = lat.map((y) => Math.cos(Math.abs(y) * RAD));
+  const long = (a: number, b: number) => {
+    const ca = cosLat[a];
+    const cb = cosLat[b];
+    const dx = (lon[b] - lon[a]) * (ca > cb ? ca : cb);
+    const dy = lat[b] - lat[a];
+    return dx * dx + dy * dy > max2;
+  };
   for (let iter = 0; iter < 16; iter++) {
     const mids = new Map<number, number>();
     const mid = (a: number, b: number) => {
@@ -162,7 +172,9 @@ function refine(lon: number[], lat: number[], tris: number[]): number[] {
       if (m === undefined) {
         m = lon.length;
         lon.push((lon[a] + lon[b]) / 2);
-        lat.push((lat[a] + lat[b]) / 2);
+        const y = (lat[a] + lat[b]) / 2;
+        lat.push(y);
+        cosLat.push(Math.cos(Math.abs(y) * RAD));
         mids.set(key, m);
       }
       return m;

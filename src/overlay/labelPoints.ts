@@ -219,8 +219,71 @@ function interiorGrid(p: Polygon, step: number): [number, number][] {
   return out;
 }
 
-/** Computes one label site per feature. About 20-60 ms for the world, run once. */
+/**
+ * Label sites in a compact JSON form: id -> [lat, lng, areaKm2, ...extra lat/lng pairs].
+ * The build writes them to /data/labels.json (vite.config.ts), so the page does not compute them at start.
+ */
+export type PackedLabelSites = Record<CountryId, number[]>;
+
+/** The shape of /data/labels.json. */
+export interface LabelsFile {
+  v: 1;
+  /** Arc count of the world.json that the build used. A different count means the file is stale. */
+  arcs: number;
+  sites: PackedLabelSites;
+  /** Features with a reversed ring winding (the picker inverts geoContains for them). */
+  inverted: CountryId[];
+}
+
+const round4 = (v: number) => Math.round(v * 1e4) / 1e4;
+
+export function packLabelSites(sites: Map<CountryId, LabelSite>): PackedLabelSites {
+  const out: PackedLabelSites = {};
+  for (const [id, s] of sites) {
+    const row = [round4(s.lat), round4(s.lng), Math.round(s.areaKm2)];
+    for (const [lat, lng] of s.extra) row.push(round4(lat), round4(lng));
+    out[id] = row;
+  }
+  return out;
+}
+
+/** Reads packed sites. Rows with a bad shape are skipped (computeLabelSites then computes them). */
+export function unpackLabelSites(packed: PackedLabelSites): Map<CountryId, LabelSite> {
+  const out = new Map<CountryId, LabelSite>();
+  for (const [id, row] of Object.entries(packed)) {
+    if (!Array.isArray(row) || row.length < 3 || row.length % 2 === 0 || !row.every(Number.isFinite)) continue;
+    const extra: [number, number][] = [];
+    for (let i = 3; i < row.length; i += 2) extra.push([row[i], row[i + 1]]);
+    out.set(id, { id, lat: row[0], lng: row[1], areaKm2: row[2], extra });
+  }
+  return out;
+}
+
+let precomputed: Map<CountryId, LabelSite> | null = null;
+
+/** Gives computeLabelSites the sites from the build. Null clears them. */
+export function usePrecomputedLabelSites(sites: Map<CountryId, LabelSite> | null): void {
+  precomputed = sites;
+}
+
+/**
+ * Returns one label site per feature. Sites from usePrecomputedLabelSites come first;
+ * the function computes only the features that have none (about 65 ms for the whole world on a fast desktop).
+ */
 export function computeLabelSites(features: CountryFeature[]): Map<CountryId, LabelSite> {
+  if (!precomputed) return computeSites(features);
+  const out = new Map<CountryId, LabelSite>();
+  const missing: CountryFeature[] = [];
+  for (const f of features) {
+    const s = precomputed.get(f.id);
+    if (s) out.set(f.id, s);
+    else missing.push(f);
+  }
+  if (missing.length) for (const [id, s] of computeSites(missing)) out.set(id, s);
+  return out;
+}
+
+function computeSites(features: CountryFeature[]): Map<CountryId, LabelSite> {
   const out = new Map<CountryId, LabelSite>();
   for (const f of features) {
     const polys: Polygon[] =

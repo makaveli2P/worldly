@@ -1,95 +1,115 @@
-// Google News RSS. No key. The feed terms allow personal, non-commercial use.
-import type { NewsArticle } from '../../../src/types';
-import { getText } from '../fetch.js';
+// Google News RSS. No key. The feed terms allow personal, non-commercial use (see README "Data sources and terms").
+import { isPlatform, publisherHost } from '../domain.js';
+import type { Edition } from '../editions.js';
+import { getTextAt } from '../fetch.js';
 import { parseRssItems } from '../rss.js';
-import { cleanText, mentions, safeUrl, toIso } from '../text.js';
-import { UpstreamError, type NewsCountry, type Provider } from './types.js';
+import { cleanText, guessLang, safeUrl, tidySource, tidyTitle, toIso } from '../text.js';
+import { UpstreamError, type Candidate, type Feed } from './types.js';
 
-// Countries with an English Google News edition (tested 2026-10).
-// Other codes silently fall back to the US edition, so they use the search feed.
-const ENGLISH_EDITIONS = new Set([
-  'AU', 'BW', 'CA', 'ET', 'GB', 'GH', 'IE', 'IL', 'IN', 'KE', 'MY', 'NA', 'NG',
-  'NZ', 'PH', 'PK', 'SG', 'TZ', 'UG', 'US', 'ZA', 'ZW',
-]);
+const BASE = 'https://news.google.com/rss';
+const query = (e: Edition) => `hl=${e.hl}&gl=${e.gl}&ceid=${e.ceid}`;
 
-// The NATION topic holds domestic stories. The plain edition feed mixes in world news.
-function editionUrl(cc: string): string {
-  return `https://news.google.com/rss/headlines/section/topic/NATION?hl=en-${cc}&gl=${cc}&ceid=${cc}:en`;
-}
+// The NATION section URL answers 302 to /rss/topics/<id>. The redirect costs 0.2-1.2 s and the
+// direct URL 0.1 s, so keep the final URL for each edition.
+const resolvedNation = new Map<string, string>();
 
-function searchUrl(name: string): string {
-  const q = encodeURIComponent(`"${name}"`);
-  return `https://news.google.com/rss/search?q=${q}+when:3d&hl=en-US&gl=US&ceid=US:en`;
-}
-
-function toArticles(xml: string): NewsArticle[] {
-  const articles: NewsArticle[] = [];
-  for (const item of parseRssItems(xml)) {
-    const url = safeUrl(item.link);
-    let title = cleanText(item.title, 400);
-    const fullSource = cleanText(item.source, 400);
-    if (!url || !title) continue;
-    // Google appends " - Publisher" to every title. The publisher name can hold " - " itself.
-    let source = fullSource;
-    if (source && title.toLowerCase().endsWith(` - ${source.toLowerCase()}`)) {
-      title = title.slice(0, title.length - source.length - 3).trim();
-    } else {
-      const dash = title.lastIndexOf(' - ');
-      if (dash > 0) {
-        const tail = title.slice(dash + 3).trim();
-        if (!source) source = tail;
-        if (tail.toLowerCase() === source.toLowerCase()) title = title.slice(0, dash).trim();
-      }
+/** Google appends " - Publisher" to every title. Removes it, and returns the clean title and publisher. */
+export function splitTitle(rawTitle: string, rawSource: string): { title: string; source: string } {
+  let title = cleanText(rawTitle, 400);
+  let source = cleanText(rawSource, 400);
+  if (source && title.toLowerCase().endsWith(` - ${source.toLowerCase()}`)) {
+    title = title.slice(0, title.length - source.length - 3).trim();
+  } else {
+    const dash = title.lastIndexOf(' - ');
+    if (dash > 0) {
+      const tail = title.slice(dash + 3).trim();
+      if (!source) source = tail;
+      if (tail.toLowerCase() === source.toLowerCase()) title = title.slice(0, dash).trim();
     }
-    // "ABC News - Breaking News, Latest News and Videos" becomes "ABC News".
-    if (source.includes(' - ')) source = source.slice(0, source.indexOf(' - ')).trim();
-    source = cleanText(source, 80);
-    articles.push({
-      title: cleanText(title, 300),
-      url,
-      source: source || 'Google News',
-      publishedAt: toIso(item.pubDate),
-      imageUrl: null,
-    });
   }
-  return articles;
+  // "ABC News - Breaking News, Latest News and Videos" becomes "ABC News".
+  if (source.includes(' - ')) source = source.slice(0, source.indexOf(' - ')).trim();
+  source = tidySource(source);
+  return { title: tidyTitle(cleanText(title, 300), source), source: cleanText(source, 80) };
 }
 
 /**
- * The search feed matches the article body too, so some items do not concern the country.
- * When at least 3 titles name the country, those come first and the rest only fill gaps.
+ * Parses a Google News feed into candidates. Keeps the feed order as the rank.
+ * `lang` is the language of the edition; for an English feed, each title gets a language guess,
+ * so that a Somali or Spanish title in the English search carries its language tag.
+ * Posts from social and aggregator platforms (Facebook, NewsBreak, ...) are dropped.
  */
-function preferNamed(articles: NewsArticle[], name: string): NewsArticle[] {
-  const named = articles.filter((a) => mentions(a.title, name));
-  if (named.length < 3) return articles;
-  return [...named, ...articles.filter((a) => !named.includes(a))];
+export function toCandidates(xml: string, feed: Feed, lang: string | null): Candidate[] {
+  const out: Candidate[] = [];
+  for (const item of parseRssItems(xml, 100)) {
+    const url = safeUrl(item.link);
+    const { title, source } = splitTitle(item.title, item.source);
+    if (!url || !title) continue;
+    // The link is a news.google.com redirect. The <source url> attribute names the publisher.
+    const domain = publisherHost(item.sourceUrl, url);
+    if (isPlatform(domain, source)) continue;
+    const outlets = item.outlets.map((o) => tidySource(cleanText(o, 80))).filter(Boolean);
+    out.push({
+      title,
+      url,
+      source: source || 'Google News',
+      domain,
+      publishedAt: toIso(item.pubDate),
+      imageUrl: null,
+      feed,
+      rank: feed === 'search' ? null : item.rank,
+      outlets: outlets.length > 0 ? outlets : source ? [source] : [],
+      lang: lang ?? guessLang(title),
+    });
+  }
+  return out;
 }
 
-/** Returns true when the country has an English Google News edition. */
-export function hasEnglishEdition(country: NewsCountry): boolean {
-  const cc = country.iso2?.toUpperCase();
-  return cc !== undefined && ENGLISH_EDITIONS.has(cc);
+function checkRss(xml: string): void {
+  if (!/<rss[\s>]/i.test(xml)) throw new UpstreamError('not rss');
 }
 
-/** National top stories from the country's English edition. Gives nothing for other countries. */
-export const googleEdition: Provider = {
-  name: 'google',
-  enabled: () => true,
-  async fetchTop(country: NewsCountry, limit: number, signal: AbortSignal) {
-    if (!hasEnglishEdition(country)) return [];
-    const xml = await getText(editionUrl(country.iso2!.toUpperCase()), signal);
-    if (!/<rss[\s>]/i.test(xml)) throw new UpstreamError('not rss');
-    return toArticles(xml).slice(0, limit * 3);
-  },
-};
+const langOf = (e: Edition) => (e.lang === 'en' ? null : e.lang);
 
-/** A search for the country name in the last 3 days. Titles that name the country come first. */
-export const googleSearch: Provider = {
-  name: 'google',
-  enabled: () => true,
-  async fetchTop(country: NewsCountry, limit: number, signal: AbortSignal) {
-    const xml = await getText(searchUrl(country.name), signal);
-    if (!/<rss[\s>]/i.test(xml)) throw new UpstreamError('not rss');
-    return preferNamed(toArticles(xml), country.name).slice(0, limit * 3);
-  },
-};
+/** The national stories of one edition (NATION topic), in Google's order. */
+export async function nation(edition: Edition, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
+  const key = edition.ceid;
+  const url = resolvedNation.get(key) ?? `${BASE}/headlines/section/topic/NATION?${query(edition)}`;
+  let res: { text: string; url: string };
+  try {
+    res = await getTextAt(url, signal, timeoutMs);
+    checkRss(res.text);
+  } catch (err) {
+    // The kept topic URL can go stale. Start from the section URL next time.
+    resolvedNation.delete(key);
+    throw err;
+  }
+  // A silent fallback to another edition shows in the final URL.
+  let finalCeid: string | null = null;
+  try {
+    finalCeid = new URL(res.url).searchParams.get('ceid');
+  } catch {
+    // Keep null: no check is possible.
+  }
+  if (finalCeid && finalCeid !== edition.ceid) throw new UpstreamError('edition fallback');
+  if (res.url.includes('/rss/topics/')) resolvedNation.set(key, res.url);
+  return toCandidates(res.text, 'nation', langOf(edition));
+}
+
+/** The front page of one edition (Top stories). Only a "front page" signal. */
+export async function top(edition: Edition, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
+  const res = await getTextAt(`${BASE}?${query(edition)}`, signal, timeoutMs);
+  checkRss(res.text);
+  return toCandidates(res.text, 'top', langOf(edition));
+}
+
+/**
+ * English search in the last `days` days (US edition). Up to 100 items. `query` is the whole search
+ * expression, for example `"Germany"` or `"Georgia" (Tbilisi OR Georgian)`.
+ */
+export async function search(query: string, days: number, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
+  const q = encodeURIComponent(query);
+  const res = await getTextAt(`${BASE}/search?q=${q}+when:${days}d&hl=en-US&gl=US&ceid=US:en`, signal, timeoutMs);
+  checkRss(res.text);
+  return toCandidates(res.text, 'search', null);
+}

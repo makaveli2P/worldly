@@ -1,0 +1,10 @@
+{"items": [
+ ["bbc_top","front",null,1,"BBC News","Air India crash: One survivor among 242 on board London-bound flight",1],
+ ["guardian_world","front",null,1,"The Guardian","Air India plane crash: more than 200 dead after London-bound flight crashes in Ahmedabad",1.5],
+ ["aljazeera","front",null,1,"Al Jazeera","Air India plane crash: More than 200 dead as London-bound jet goes down",1.2],
+ ["sky_home","front",null,1,"Sky News","Air India crash: 241 people killed after London-bound plane crashes",0.8],
+ ["cbc_world","front",null,2,"CBC News","Air India flight bound for London crashes in India, killing more than 200",2],
+ ["france24","front",null,1,"France 24","More than 200 dead after London-bound Air India plane crashes",2],
+ ["gn_top_in","gn","IN",1,"NDTV","Air India crash: 241 killed, one survivor on London-bound flight",1],
+ ["gn_top_gb","gn","GB",1,"The Independent","Air India crash: 53 British nationals among 241 dead on London flight",1]
+]}

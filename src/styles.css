@@ -36,14 +36,16 @@
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
-  --paper: #f4f4f1;
+  --paper: #e6e6e1; /* the canvas; the header, the plates and the sheet use the panel colour */
   --panel: #ffffff;
   --ink: #111111;
   --muted: #5c5c58;
-  --faint: #6b6b67; /* years, numbers in lists: 4.8:1 on paper */
+  --faint: #6b6b67; /* years, numbers in lists: 5.3:1 on panel */
   --rule: #dcdcd7;
   --accent: #e5361b; /* fills: brand square, markers */
   --accent-text: #d12f15; /* small red text: 5.1:1 on white */
+  --lean-left: #1f5bd6; /* publisher lean scale: 6.0:1 on the panel */
+  --lean-right: #c8102e; /* 5.9:1 on the panel */
   --on-ink: #ffffff; /* text on an ink fill */
   --hover: #f4f4f1;
   --flag-edge: rgb(17 17 17 / 0.12);
@@ -51,16 +53,18 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --paper: #0e0e0e;
-  --panel: #161616;
+  --paper: #0a0a0a;
+  --panel: #1a1a1a;
   --ink: #f2f2ee;
   --muted: #9a9a94;
-  --faint: #85857f;
-  --rule: #2a2a2a;
+  --faint: #8a8a84; /* 4.7:1 on hover */
+  --rule: #333333;
   --accent: #f24b2f;
-  --accent-text: #f24b2f; /* 5.0:1 on the panel */
+  --accent-text: #f24b2f; /* 4.8:1 on the panel */
+  --lean-left: #5c8df6; /* 5.5:1 on the panel */
+  --lean-right: #f0505a; /* 5.0:1 on the panel */
   --on-ink: #0e0e0e;
-  --hover: #1f1f1f;
+  --hover: #202020;
   --flag-edge: rgb(242 242 238 / 0.16);
 }
 
@@ -68,21 +72,26 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --paper: #0e0e0e;
-    --panel: #161616;
+    --paper: #0a0a0a;
+    --panel: #1a1a1a;
     --ink: #f2f2ee;
     --muted: #9a9a94;
-    --faint: #85857f;
-    --rule: #2a2a2a;
+    --faint: #8a8a84;
+    --rule: #333333;
     --accent: #f24b2f;
     --accent-text: #f24b2f;
+    --lean-left: #5c8df6;
+    --lean-right: #f0505a;
     --on-ink: #0e0e0e;
-    --hover: #1f1f1f;
+    --hover: #202020;
     --flag-edge: rgb(242 242 238 / 0.16);
   }
 }
 
 :root {
+  /* Breaking news: signal yellow with an ink keyline, the same in both themes. Red stays "selected". */
+  --alert: #ffb800;
+  --on-alert: #111111; /* 10.9:1 on the yellow */
   --panel-width: 336px;
   --brand-space: 128px; /* brand width plus a 24px gap */
   --edge: 24px;
@@ -196,7 +205,7 @@ a {
   align-items: center;
   column-gap: 24px;
   padding: 0 var(--edge);
-  background: var(--paper);
+  background: var(--panel);
   border-bottom: 1px solid var(--ink);
   pointer-events: auto;
   z-index: 3;
@@ -362,8 +371,9 @@ a {
   padding: 0;
   list-style: none;
   background: var(--panel);
-  border-top: 2px solid var(--ink);
-  box-shadow: 0 0 0 1px var(--rule);
+  border: 1px solid var(--ink);
+  border-top-width: 2px;
+  z-index: 2; /* over the breaking-news row on mobile */
 }
 
 .search[data-open] .search-list {
@@ -380,6 +390,14 @@ a {
   border-top: 1px solid var(--rule);
   font-size: 14px;
   cursor: pointer;
+}
+
+/* A long name ("United States Virgin Islands") stays on one line in the fixed-height row. */
+.search-list li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .search-list li:first-child {
@@ -401,6 +419,251 @@ a {
   cursor: default;
 }
 
+/* ---------- Breaking news (header chip) ---------- */
+
+/* Desktop: the empty grid column 2 of the header. The chip is as wide as its text, up to the column. */
+.brk-slot {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.brk-slot:empty {
+  display: none;
+}
+
+.brk {
+  display: flex;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid var(--ink);
+  background: var(--panel);
+}
+
+.brk-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 12px 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.brk-main:hover,
+.brk-btn:hover {
+  background: var(--hover);
+}
+
+.brk-main:focus-visible,
+.brk-btn:focus-visible,
+.brk-row-main:focus-visible {
+  outline-offset: -4px;
+}
+
+/* "BREAKING" with a dot. Critical: a yellow fill. Major: a yellow dot on the panel colour. */
+.brk-tag {
+  display: flex;
+  flex: none;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  padding: 0 10px;
+  border-right: 1px solid var(--ink);
+  color: var(--ink);
+  font: 500 11px/16px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brk-tag[data-level='critical'] {
+  background: var(--alert);
+  color: var(--on-alert);
+}
+
+.brk-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--on-alert);
+}
+
+.brk-tag[data-level='major'] .brk-dot {
+  background: var(--alert);
+  box-shadow: 0 0 0 1.5px var(--on-alert);
+}
+
+/* A new alert: the dot blinks 3 times in 4.8 s, then stays on. */
+.brk[data-pulse] .brk-dot {
+  animation: brk-dot 1600ms ease-in-out 3;
+}
+
+@keyframes brk-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* The name shrinks (with an ellipsis) only when the headline has no width left: the headline has a zero
+   basis, so it takes only the free width and never makes the name give way. */
+.brk-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.brk-head {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.brk-age {
+  flex: none;
+  font: 400 11px/16px var(--mono);
+  color: var(--muted);
+}
+
+.brk-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--ink);
+  background: none;
+  color: var(--ink);
+  font: 500 11px/16px var(--mono);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.brk-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max(100%, 360px);
+  max-width: calc(100vw - 2 * var(--edge));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  border-top-width: 2px;
+  z-index: 1;
+}
+
+.brk-list[hidden] {
+  display: none;
+}
+
+.brk-row {
+  display: flex;
+  border-top: 1px solid var(--rule);
+}
+
+.brk-row:first-child {
+  border-top: 0;
+}
+
+.brk-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 12px 10px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.brk-row-main:hover {
+  background: var(--hover);
+}
+
+.brk-row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brk-row .brk-tag {
+  height: 20px;
+  border: 1px solid var(--ink);
+  padding: 0 6px;
+}
+
+.brk-row-head {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.brk-row .brk-btn {
+  width: 40px;
+  border-left-color: var(--rule);
+}
+
+/* Narrow desktop: column 2 is the viewport minus about 613px. The headline goes first. */
+@media (min-width: 1000px) and (max-width: 1099px) {
+  .brk .brk-head {
+    display: none;
+  }
+}
+
+/* Tablet (iPad portrait): column 2 is too narrow for BREAKING and a name. The chip moves to a second
+   header row, and the plates move down with the header. The text BREAKING stays in every tier. */
+@media (min-width: 768px) and (max-width: 999px) {
+  :root[data-breaking] {
+    --bar: 104px;
+  }
+
+  .bar[data-breaking] {
+    grid-template-rows: 56px 48px;
+  }
+
+  .bar[data-breaking] .brk-slot {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-self: center;
+  }
+
+  .bar[data-breaking] .bar-tools {
+    grid-row: 1;
+  }
+}
+
 /* ---------- Hint, loader, readout ---------- */
 
 .hint {
@@ -417,6 +680,13 @@ a {
 
 .hint[data-hidden] {
   opacity: 0;
+}
+
+/* Satellite style: the readout bar also holds the imagery credit (src/ui/credit.ts), so it is taller.
+   The credit wraps to 2 or 3 lines with the width, so src/ui/shell.ts writes the real readout height
+   to --readout-h. The hint sits 10px above the readout (readout bottom 24px). Mobile has its own value. */
+:root[data-style='satellite'] .hint {
+  bottom: calc(34px + var(--readout-h, 54px));
 }
 
 .loader {
@@ -436,13 +706,30 @@ a {
   opacity: 0;
 }
 
+/* A load error after the first frame (src/main.ts): the globe is on screen, so the text needs its own paper.
+   :is(#boot) matches the specificity of the boot style in index.html. */
+:is(#boot, .loader)[data-error] {
+  top: calc(var(--bar) + 16px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--edge));
+  padding: 6px 12px;
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
+  color: var(--ink);
+  white-space: normal;
+}
+
 .readout {
   position: absolute;
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
   display: flex;
-  gap: 24px;
+  flex-direction: column;
+  align-items: center;
   padding: 4px 12px;
   background: var(--paper); /* stays legible when the globe fills the screen */
   font: 400 11px/16px var(--mono);
@@ -450,9 +737,75 @@ a {
   white-space: nowrap;
 }
 
+.readout-values {
+  display: flex;
+  gap: 24px;
+}
+
 .readout b {
   font-weight: 500;
   color: var(--ink);
+}
+
+/* ---------- Imagery credit (src/ui/credit.ts) ----------
+   The EOX licence needs a clearly visible credit on the satellite map. Desktop: one line under the
+   readout values, on the readout's paper. It wraps only when the space between the plates is narrow. */
+
+.credit {
+  max-width: max(360px, calc(100vw - 2 * (var(--edge) + var(--panel-width) + 32px)));
+  margin-top: 2px;
+  font: 400 10px/14px var(--sans);
+  white-space: normal;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.credit a,
+.credit-toggle,
+.credit-text {
+  pointer-events: auto; /* .ui passes pointer events through to the globe */
+}
+
+.credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.credit a:hover {
+  color: var(--ink);
+}
+
+.credit-toggle {
+  display: none;
+}
+
+:root[data-style='atlas'] .credit {
+  display: none;
+}
+
+/* Narrow desktop (768-1143px) with open plates: the free column between the plates is narrower than
+   the credit (it is 360px at 1144px). The credit then goes to one line in the strip under the plates
+   (each plate ends 24px above the bottom), over the full width and above the plates. The plates cover
+   the readout values at these widths, and the SEL value is in the plates, so the values hide. */
+@media (min-width: 768px) and (max-width: 1143px) {
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout {
+    bottom: 3px;
+    z-index: 3; /* .panels is z-index 2: the credit stays on top if a plate grows into the strip */
+    width: max-content; /* with left: 50%, the box would otherwise stop at half the viewport width */
+    max-width: calc(100vw - 2 * var(--edge));
+    padding: 2px 8px;
+  }
+
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout-values,
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .credit-extra {
+    display: none;
+  }
+
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .credit {
+    max-width: none;
+    margin: 0;
+  }
 }
 
 /* ---------- Tooltip ---------- */
@@ -535,9 +888,9 @@ a {
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border-top: 2px solid var(--ink);
-  /* A plate that scrolls ends on a rule, so the cut edge reads as intentional. */
-  border-bottom: 1px solid var(--ink);
+  /* A full ink frame (2px at the top) sets the plate off the canvas and the globe. No shadow, no radius. */
+  border: 1px solid var(--ink);
+  border-top-width: 2px;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -959,6 +1312,79 @@ a {
   color: var(--muted);
 }
 
+/* The BREAKING row above the stories: the chip tag (signal yellow and ink), the source, the age and the headline. */
+.news-brk {
+  border-top: 1px solid var(--ink);
+}
+
+.news-brk-link {
+  display: block;
+  padding: 12px 24px 16px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.news-brk-link:hover {
+  background: var(--hover);
+}
+
+.news-brk-link:focus-visible {
+  outline-offset: -2px;
+}
+
+.news-brk-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.news-brk .brk-tag {
+  align-self: center;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--ink);
+}
+
+.news-brk .meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--muted);
+}
+
+.news-brk .src {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.news-brk .t {
+  flex: none;
+  font-size: 11px;
+}
+
+.news-brk-head {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.news-brk-link:hover .news-brk-head {
+  color: var(--accent-text);
+}
+
 .stories {
   list-style: none;
   border-top: 1px solid var(--ink);
@@ -968,7 +1394,7 @@ a {
   border-top: 1px solid var(--rule);
 }
 
-.story a,
+.story-link,
 .story--skeleton {
   display: grid;
   grid-template-columns: 24px 1fr;
@@ -977,12 +1403,17 @@ a {
   text-decoration: none;
 }
 
-.story a:hover {
+/* The whole row lights up, the rating row too. */
+.story:not(.story--skeleton):hover {
   background: var(--hover);
 }
 
 .story a:focus-visible {
   outline-offset: -2px;
+}
+
+.story--rated .story-link {
+  padding-bottom: 8px;
 }
 
 .story .n {
@@ -1011,9 +1442,140 @@ a {
   white-space: nowrap;
 }
 
-.story .t {
+.story .meta-r {
   flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.story .t,
+.story .outlets {
   font-size: 11px;
+}
+
+.story .lang-tag {
+  align-self: center;
+  padding: 0 4px;
+  border: 1px solid var(--rule);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ink);
+}
+
+/* Publisher rating under the headline: lean scale, label, rater link, state tag. */
+.story-rating {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 0 24px 16px 48px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.lean {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lean-scale {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* Left steps are blue, right steps are red, the centre is ink (as on Ground News).
+   The other cells are a light tint of their side. The cell of the rating is full colour and taller. */
+.lean-cell {
+  --lean-c: var(--ink);
+  width: 8px;
+  height: 4px;
+  background: color-mix(in srgb, var(--lean-c) 28%, var(--panel));
+}
+
+.lean-cell[data-step='-2'],
+.lean-cell[data-step='-1'] {
+  --lean-c: var(--lean-left);
+}
+
+.lean-cell[data-step='1'],
+.lean-cell[data-step='2'] {
+  --lean-c: var(--lean-right);
+}
+
+.lean-cell[data-step='-1'],
+.lean-cell[data-step='1'] {
+  background: color-mix(in srgb, var(--lean-c) 18%, var(--panel));
+}
+
+.lean-cell--on,
+.lean-cell--on[data-step] {
+  height: 8px;
+  background: var(--lean-c);
+}
+
+@media (forced-colors: active) {
+  .lean-cell--on,
+  .lean-cell--on[data-step] {
+    background: CanvasText;
+  }
+}
+
+.lean-rater {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+
+/* Touch layouts: the MBFC link is a 24 px target (WCAG 2.5.8). The negative margin keeps the row on the 8 px grid. */
+@media (max-width: 767px), (pointer: coarse) {
+  .lean-rater {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 24px;
+    margin: -4px 0;
+  }
+}
+
+.lean-rater:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
+.state-tag {
+  padding: 0 4px;
+  border: 1px solid var(--ink);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.news-credits {
+  padding: 12px 24px;
+  border-top: 1px solid var(--rule);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.news-credits a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+
+.news-credits a:hover {
+  color: var(--accent-text);
+  text-decoration-color: currentColor;
 }
 
 .story-title {
@@ -1029,7 +1591,7 @@ a {
   letter-spacing: -0.005em;
 }
 
-.story a:hover .story-title {
+.story-link:hover .story-title {
   color: var(--accent-text);
 }
 
@@ -1071,6 +1633,13 @@ a {
   :root {
     --edge: 16px;
     --bar: 104px;
+    --sheet-height: 46vh; /* the bottom sheet (.panels); the credit button sits above it */
+  }
+
+  @supports (height: 1dvh) {
+    :root {
+      --sheet-height: 46dvh;
+    }
   }
 
   .bar {
@@ -1121,20 +1690,141 @@ a {
     top: 100%;
     left: calc(-1 * var(--edge));
     right: calc(-1 * var(--edge));
+    /* Full width: no side borders at the screen edges. */
+    border-left: 0;
+    border-right: 0;
   }
 
-  .readout {
-    display: none;
+  /* Breaking news: a third header row, full width. The header is then 145px tall (3 rows and the
+     1px rule), so --bar grows with it: the load-error notice sits under the header (top: --bar + 16px). */
+  :root[data-breaking] {
+    --bar: 145px;
+  }
+
+  .bar[data-breaking] {
+    height: auto;
+    grid-template-rows: 56px 48px 40px;
+  }
+
+  .brk-slot {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: stretch;
+    align-self: stretch;
+    max-width: none;
+    margin: 0 calc(-1 * var(--edge));
+  }
+
+  .brk {
+    height: 100%;
+    border: 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .brk-main {
+    flex: 1 1 auto;
+    gap: 8px;
+    padding-right: 8px;
+  }
+
+  .brk-tag {
+    padding: 0 8px 0 var(--edge);
+  }
+
+  .brk-btn {
+    width: 40px;
+    border-left-color: var(--rule);
+  }
+
+  .brk-list {
+    top: 100%;
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+    border-left: 0;
+    border-right: 0;
   }
 
   .hint {
     bottom: 24px;
   }
 
+  :root[data-style='satellite'] .hint {
+    bottom: 40px; /* above the credit button */
+  }
+
+  /* Mobile: no readout values. The bar keeps only a short credit button at the bottom right,
+     above the sheet when the sheet is open. The button opens the full credit. */
+  .readout {
+    left: auto;
+    right: 8px;
+    bottom: 8px;
+    transform: none;
+    align-items: flex-end;
+    padding: 0;
+    background: none;
+    transition: bottom 240ms var(--ease);
+  }
+
+  .ui:has(.panels[data-open]) .readout {
+    bottom: calc(var(--sheet-height) + 8px);
+  }
+
+  :root[data-style='atlas'] .readout,
+  .readout-values {
+    display: none;
+  }
+
+  .credit {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 4px;
+    max-width: calc(100vw - 16px);
+    margin: 0;
+    text-align: left;
+  }
+
+  .credit-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    padding: 0 8px;
+    border: 0;
+    background: var(--paper);
+    color: var(--muted);
+    font: 400 10px/14px var(--sans);
+    cursor: pointer;
+  }
+
+  .credit-i {
+    display: inline-grid;
+    place-items: center;
+    width: 12px;
+    height: 12px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font: 600 8px/1 var(--sans); /* a mono face here would load one more font file on mobile */
+  }
+
+  .credit-text {
+    display: none;
+    max-width: 320px;
+    padding: 8px;
+    background: var(--paper);
+    border-top: 2px solid var(--ink);
+    color: var(--muted);
+  }
+
+  .credit[data-open] .credit-text {
+    display: block;
+  }
+
   .panels {
     inset: auto 0 0 0;
-    height: 46vh;
-    height: 46dvh;
+    height: var(--sheet-height);
     display: flex;
     flex-direction: column;
     background: var(--panel);
@@ -1232,8 +1922,7 @@ a {
     flex: 1;
     min-height: 0;
     display: none;
-    border-top: 0;
-    border-bottom: 0;
+    border: 0;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
@@ -1270,13 +1959,33 @@ a {
   }
 
   .stories,
-  .note {
+  .note,
+  .news-brk {
     border-top: 0;
   }
 
-  .story a,
-  .story--skeleton {
+  /* With a BREAKING row, an ink rule sets it apart from the stories. */
+  .news-brk-slot:not(:empty) + .news-content > :first-child {
+    border-top: 1px solid var(--ink);
+  }
+
+  .story-link,
+  .story--skeleton,
+  .news-brk-link {
     padding: 12px 16px 16px;
+  }
+
+  .story--rated .story-link {
+    padding-bottom: 8px;
+  }
+
+  .story-rating {
+    padding: 0 16px 16px 40px;
+  }
+
+  .news-credits {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 

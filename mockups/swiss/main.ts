@@ -21,6 +21,7 @@ import {
 } from 'three';
 import { feature } from 'topojson-client';
 import { buildGlobeGeometry } from '../../src/globe/geometry';
+import { TEXTURES } from '../../src/globe/textureManifest';
 import { compactNumber, sentenceCase } from '../../src/ui/format';
 import type { CountryFeature, CountryInfo } from '../../src/types';
 
@@ -288,7 +289,7 @@ function graticule(r: number) {
 }
 
 async function loadTexture(): Promise<Texture> {
-  const t = await new TextureLoader().loadAsync('/textures/earth-4k.jpg');
+  const t = await new TextureLoader().loadAsync(TEXTURES.m.url);
   t.colorSpace = NoColorSpace;
   t.minFilter = LinearMipmapLinearFilter;
   t.anisotropy = 8;
