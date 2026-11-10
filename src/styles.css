@@ -1582,6 +1582,92 @@ a {
   text-decoration-color: currentColor;
 }
 
+/* A translated headline (DeepL): the row under it, outside the story link. "Original" shows the source
+   title; "Read in English" opens the article through the Google Translate page proxy. */
+.story--tr .story-link {
+  padding-bottom: 8px;
+}
+
+.story-tr {
+  padding: 0 24px 16px 48px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.story--rated .story-tr {
+  padding-bottom: 8px;
+}
+
+.story-tr-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.tr-label,
+.tr-read {
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+
+.tr-toggle,
+.tr-read {
+  color: var(--muted);
+}
+
+.tr-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.tr-sign {
+  display: inline-block;
+  width: 8px;
+  text-align: center;
+}
+
+.tr-toggle:hover,
+.tr-read:hover {
+  color: var(--ink);
+}
+
+.tr-toggle:hover .tr-label,
+.tr-read:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Touch layouts: the two controls are 24 px targets (WCAG 2.5.8). The negative margin keeps the row on the 8 px grid. */
+@media (max-width: 767px), (pointer: coarse) {
+  .tr-toggle,
+  .tr-read {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    margin: -4px 0;
+  }
+}
+
+.story-orig {
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--rule);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+}
+
 .state-tag {
   padding: 0 4px;
   border: 1px solid var(--ink);
@@ -2014,8 +2100,13 @@ a {
     padding-bottom: 8px;
   }
 
-  .story-rating {
+  .story-rating,
+  .story-tr {
     padding: 0 16px 16px 40px;
+  }
+
+  .story--rated .story-tr {
+    padding-bottom: 8px;
   }
 
   .news-credits {

@@ -124,6 +124,7 @@ Worldly works with no key. Each key below adds one feature. Set a key locally in
 | `RAPIDAPI_KEY` | The MBFC publisher lean. Only `npm run bias` uses it, at build time. | Local, and Vercel **Production only** |
 | `NEWSDATA_API_KEY` (optional) | The NewsData.io fallback for small countries. | Local and Vercel |
 | `BREAKING_CONTACT` (optional) | A contact address or URL in the User-Agent of the Wikipedia request, as the Wikimedia policy asks. | Vercel (local is optional) |
+| `DEEPL_API_KEY` (optional) | English titles for native-language stories. | Local and Vercel |
 
 **RAPIDAPI_KEY (MBFC lean)**
 
@@ -140,6 +141,16 @@ A NewsData.io key helps small countries that have few Google stories. The free p
 1. Get a free key at https://newsdata.io/register.
 2. Set `NEWSDATA_API_KEY=<your key>` in `.env`.
 3. Restart `npm run dev`.
+
+**DEEPL_API_KEY (optional)**
+
+A DeepL key translates the native-language titles of the news plate to English. The server uses `api-free.deepl.com` for a DeepL API Free key (it ends in `:fx`) and `api.deepl.com` for a Pro key.
+
+1. Get a key at https://www.deepl.com/pro-api (the API Free plan is enough).
+2. Local: set `DEEPL_API_KEY=<key>` in `.env`. Restart `npm run dev`.
+3. Vercel: run `vercel env add DEEPL_API_KEY production` (or add it under Project Settings > Environment Variables). Redeploy.
+
+The API Free plan has a monthly character limit (1,000,000 characters for the owner's key on 2026-11-11; `GET /v2/usage` shows it). One list sends 3 to 5 titles, about 100 to 400 characters. The server keeps each translation in memory and the CDN keeps each list for 15 minutes, so a title goes to DeepL about once for each server instance. When the limit is used up, DeepL answers 456, the log shows `[news] translate failed: http 456 (quota)`, and the titles stay in their language. With no key, the server sends nothing and the titles stay in their language.
 
 **BREAKING_CONTACT (optional)**
 
@@ -226,6 +237,15 @@ A title matches a country by its name, demonym, capital or leader, as whole word
 
 Language (hybrid): for a country with no English edition (for example Germany, Japan or Mexico), the strong English stories take their places first. A strong story has 3 or more outlets, or names a person or place from the native top 20 (then it gets that native rank). Native-language stories and the other English stories compete for the other places by score, so English filler does not push out a main national story. The list is in score order. A native-language story has a language tag (for example "DE").
 
+Translation (DeepL): after the pick, the server sends the non-English titles of the list (at most 5) to DeepL in one request, and the story shows the English title (British English). The clusters and the dedupe use the original titles, because the translation comes after the pick. On a translated story:
+
+- The language tag shows the translation, for example "ZH → EN". A screen reader reads "Translated from Chinese by DeepL".
+- A hover on the headline shows the original title. The "Original" button under the headline shows it too (touch, keyboard and screen readers). The original text has the `lang` of its language.
+- "Read in English" opens the article through the Google Translate page proxy (`https://<host>.translate.goog/...`). It shows only for a link to the publisher. Most native stories come from Google News, and their links are news.google.com redirects: the proxy shows an empty page for them, so these stories have no "Read in English" link.
+- The panel footer shows "Translations: DeepL".
+
+With no `DEEPL_API_KEY`, or when DeepL fails or takes more than 1.5 s, the titles stay in their language with the language tag (as before). The server keeps each translation in memory, so it never sends one title twice. See [Owner setup](#owner-setup).
+
 Each story row shows the number of outlets that cover the story, when there are 3 or more. `api/_lib/README.md` has the full rules for the gather, the filters, the clusters, the score and the pick.
 
 ### Publisher ratings
@@ -251,7 +271,7 @@ The State Media Monitor table (`api/_lib/state-media.json`, CC BY 4.0) is in git
 
 ### Cache
 
-- The server keeps each list in memory for 10 minutes. When Google does not answer, it keeps a list for 1 minute only, and it shows the last good list (at most 24 hours old) if it has one. When no source answers and no earlier list exists, the API answers 503, so that the CDN can serve its older copy.
+- The server keeps each list in memory for 10 minutes. When Google does not answer, it keeps a list for 1 minute only, and it shows the last good list (at most 24 hours old) if it has one. When the translation fails, the list also stays for 1 minute only (in memory and on the CDN), so a later request tries the translation again. When no source answers and no earlier list exists, the API answers 503, so that the CDN can serve its older copy.
 - The Vercel CDN keeps a list for 15 minutes, and can serve it for 30 more minutes while it gets a new one.
 - The browser keeps a list for at most 10 minutes.
 
@@ -309,6 +329,7 @@ npm run aliases:breaking
 - News and breaking news:
   - Google News RSS (all editions and search), and the RSS feeds of BBC, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India, The New York Times and Euronews.
   - [NewsData.io](https://newsdata.io) (optional): follow its terms for your plan.
+  - Translations: [DeepL API](https://www.deepl.com/pro-api) (optional). The server sends only the titles, never article text. The panel footer credits DeepL when a translated title shows. "Read in English" links to the Google Translate page proxy; Worldly does not copy the translated page.
   - Wikipedia "In the news" (CC BY-SA 4.0), [GDACS](https://www.gdacs.org) and the [USGS](https://earthquake.usgs.gov) earthquake feed (US public domain). None of them starts an alert. They confirm, raise or limit an alert that the news feeds start.
 - Publisher ratings:
   - Lean: [Media Bias/Fact Check](https://mediabiasfactcheck.com), through its official RapidAPI product. The terms require a link to MBFC and do not allow redistribution, so the table stays out of git and out of the browser. The MBFC scale is tailored to the United States.

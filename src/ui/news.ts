@@ -155,11 +155,14 @@ export class NewsPanel {
     const items = articles.map((a, i) => {
       const when = age(a.publishedAt, now);
       const lang = a.lang ? a.lang.toLowerCase() : null;
+      const tr = translationOf(a);
       const outlets = typeof a.outlets === 'number' && a.outlets >= 3 ? a.outlets : null;
+      const trRow = tr && translationRow(a, tr);
       const rating = ratingRow(a);
+      const cls = ['story', rating && 'story--rated', trRow && 'story--tr'].filter(Boolean).join(' ');
       return h(
         'li',
-        { class: rating ? 'story story--rated' : 'story' },
+        { class: cls },
         h(
           'a',
           { class: 'story-link', href: a.url, target: '_blank', rel: 'noopener noreferrer' },
@@ -174,33 +177,44 @@ export class NewsPanel {
               h(
                 'span',
                 { class: 'meta-r' },
-                lang && h('span', { class: 'lang-tag mono', title: `Title in ${languageName(lang)}`, 'aria-hidden': 'true' }, lang.slice(0, 2).toUpperCase()),
-                lang && h('span', { class: 'sr-only' }, `, in ${languageName(lang)}, `),
+                tr
+                  ? [
+                      h('span', { class: 'lang-tag lang-tag--tr mono', title: tr.note, 'aria-hidden': 'true' }, `${tr.code} → EN`),
+                      h('span', { class: 'sr-only' }, `, ${tr.note}, `),
+                    ]
+                  : lang && [
+                      h('span', { class: 'lang-tag mono', title: `Title in ${languageName(lang)}`, 'aria-hidden': 'true' }, lang.slice(0, 2).toUpperCase()),
+                      h('span', { class: 'sr-only' }, `, in ${languageName(lang)}, `),
+                    ],
                 outlets !== null && h('span', { class: 'outlets mono' }, `${outlets} outlets`),
                 when && h('span', { class: 't mono' }, when),
               ),
             ),
-            h('span', { class: 'story-title', lang: lang ?? null }, a.title),
+            // A translated title is English; a hover on it shows the original.
+            h('span', { class: 'story-title', lang: tr ? 'en' : (lang ?? null), title: tr ? tr.original : null }, a.title),
           ),
         ),
+        trRow,
         rating,
       );
     });
     this.render(countryName, pad2(articles.length), h('ol', { class: 'stories' }, items), this.credits(articles), this.footer(res));
   }
 
-  /** Attribution for the ratings, only for the data that the list shows. */
+  /** Attribution for the ratings and the translations, only for the data that the list shows. */
   private credits(articles: NewsArticle[]): HTMLElement | null {
     const lean = articles.some((a) => a.bias?.rater === 'MBFC');
     const state = articles.some((a) => a.bias?.state);
-    if (!lean && !state) return null;
+    const translated = articles.some((a) => translationOf(a));
+    if (!lean && !state && !translated) return null;
     const link = (href: string, text: string) => h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, text);
     return h(
       'p',
       { class: 'news-credits' },
-      'Ratings are for the publisher, not the story. ',
+      (lean || state) && 'Ratings are for the publisher, not the story. ',
       lean && h('span', null, 'Lean: ', link('https://mediabiasfactcheck.com', 'Media Bias/Fact Check'), ' (US scale). '),
-      state && h('span', null, 'State media: ', link('https://statemediamonitor.com', 'State Media Monitor'), ' (MJRC, CC BY 4.0).'),
+      state && h('span', null, 'State media: ', link('https://statemediamonitor.com', 'State Media Monitor'), ' (MJRC, CC BY 4.0). '),
+      translated && h('span', null, 'Translations: ', link('https://www.deepl.com', 'DeepL'), '.'),
     );
   }
 
@@ -307,6 +321,89 @@ function ratingRow(a: NewsArticle): HTMLElement | null {
       h('span', { class: 'sr-only' }, `${stateText[b.state ?? ''] ?? b.stateLabel}, per State Media Monitor`),
     );
   return h('div', { class: 'story-rating' }, lean, rater, tag);
+}
+
+interface Translation {
+  /** The source language as a 2-letter tag, for example "ZH". */
+  code: string;
+  /** The source title. */
+  original: string;
+  /** The BCP-47 code of the source title. */
+  lang: string;
+  /** "Translated from Chinese by DeepL". */
+  note: string;
+}
+
+/** The translation of a story title, or null when the title is not a translation. */
+function translationOf(a: NewsArticle): Translation | null {
+  if (!a.translatedBy || !a.originalTitle || !a.lang) return null;
+  const lang = a.lang.toLowerCase();
+  return { code: lang.slice(0, 2).toUpperCase(), original: a.originalTitle, lang, note: `Translated from ${languageName(lang)} by ${a.translatedBy}` };
+}
+
+let originalIds = 0;
+
+/**
+ * The row under a translated headline, outside the story link: an "Original" button that shows the source title
+ * (for touch, keyboard and screen readers; a hover on the headline also shows it), and "Read in English", which opens
+ * the article through the Google Translate page proxy. That link shows only where the proxy works (see translateProxyUrl).
+ */
+function translationRow(a: NewsArticle, tr: Translation): HTMLElement {
+  const id = `story-orig-${++originalIds}`;
+  const original = h('p', { class: 'story-orig', id, lang: tr.lang, hidden: true }, tr.original);
+  const sign = h('span', { class: 'tr-sign', 'aria-hidden': 'true' }, '+');
+  const toggle = h(
+    'button',
+    { type: 'button', class: 'tr-toggle mono', 'aria-expanded': 'false', 'aria-controls': id },
+    h('span', { class: 'tr-label' }, 'Original'),
+    h('span', { class: 'sr-only' }, ` title in ${languageName(tr.lang)}`),
+    sign,
+  );
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    original.hidden = !open;
+    sign.textContent = open ? '−' : '+';
+  });
+  const proxy = translateProxyUrl(a.url);
+  const read =
+    proxy &&
+    h(
+      'a',
+      { class: 'tr-read', href: proxy, target: '_blank', rel: 'noopener noreferrer' },
+      'Read in English',
+      h('span', { class: 'sr-only' }, ' (Google Translate, opens in a new tab)'),
+      h('span', { 'aria-hidden': 'true' }, ' ↗'),
+    );
+  return h('div', { class: 'story-tr' }, h('div', { class: 'story-tr-bar' }, toggle, read), original);
+}
+
+// Hosts that only link to other publishers. The Google Translate proxy shows an empty page for their redirect
+// links (tested 2026-11-11), so a story from them gets no "Read in English" link. Keep in step with AGGREGATORS
+// in api/_lib/domain.ts.
+const NO_PROXY_HOST = /(?:^|\.)(?:google\.com|msn\.com|flipboard\.com|apple\.news|newsbreak\.com|ground\.news|feedburner\.com)$/;
+
+/**
+ * The article through the Google Translate page proxy, in the translate.goog form
+ * ("https://www-example-com.translate.goog/path?_x_tr_sl=auto&_x_tr_tl=en"). The older form
+ * translate.google.com/translate?u=... only redirects to it, and it can answer with a robot check.
+ * Null for an aggregator link (news.google.com, ...), an internationalised host or a URL with a port.
+ */
+export function translateProxyUrl(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  if ((u.protocol !== 'https:' && u.protocol !== 'http:') || u.port || !host.includes('.') || host.includes('xn--') || NO_PROXY_HOST.test(host)) return null;
+  const proxied = host.replace(/-/g, '--').replace(/\./g, '-');
+  u.searchParams.set('_x_tr_sl', 'auto');
+  u.searchParams.set('_x_tr_tl', 'en');
+  u.searchParams.set('_x_tr_hl', 'en-GB');
+  if (u.protocol === 'http:') u.searchParams.set('_x_tr_sch', 'http');
+  return `https://${proxied}.translate.goog${u.pathname}${u.search}${u.hash}`;
 }
 
 const languageNames = (() => {
