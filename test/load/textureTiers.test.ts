@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   LARGE_IDLE_MS,
   SETTLE_MS,
+  canUploadTexture,
   chooseTextureTiers,
   neededTextureWidth,
   nextTextureLevel,
+  type UploadState,
   type UpgradeState,
 } from '../../src/globe/textureTiers';
 
@@ -88,5 +90,32 @@ describe('nextTextureLevel', () => {
   it('stops at the last usable tier', () => {
     expect(nextTextureLevel({ ...base, tiers: 1 })).toBe(-1);
     expect(nextTextureLevel({ ...base, level: 2, zoomedOrSelected: true, needWidth: 99999 })).toBe(-1);
+  });
+});
+
+describe('canUploadTexture', () => {
+  const rest: UploadState = { level: 2, dragging: false, focusAnim: false, inertia: false, framing: false, spinning: false, idleMs: LARGE_IDLE_MS };
+
+  it('uploads tier 0 at once, also while the globe moves', () => {
+    expect(canUploadTexture({ ...rest, level: 0, dragging: true, focusAnim: true, inertia: true, framing: true, spinning: true, idleMs: 0 })).toBe(true);
+  });
+
+  it('holds a larger tier while the user drags, the globe turns to a selection, inertia runs or the zoom eases', () => {
+    for (const level of [1, 2]) {
+      expect(canUploadTexture({ ...rest, level, dragging: true })).toBe(false);
+      expect(canUploadTexture({ ...rest, level, focusAnim: true })).toBe(false);
+      expect(canUploadTexture({ ...rest, level, inertia: true })).toBe(false);
+      expect(canUploadTexture({ ...rest, level, framing: true })).toBe(false);
+    }
+  });
+
+  it('lets tier 1 upload during the idle spin and with no idle time', () => {
+    expect(canUploadTexture({ ...rest, level: 1, spinning: true, idleMs: 0 })).toBe(true);
+  });
+
+  it('holds tier 2 during the idle spin and until LARGE_IDLE_MS of idle time', () => {
+    expect(canUploadTexture({ ...rest, spinning: true })).toBe(false);
+    expect(canUploadTexture({ ...rest, idleMs: LARGE_IDLE_MS - 1 })).toBe(false);
+    expect(canUploadTexture(rest)).toBe(true);
   });
 });

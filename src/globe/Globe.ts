@@ -41,7 +41,7 @@ import { TrackballControls } from './controls';
 import { buildGlobeGeometry, lonLatToVec, type BoundingCap, type Range } from './geometry';
 import { CountryPicker } from './picker';
 import { TEXTURES, type TextureFile } from './textureManifest';
-import { chooseTextureTiers, neededTextureWidth, nextTextureLevel } from './textureTiers';
+import { canUploadTexture, chooseTextureTiers, neededTextureWidth, nextTextureLevel } from './textureTiers';
 import {
   SLOTS,
   blurFragment,
@@ -232,7 +232,9 @@ export class Globe {
   private texMix = 0; // 0..1 fade-in of the satellite texture
   private texTiers: TextureFile[] = []; // usable tiers for this device, smallest first (src/globe/textureTiers.ts)
   private texLevel = -1; // tier on screen
-  private texBusy = false; // a tier is loading
+  private texBusy = false; // a tier is loading, or waits in texPending
+  // A decoded larger tier that waits for a frame at rest (canUploadTexture), because its upload blocks the main thread.
+  private texPending: { level: number; image: ImageBitmap | HTMLImageElement } | null = null;
   private texShownAt = 0; // when the first tier showed
   private texViaImg = typeof createImageBitmap !== 'function'; // <img> decode instead of createImageBitmap
   private zoomedOrSelected = false; // the largest tier waits for the first zoom or selection
@@ -797,6 +799,8 @@ export class Globe {
     for (const rt of [this.rtScene, this.rtA, this.rtB]) rt.dispose();
     this.texture?.dispose();
     closeImage(this.texture?.image);
+    closeImage(this.texPending?.image);
+    this.texPending = null;
     this.renderer.dispose();
     this.canvas.remove();
   }
@@ -850,7 +854,7 @@ export class Globe {
     if (!url || this.disposed) return;
     this.texBusy = true;
     if (level === 0) this.textureState = 'loading';
-    const done = (image: ImageBitmap | HTMLImageElement) => this.useImage(level, image);
+    const done = (image: ImageBitmap | HTMLImageElement) => this.onDecoded(level, image);
     const fail = (err: unknown) => this.textureFailed(level, url, viaImg, err);
     const first = this.firstTexture;
     this.firstTexture = null;
@@ -866,6 +870,20 @@ export class Globe {
     }
     if (viaImg) new ImageLoader().setCrossOrigin('anonymous').load(url, done, undefined, fail);
     else new ImageBitmapLoader().load(url, done, undefined, fail);
+  }
+
+  /** Tier 0 goes to the GPU at once. A larger tier waits in texPending; frame() uploads it at rest. */
+  private onDecoded(level: number, image: ImageBitmap | HTMLImageElement): void {
+    if (this.disposed) {
+      closeImage(image);
+      return;
+    }
+    if (level <= 0) {
+      this.useImage(level, image);
+      return;
+    }
+    closeImage(this.texPending?.image);
+    this.texPending = { level, image };
   }
 
   private useImage(level: number, image: ImageBitmap | HTMLImageElement): void {
@@ -955,6 +973,7 @@ export class Globe {
     this.lastFrame = now;
     const reduced = this.reducedMotion.matches;
     let moved = false;
+    let inertia = false;
     // ResizeObserver misses a DPR change at the same CSS size (window moved to another screen).
     if ((window.devicePixelRatio || 1) !== this.dpr) this.resize();
 
@@ -973,6 +992,7 @@ export class Globe {
     } else if (this.controls.update(dt)) {
       this.globe.quaternion.normalize();
       moved = true;
+      inertia = true;
     }
 
     // Idle spin about the globe's own axis, with a soft start.
@@ -1003,6 +1023,24 @@ export class Globe {
     if (framing) {
       this.updateCamera();
       this.needsRender = true;
+    }
+
+    // A larger texture tier goes to the GPU only in a frame at rest: its upload is a main-thread task.
+    const pending = this.texPending;
+    if (
+      pending &&
+      canUploadTexture({
+        level: pending.level,
+        dragging: this.controls.isDragging,
+        focusAnim: this.focusAnim !== null,
+        inertia,
+        framing,
+        spinning: this.spin > 0,
+        idleMs: now - this.lastActivity,
+      })
+    ) {
+      this.texPending = null;
+      this.useImage(pending.level, pending.image);
     }
 
     // Hover pick, at most once per frame.

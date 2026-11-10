@@ -2,7 +2,7 @@
 //
 // Tier 0 (2048) loads first, on every device. Tier 1 (4096) loads when the view needs more texels
 // than tier 0 gives. Tier 2 (8192) loads only on a capable desktop, after the first zoom or selection,
-// while the globe is at rest.
+// while the globe is at rest. A decoded tier goes to the GPU only when canUploadTexture() allows it.
 
 import type { TextureFile } from './textureManifest';
 
@@ -51,6 +51,29 @@ export interface UpgradeState {
 export const SETTLE_MS = 1200;
 /** The largest tier waits for this much idle time: its upload is a main-thread hitch of about 50-130 ms. */
 export const LARGE_IDLE_MS = 800;
+
+export interface UploadState {
+  level: number; // tier of the decoded image that waits
+  dragging: boolean; // the user drags or pinches
+  focusAnim: boolean; // the globe turns to a selection or to home
+  inertia: boolean; // the globe still turns after a drag
+  framing: boolean; // zoom or inset framing still eases
+  spinning: boolean; // the idle spin turns the globe
+  idleMs: number; // time since the last user input or camera move
+}
+
+/**
+ * True when a decoded tier can go to the GPU in this frame. The upload (texImage2D plus mipmaps) is a
+ * main-thread task, so it waits until the globe is at rest. Tier 0 goes at once: the globe has no texture yet.
+ * Tier 1 can go during the slow idle spin (else it waits for ever on an untouched page). Tier 2 also waits
+ * for the spin to stop and for LARGE_IDLE_MS of idle time.
+ */
+export function canUploadTexture(s: UploadState): boolean {
+  if (s.level <= 0) return true;
+  if (s.dragging || s.focusAnim || s.inertia || s.framing) return false;
+  if (s.level >= 2 && (s.spinning || s.idleMs < LARGE_IDLE_MS)) return false;
+  return true;
+}
 
 /** The tier to load now, or -1. Each call asks for at most one step up. */
 export function nextTextureLevel(s: UpgradeState): number {
