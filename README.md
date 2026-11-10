@@ -56,7 +56,7 @@ Breaking news uses the alert yellow with an ink keyline, so one of the two colou
 - **Globe.** A yellow dot with open rings at the label point of the country, and the country name in bold. A critical alert has a larger dot, a heavier ring and a second outer ring. When the country rises (hover or selection), the marker rises with it (`Globe.liftOf`). On the selected country, the red anchor replaces the dot and the outer ring is off at rest, so the capital name has room. When the country is on the far side or off screen, a still yellow arrow with the name points to it from the globe edge.
 - **Pulse.** A story that is new in the browser session pulses 3 times in 4.8 s (0.625 Hz), then the rings stay still (WCAG 2.2.2 and 2.3.1). A reload does not pulse it again. With `prefers-reduced-motion`, nothing pulses. The markers are DOM nodes over the canvas, so the globe does not render more frames for them.
 - **Header chip.** `BREAKING`, the country, the headline, the age, a link to the story, `+N` for more alerts and a dismiss button. The chip is in the header between the search and the map style at 1000 px and wider (the headline goes away below 1100 px). From 768 to 999 px it is in a second header row, and on mobile in a third header row. A long country name gets an ellipsis. A click selects the country. A polite live region announces each new story once. The age changes in place every minute, so a screen reader does not read the chip again.
-- **News plate row.** When the selected country has an alert, the news plate (the News tab on mobile) shows one BREAKING row above the stories: the tag, the source, the age and the headline. The headline links to the story in a new tab.
+- **News plate row.** When the selected country has an alert, the news plate (the News tab on mobile) shows one BREAKING row above the stories: the tag, the source, the age and the headline. The headline links to the story in a new tab. A story in the list with the same link or the same headline does not show again under the row.
 - **Story identity.** A dismissed story stays away for the browser session (`sessionStorage`: `worldly:breaking-dismissed`, `worldly:breaking-announced`). The server key can move to the next day at 00:00 UTC. So the client also treats an alert with the same country and kind, and a `since` less than 24 hours from a known alert, as the same story (`sameStory` in `src/ui/alerts-model.ts`). An alert that drops out of the feed stays on screen for one more poll, because a story near the threshold can come and go.
 - **Poll.** Every 5 minutes while the page is visible, and every 15 minutes while it is hidden. While the tab is hidden, the title shows the count of new alerts, for example `(1) Worldly`. The message and the pulse wait until the tab is visible again. The client drops an alert with no evidence in the last 24 hours.
 - **Mock.** To see the UI with no server data, open `http://localhost:5173/?alerts=mock` in `npm run dev` (also `mock-critical`, `mock-major` and `mock-none`). The production build does not contain the mock.
@@ -221,7 +221,7 @@ The server groups the stories of all feeds into clusters (one cluster for each e
 
 A title matches a country by its name, demonym, capital or leader, as whole words (`api/_lib/news-aliases.json`, built by `npm run aliases`). The script keeps a leader's surname alone only when the surname is not a common word or name (so "Friday" and "Schmidt" never match).
 
-Language (hybrid): a country with no English edition (for example Germany, Japan or Mexico) gets English stories first. An English story that names a person or place from the native top 20 gets that native rank. A native-language story fills the list only when fewer than 3 English stories are strong. It has a language tag (for example "DE").
+Language (hybrid): for a country with no English edition (for example Germany, Japan or Mexico), the strong English stories take their places first. A strong story has 3 or more outlets, or names a person or place from the native top 20 (then it gets that native rank). Native-language stories and the other English stories compete for the other places by score, so English filler does not push out a main national story. The list is in score order. A native-language story has a language tag (for example "DE").
 
 Each story row shows the number of outlets that cover the story, when there are 3 or more. `api/_lib/README.md` has the full rules for the gather, the filters, the clusters, the score and the pick.
 
@@ -230,9 +230,10 @@ Each story row shows the number of outlets that cover the story, when there are 
 Under each headline, a small row can show two ratings of the publisher. They are never ratings of the story.
 
 - **Lean** (Media Bias/Fact Check, MBFC): a 5-step mark from "Left" to "Right", and "MBFC" as a link to the MBFC page of the outlet. MBFC rates on a US scale.
+- **Other class** (MBFC): MBFC puts some outlets outside the left-right scale (Questionable, Conspiracy-Pseudoscience, Satire, Pro-Science). The row then shows "Other class" and the "MBFC" link. So Fox News and Breitbart do not look unrated. The MBFC page names the class.
 - **State media tag** (State Media Monitor): "STATE-CONTROLLED", "CAPTURED" or "PUBLIC".
 
-A publisher with no rating gets no row. The panel footer names a source only when the list shows its data.
+A publisher with no rating gets no row. A blog subdomain (`blogs.*`) gets no rating of its parent outlet. The app shows the MBFC values as they are: MBFC rates AP and AFP "Lean left". The panel footer names a source only when the list shows its data.
 
 The MBFC terms do not allow redistribution, and this repo is public. So the MBFC table is never in git and never goes to the browser. The server adds the lean to each story:
 

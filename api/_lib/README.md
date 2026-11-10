@@ -60,7 +60,7 @@ Each candidate joins the cluster whose first member (the seed) tells the same st
 - (c) 2 or more proper names are shared; or
 - (d) 2 words are shared, and one of them is a name that both titles capitalise.
 
-CJK titles use character pairs. A few synonyms count as one word ("blast" and "explosion", "step down" and "resign").
+CJK titles use character pairs. A few synonyms count as one word ("blast" and "explosion", "step down" and "resign", "motorway" and "highway", "pile-up" and "crash"). A number in words counts as its digits ("Twelve dead" and "kills 12").
 
 `outlets` = the distinct publishers of the members plus the outlets that Google lists for each member.
 
@@ -73,7 +73,7 @@ CJK titles use character pairs. A few synonyms count as one word ("blast" and "e
 - `S_auth` = 1 for a tier-1 outlet (wires, public broadcasters, papers of record), 0.7 for a NewsData `source_priority` of 3000 or less, else 0.4.
 - `S_rec = 0.5 ^ (age in hours / 12)`, from the newest member.
 - `rel` = 1 when a member is from NATION or a title names the country, a demonym, the capital or a leader (whole words). 0.3 for no match. 0 for a homonym or a longer place ("New Mexico", "Mexico, NY", "Panama City Beach", "Niger State", "Palestine Action", "Jordan Fisher", the US state of Georgia), when trap titles are as many as the titles that name the country. For Georgia, Jordan, Niger, Chad and Palestine, the bare name alone is `weak` (0.3) unless the title also has a context word (Tbilisi, EU, Amman, junta, Gaza, ...) or the search asked for the capital. Blocked phrases ("Air India") are removed as whole words, so "Repair India-made trains" still names India.
-- `pen` multiplies: 0.5 for sport (also a sport publisher, cricket "first Test", score lines such as "80-72 victory"), 0.5 for soft items (celebrity, tours and concerts, travel, consumer, market-data sites and stock notes, weather and service items in native feeds), 0.7 for opinion, 0.5 for a list of countries, 0.3 for a Top story that is not national and does not name the country.
+- `pen` multiplies: 0.5 for sport (also a sport publisher or a publisher name with "Rugby" or "Cricket", NFL team names, ticket items, "Ireland XV v Fiji", cricket "first Test", score lines such as "80-72 victory"), 0.5 for soft items (celebrity, tours and concerts, literary, film and music festivals, travel, consumer, market-data sites and stock notes, weather and service items in native feeds), 0.7 for opinion, 0.5 for a list of countries, 0.3 for a Top story that is not national and does not name the country.
 
 ### Pick
 
@@ -82,19 +82,22 @@ The best score first. Pass 1 takes 1 cluster per publisher. Pass 2 allows a seco
 ### Hybrid language (no English edition)
 
 1. An English cluster that shares a capitalised name with a native NATION top-20 title takes that native rank (with a stoplist). This works for Latin scripts only.
-2. A strong English cluster has a score of 0.45 or more, and more than 1 outlet or a native rank.
-3. With 3 or more distinct strong English clusters, the list is English only.
-4. Else the list is: the strong English clusters, then native clusters (with `lang`), then the other English clusters. A native story that a strong English story already tells is skipped.
+2. A strong English cluster has a score of 0.45 or more, and 3 or more outlets or a native rank. A fresh story from 1 or 2 outlets scores about 0.45 on age alone, so it is not strong.
+3. The distinct strong English clusters take their places first.
+4. The native clusters (with `lang`) and the other English clusters compete for the other places by score. So English filler does not push out a main national story. A native story that a strong English story already tells is skipped.
+5. The list is in score order, not in language order.
 
 ### Publisher ratings
 
 `lookupBias(domain, name)` in `bias.ts` gives an `ArticleBias` or `null`. It runs once for each picked story, before the result goes into the cache.
 
 - **Domain.** Google: the `<source url>` attribute. NewsData: `source_url`, else the article host. Outlet feeds: the article host. A news.google.com host is never a domain.
-- **Lookup order.** The host, then each parent down to the registrable domain (with a list of 2-level suffixes), each with its alias from `bias-rules.json`. A host under a "stop parent" (indiatimes.com, yahoo.com, ...) does not fall back to that parent. A host on the deny list (news.google.com, msn.com, aol.com, medium.com, wikipedia.org, facebook.com, ...), or under one (`someone.medium.com`), gets no rating. Yahoo: `news.yahoo.com` and its editions use the `yahoo.com` record; `finance.yahoo.com` gets none. A publisher name counts only when the domain is null, and only through the short allowlist `names` in `bias-rules.json`.
-- **Lean** (MBFC): from `generated/mbfc.json`, which git ignores. Labels: "Left", "Lean left", "Centre", "Lean right", "Right". A record with no lean (Questionable, Satire, ...) gives no lean and no label. Factuality and "Questionable" are not shown.
+- **Lookup order.** The host, then each parent down to the registrable domain (with a list of 2-level suffixes), each with its alias from `bias-rules.json`. A host under a "stop parent" (indiatimes.com, yahoo.com, ...) does not fall back to that parent. A host on the deny list (news.google.com, msn.com, aol.com, medium.com, wikipedia.org, facebook.com, ...), or under one (`someone.medium.com`), gets no rating. A blog subdomain (`blogs.timesofisrael.com`) holds user posts, so it gets no rating. Yahoo: `news.yahoo.com` and its editions use the `yahoo.com` record; `finance.yahoo.com` gets none. A publisher name counts only when the domain is null, and only through the short allowlist `names` in `bias-rules.json`.
+- **Lean** (MBFC): from `generated/mbfc.json`, which git ignores. Labels: "Left", "Lean left", "Centre", "Lean right", "Right". Factuality is not shown.
+- **Other class** (MBFC): a record with no lean (MBFC's Questionable, Conspiracy-Pseudoscience, Satire and Pro-Science classes) gives `lean` null, `rater` 'MBFC' and the MBFC page in `ref`. The row shows "Other class" and the MBFC link, so Fox News or Breitbart do not look unrated. The table does not keep the class, so the row does not name it. The MBFC page names it.
 - **State tag** (State Media Monitor, `state-media.json`): SC gives "STATE-CONTROLLED"; CaPu and CaPr give "CAPTURED"; IP, ISF, ISFM and ISM give "PUBLIC".
 - `rater` and `ref` are null when only a state tag exists.
+- MBFC rates the wire services AP and AFP "Lean left" and Reuters "Centre". The app shows the MBFC values as they are.
 
 `bias.ts` reads the MBFC table at runtime with `readFileSync`, from a literal path. The Vercel file trace then adds the file to the function when it exists. With no file (fresh clone, tests, CI, a build with no key), every lean is null.
 
