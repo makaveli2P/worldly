@@ -442,6 +442,22 @@ a {
   opacity: 0;
 }
 
+/* A load error after the first frame (src/main.ts): the globe is on screen, so the text needs its own paper.
+   :is(#boot) matches the specificity of the boot style in index.html. */
+:is(#boot, .loader)[data-error] {
+  top: calc(var(--bar) + 16px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--edge));
+  padding: 6px 12px;
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
+  color: var(--ink);
+  white-space: normal;
+}
+
 .readout {
   position: absolute;
   left: 50%;

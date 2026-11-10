@@ -52,10 +52,11 @@ async function start(): Promise<void> {
     (boot?.lite ?? getJson<Record<CountryId, LiteCountryInfo>>('/data/countries-lite.json')).catch(() => full),
     boot?.labels ?? getLabels(),
   ]);
-  // Until the full file arrives (see the end of start()), the records hold only the lite fields.
-  const countries = lite as Record<CountryId, CountryInfo>;
-  // The panels need every field. Until the full file is in, select() keeps the last request here.
-  let factsReady = false;
+  // Until the full file arrives (loadFacts below), the records hold only the lite fields.
+  const countries: Record<CountryId, LiteCountryInfo & Partial<CountryInfo>> = lite;
+  // The full records, for the panels. Null until the full file is in; select() keeps the last request until then.
+  let facts: Record<CountryId, CountryInfo> | null = null;
+  let factsLoad: Promise<void> | null = null;
   let pendingSelect: CountryId | null = null;
   const features = worldFeatures(topo);
   // Use the build's label sites only when they come from this world.json (the same arc count).
@@ -114,7 +115,8 @@ async function start(): Promise<void> {
 
   // ---- overlay: labels, leader lines and the readout ----
 
-  const overlay = new Overlay(shell.overlay, { countries, features, globe });
+  // The overlay reads only the lite fields (LITE_FIELDS), one time, in its constructor.
+  const overlay = new Overlay(shell.overlay, { countries: countries as Record<CountryId, CountryInfo>, features, globe });
   overlay.setTheme(shell.theme());
   overlay.setMapStyle(shell.mapStyle());
   overlay.setMobile(shell.isMobile());
@@ -184,13 +186,14 @@ async function start(): Promise<void> {
   // ---- selection ----
 
   function select(raw: CountryId): void {
-    if (!factsReady) {
+    if (!facts) {
       pendingSelect = raw;
+      if (!factsLoad) void loadFacts(getJson<Record<CountryId, CountryInfo>>('/data/countries.json')); // a retry
       return;
     }
     const id = resolveId(raw);
     if (!id) return;
-    const info = countries[id];
+    const info = facts[id];
     setPreview(null);
     tooltip.hide();
     if (id === selected) return;
@@ -210,6 +213,11 @@ async function start(): Promise<void> {
   }
 
   function deselect(): void {
+    if (pendingSelect) {
+      // The user's last action wins over a selection that waits for the facts.
+      pendingSelect = null;
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    }
     setPreview(null);
     if (!selected) return;
     // The panels become inert. Keep keyboard focus on the page, not on <body>.
@@ -291,7 +299,7 @@ async function start(): Promise<void> {
       return;
     }
     if (e.key !== 'Escape') return;
-    if (selected) deselect();
+    if (selected || pendingSelect) deselect();
     else setPreview(null);
   });
   window.addEventListener(
@@ -305,21 +313,48 @@ async function start(): Promise<void> {
     once: true,
   });
 
-  syncInsets();
-  loader.setAttribute('data-hidden', '');
-  setTimeout(() => loader.remove(), 600);
-  if (location.hash) fromHash();
-
   // The full countries.json usually arrives while the globe builds. On a slow link it can come
   // a little after the first frame: the globe turns, and a selection waits for the file.
-  try {
-    Object.assign(countries, await full.catch(() => getJson<Record<CountryId, CountryInfo>>('/data/countries.json')));
-  } catch (err) {
-    console.error('[worldly] country facts failed', err);
-    return;
+  // If it fails, the loader text tells the user, and the next selection asks for the file again.
+  function loadFacts(source: Promise<Record<CountryId, CountryInfo>>): Promise<void> {
+    factsLoad = source.then(
+      (all) => {
+        Object.assign(countries, all);
+        facts = all;
+        factsLoad = null;
+        if (loaderShown) hideLoader();
+        if (pendingSelect) select(pendingSelect);
+      },
+      (err: unknown) => {
+        factsLoad = null;
+        console.error('[worldly] country facts failed', err);
+        clearTimeout(loaderTimer);
+        loader.textContent = 'Country details could not load. Reload the page to try again.';
+        loader.setAttribute('data-error', '');
+        loader.setAttribute('role', 'alert');
+        loader.removeAttribute('data-hidden');
+        shell.ui.append(loader);
+        loaderShown = true;
+      },
+    );
+    return factsLoad;
   }
-  factsReady = true;
-  if (pendingSelect) select(pendingSelect);
+
+  let loaderTimer = 0;
+  let loaderShown = true;
+  function hideLoader(): void {
+    loaderShown = false;
+    loader.setAttribute('data-hidden', '');
+    clearTimeout(loaderTimer);
+    loaderTimer = window.setTimeout(() => loader.remove(), 600);
+  }
+
+  syncInsets();
+  hideLoader();
+  // One retry at once, then a retry with each selection (select()). Start it before fromHash(),
+  // so a #hash selection waits for this request and does not start a second one.
+  void loadFacts(full.catch(() => getJson<Record<CountryId, CountryInfo>>('/data/countries.json')));
+  if (location.hash) fromHash();
 }
 
 start().catch((err) => {
