@@ -27,11 +27,18 @@ const DEATH_PATTERNS = [
 const YEAR_BEFORE = /\b(?:in|since|of|by|from|until|before|after|year|summer|winter|spring|autumn|fall)\s+$/i;
 // "Children aged 5, 8 and 11 killed": the numbers are ages.
 const AGES_BEFORE = /\baged?\s+(?:\d+\s*(?:,|and)\s*)*$/i;
+// A total over weeks or more is not one event: "killed 306 people in three weeks", "1,000 dead since 2023".
+// "The worst floods since 1950" compares one event with the past; that "since" is no total.
+const CUMULATIVE_AFTER = /^[^,;:]{0,40}?\b(?:(?<!\b(?:worst|deadliest|biggest|largest|strongest|heaviest|most)\b[^,;:]{0,30})since|(?:in|over|during|within) (?:the )?(?:(?:past|last|first) )?(?:\d+|two|three|four|five|six|seven|eight|nine|ten|several|few|recent)?\s*(?:weeks|months|years))\b/i;
 
-/** The highest death count in a title, or 0. "2,000 dead" counts; "in 2026" is a year. */
-export function deathCount(title: string): number {
+/**
+ * The highest death count in a title, or 0. "2,000 dead" counts; "in 2026" is a year.
+ * With `tolls` false, "death toll passes N" does not count (in a war it is the total of the war).
+ */
+export function deathCount(title: string, tolls = true): number {
   let best = 0;
-  for (const re of DEATH_PATTERNS) {
+  for (const [i, re] of DEATH_PATTERNS.entries()) {
+    if (!tolls && i === 2) continue;
     const m = re.exec(title);
     if (!m) continue;
     const raw = m[1].toLowerCase();
@@ -41,6 +48,7 @@ export function deathCount(title: string): number {
     const at = (m.index ?? 0) + m[0].indexOf(m[1]);
     if (/^(?:19|20)\d\d$/.test(raw) && YEAR_BEFORE.test(title.slice(0, at))) continue;
     if (AGES_BEFORE.test(title.slice(0, at))) continue;
+    if (CUMULATIVE_AFTER.test(title.slice((m.index ?? 0) + m[0].length))) continue;
     best = Math.max(best, n);
   }
   return best;
@@ -61,14 +69,15 @@ const RULES: Rule[] = [
   // "overthrow the president", "the government is toppled". A statue or a tree is not a leader.
   { family: 'politics', tier: 3, re: /\b(?:overthrow|overthrew|overthrown|topple[sd]?|toppling|depose[sd]?)\s+(?:the\s+)?(?:\p{Lu}[\p{L}'-]+\s+){0,2}(?:president|government|prime minister|PM|leader|king|regime|junta|ruler)\b|\b(?:president|government|prime minister|leader|king|regime|junta|ruler)\s+(?:is\s+|was\s+|has been\s+)?(?:overthrown|toppled|deposed)\b/iu },
   { family: 'politics', tier: 2, re: /\bassassinat(?:ed|es|ion)\b|\bmartial law\b|\bnational state of emergency\b|\bnationwide (?:state of emergency|curfew|blackout|shutdown)\b|\bmass protests?\b.*\b(?:killed|dead)\b/i },
-  { family: 'conflict', tier: 3, re: /\bwar (?:breaks out|erupts)\b|\blaunch(?:es|ed)? (?:a )?(?:full-scale|ground) (?:invasion|offensive)\b|\bfull-scale invasion\b|\bnuclear (?:strike|attack|detonation|blast|explosion)\b|\bnuclear (?:weapons? )?test\b(?! ban| site)/i },
+  // "Russia's full-scale invasion" names a war that goes on; only a launch is new. A price war is no war.
+  { family: 'conflict', tier: 3, re: /(?<!\b(?:price|trade|tariff|bidding|turf|culture|gang|talent|streaming|console|word|words|currency|chip|cola|tech|ratings|media|legal|fare|subsidy|war of)\s)\bwar (?:breaks out|erupts)\b|\b(?:launch(?:es|ed)?|begins?|began|starts?|started|orders?|ordered) (?:a )?(?:full-scale|ground) (?:invasion|offensive)\b|\bnuclear (?:strike|attack|detonation|blast|explosion)\b|\bnuclear (?:weapons? )?test\b(?! ban| site)/i },
   { family: 'conflict', tier: 2, re: /\b(?:air ?strikes?|strikes|missiles?|drones?|rockets?|shelling|bombard\w*|ballistic|artillery)\b.*\b(?:kill\w*|dead|hits?|struck|pound\w*|attack\w*)\b|\bkill\w*\b.*\b(?:air ?strikes?|strikes?|shelling|bombardment|missile|drone)\b|\b(?:strikes?|attacks?) on (?:the )?capital\b/i },
   { family: 'conflict', tier: 2, interstate: true, re: /\b\p{Lu}[\p{L}.]+ (?:strikes|bombs|attacks|shells|launches strikes on) (?:the )?\p{Lu}|\b(?:launch(?:es|ed)?|carr(?:y|ies|ied) out) (?:new |fresh |retaliatory |wave of )?(?:air ?|missile |drone )?strikes? (?:on|against|in) (?:the )?\p{Lu}|\bstrikes? (?:on|against) (?:the )?\p{Lu}/u },
   { family: 'conflict', tier: 1, re: /\braids?\b|\bclashes\b|\bambush\w*|\bmilitants?\b|\binsurgents?\b|\bjihadists?\b|\bbandits\b|\boffensive\b|\brebels?\b.*\b(?:kill\w*|seize\w*|capture\w*)/i },
   { family: 'attack', tier: 2, re: /\bterror(?:ist)? attack\b|\bmass shooting\b|\bschool shooting\b|\bsuicide (?:bomb\w*|attack)\b|\bcar bomb\b|\bbombing\b|\bmassacre\b|\bgunmen\b|\bhostages? (?:taken|seized|held)\b|\btakes? hostages?\b|\bshooting (?:kills|leaves)\b|\bstabbing attack\b/i },
   { family: 'attack', tier: 1, re: /\bshooting\b|\bgunman\b|\bopens? fire\b|\bstabbing\b|\bknife attack\b|\battack\b.*\bkill\w*|\bkill\w*\b.*\battack\b/i },
   { family: 'disaster', tier: 2, re: /\bearthquake\b|\bquake\b|\btsunami\b|\bhurricane\b|\btyphoon\b|\bcyclone\b|\bvolcan\w+ erupt\w*|\beruption\b|\bfloods?\b|\bflooding\b|\bflooded\b|\bflash floods?\b|\blandslides?\b|\bmudslides?\b|\bavalanche\b|\btornado(?:es)?\b|\bheat ?wave\b.*\b(?:kill\w*|dead|deaths)\b|\bwildfires?\b.*\b(?:kill\w*|dead|evacuat\w*)\b|\bstorm\b.*\b(?:kill\w*|dead)\b/i },
-  { family: 'accident', tier: 2, re: /\b(?:plane|jet|airliner|helicopter|air) crash\b|\bcrash(?:es)?\b.*\b(?:plane|jet|airliner|flight)\b|\btrains? (?:crash|collision|collide|derail\w*)\b|\bcollision (?:of|between) (?:two )?(?:[\p{L}-]+ )*trains?\b|\bferry (?:sinks|capsiz\w*)\b|\bcapsiz\w*|\bshipwreck\w*|\bboat\b.*\b(?:dead|killed|drown\w*|missing)\b|\bstampede\b|\b(?:building|bridge|dam|mine|tower) collapse\b|\bcollapse\b.*\bkill\w*|\bexplosion\b|\bblast\b|\b(?:fire|blaze) (?:kills|killed|at|in|engulfs|rips through|sweeps|guts)\b|\bkill\w* in (?:a )?(?:fire|blaze)\b|\b(?:building|house|factory|hospital|hotel|market|tower|apartment) fire\b|\bpile-?ups?\b|\bbus (?:crash|plunge\w*)\b/iu },
+  { family: 'accident', tier: 2, re: /\b(?:plane|jet|airliner|helicopter|air) crash\b|\bcrash(?:es)?\b.*\b(?:plane|jet|airliner|flight)\b|\btrains? (?:crash|collision|collide|derail\w*)\b|\bcollision (?:of|between) (?:two )?(?:[\p{L}-]+ )*trains?\b|\b(?:ferry|boat|ship|vessel) (?:sinks|sank|sinking|capsiz\w*|crash|collision|disaster)\b|\bcapsiz\w*|\bshipwreck\w*|\bboat\b.*\b(?:dead|killed|drown\w*|missing)\b|\b(?:dead|killed|drown\w*)\b.*\b(?:boat|ship|vessel)\b|\bstampede\b|\b(?:building|bridge|dam|mine|tower) collapse\b|\bcollapse\b.*\bkill\w*|\bexplosion\b|\bblast\b|(?<!\bopen(?:s|ed|ing)? )\b(?:fire|blaze) (?:kills|killed|at|in|engulfs|rips through|sweeps|guts)\b|\bkill\w* in (?:a )?(?:fire|blaze)\b|\b(?:building|house|factory|hospital|hotel|market|tower|apartment) fire\b|\bpile-?ups?\b|\bbus (?:crash|plunge\w*)\b/iu },
 ];
 
 // Head-of-state titles. "PM" must be upper case, so it is outside the case-insensitive part.
@@ -81,11 +90,11 @@ const ROLE_VERB = /\b(?:dies|died|has died|is dead|dead|killed|assassinated|shot
 // A speaker verb between the title and the event verb: "president says 12 killed".
 const SPEAKER = /\b(?:says?|said|tells?|told|warns?|claims?|announces?|confirms?|calls?|urges?|vows?|denies|orders?|meets?|visits?|condemns?|accuses?|blames?|mourns?|pays|praises?|hails?|names?|appoints?|reacts?|responds?)\b|[:;]/i;
 // A current leader named by the alias table, then a death or removal verb: "Putin dies", "Peña resigns".
-const LEADER_EVENT = /^\s*(?:,[^,]{1,40},\s*)?(?:has\s+|is\s+|was\s+|has been\s+)?(dies|died|dead|killed|assassinated|shot dead|shot|resigns|resigned|quits|steps down|ousted|impeached|arrested|deposed|toppled|overthrown)\b/i;
+const LEADER_EVENT = /^\s*(?:,[^,]{1,40},\s*)?(?:has\s+|is\s+|was\s+|has been\s+)?(dies|died|dead|killed|assassinated|shot dead|shot|resigns|resigned|quits|steps down|ousted|impeached|arrested|detained|captured|deposed|toppled|overthrown)\b/i;
 const LEADER_EVENT_BEFORE = /\b(?:assassination of|death of|killing of)\s+(?:\p{L}+\s+){0,2}$/iu;
 // Verbs that can also be active with an object: "Trump toppled statue", "Trump quits Paris deal",
-// "President Bukele arrested gang leaders", "Trump shot down claims".
-const TRANSITIVE = /^(?:killed|shot|resigns|resigned|quits|steps down|stepped down|ousted|arrested|detained|captured|toppled|deposed|overthrown)$/i;
+// "President Bukele arrested gang leaders", "Trump shot down claims". "Dead" is here for "dead set on".
+const TRANSITIVE = /^(?:dead|killed|shot|resigns|resigned|quits|steps down|stepped down|ousted|arrested|detained|captured|toppled|deposed|overthrown)$/i;
 // After such a verb, the event reading needs the end of the title, a punctuation mark, or one of these words.
 const EVENT_TAIL = /^(?:\s*$|\s*[,.;:!?|()"'‘’“”—–-]|\s+(?:after|amid|as|at|in|by|following|over|from (?:office|power|post)|under|while|during|on|near|outside|inside|with|alongside|and|aged|hours|days|minutes|today|tonight|yesterday|reports?|says?|said)\b)/i;
 
@@ -123,6 +132,8 @@ function headOfStateEvent(title: string, matches: CountryMatch[]): boolean {
     const v = ROLE_VERB.exec(rest);
     if (!v) continue;
     if (SPEAKER.test(rest.slice(0, v.index))) continue;
+    // "Kenya president Ruto's son arrested": the verb belongs to someone else.
+    if (/['’]s\s/.test(rest.slice(0, v.index))) continue;
     if (!eventReading(v[0], title.slice(subjectEnd + v.index + v[0].length))) continue;
     return true;
   }
@@ -147,17 +158,29 @@ function leaderDeath(title: string, matches: CountryMatch[]): boolean {
 
 const COUP_AFTER = /^(?:['’]s)?\s+(?:military\s+)?coup\b(?!\s+(?:leaders?|government|regime|plot|attempt|anniversary|trial|bid|era|survivors?|accused|plotters?|makers?))/i;
 
-/** Tier 3 politics: "Gabon coup: officers announce takeover". The country names the coup. */
+const COUP_BEFORE = /\b(?:military\s+)?coup(?: d['’]état)? in\s+(?:the\s+)?$/i;
+
+/** Tier 3 politics: "Gabon coup: officers announce takeover", "Military coup in Niger". The country names the coup. */
 function countryCoup(title: string, matches: CountryMatch[]): boolean {
-  return matches.some((m) => (m.kind === 'name' || m.kind === 'demonym') && m.weight > 0 && COUP_AFTER.test(title.slice(m.end)));
+  return matches.some(
+    (m) => (m.kind === 'name' || m.kind === 'demonym') && m.weight > 0 && (COUP_AFTER.test(title.slice(m.end)) || (m.kind === 'name' && COUP_BEFORE.test(title.slice(0, m.index)))),
+  );
 }
 
-/** "declares war on Georgia", "invades Estonia": the target must be a country, not seaweed or a pitch. */
+// "Chinese jets invade Taiwan's airspace" is an incursion, not an invasion.
+const NOT_INVASION_TARGET = /^(?:['’]s)?\s+(?:air\s*space|air defen[cs]e|ADIZ|waters|territorial|maritime|exclusive economic zone|EEZ|privacy|space)\b/i;
+
+/**
+ * "declares war on Georgia", "invades Estonia", "launches invasion of Estonia": the target must be a
+ * country, not seaweed or a pitch. "Russia's invasion of Ukraine" names a war that goes on, so a bare
+ * "invasion of" needs a launch verb before it.
+ */
 function warOnCountry(title: string, matches: CountryMatch[]): boolean {
-  const re = /\b(?:declares? war on|declared war on|invad(?:es|ed|e|ing)|invasion of|full-scale invasion of|ground invasion of)\s+(?:the\s+)?(?:(?:southern|northern|eastern|western)\s+)?/gi;
+  const re = /\b(?:declares? war on|declared war on|invad(?:es|ed|e|ing)|(?:launch(?:es|ed)?|begins?|began|starts?|started|orders?|ordered) (?:an? |the )?(?:full-scale |ground |military )?invasion of)\s+(?:the\s+)?(?:(?:southern|northern|eastern|western)\s+)?/gi;
   for (const m of title.matchAll(re)) {
     const at = (m.index ?? 0) + m[0].length;
-    if (matches.some((c) => c.index === at && (c.kind === 'name' || c.kind === 'place') && c.weight > 0)) return true;
+    const target = matches.find((c) => c.index === at && (c.kind === 'name' || c.kind === 'place') && c.weight > 0);
+    if (target && !NOT_INVASION_TARGET.test(title.slice(target.end))) return true;
   }
   return false;
 }
@@ -165,11 +188,16 @@ function warOnCountry(title: string, matches: CountryMatch[]): boolean {
 // ---------------------------------------------------------------- demotions
 
 // Not news of a new event: anniversaries, trials, culture, sport, opinion, forecasts, hypotheticals.
-const NOT_EVENT = /\b(?:shooting stars?|(?:blue|red|pink|silver|green) (?:tsunami|wave|hurricane|tide)|flood (?:the )?streets|flood of|accus\w+|alleg\w+|plot|plotted|foiled|thwarted|fact[- ]check\w*|disinformation|misinformation|conspiracy|fake|hoax|GoFundMe|anniversary|years? (?:after|since|ago|on)|remember\w*|memorial|commemorat\w*|trial|sentenced|convicted|jailed|guilty|acquitted|inquest|inquiry|lawsuit|sues|film|movie|documentary|series|season|finale|episode|book|novel|review|podcast|museum|exhibition|game|match|cup|league|olympic|tournament|F1|grand prix|NFL|NBA|cricket|football|soccer|tennis|golf|rugby|opinion|analysis|explainer|explained|what to know|quiz|in pictures|photos?|video game|simulat\w*|drill|exercise|rehears\w*|threat\w*|warns?|warnings?|could|would|might|fears?|risk|brink|plans?|vows?|considers?|mulls?|prepare\w*|heads? for|heading for|forms|formed|forming|watch|alerts? (?:cancel+ed|lifted)|no (?:damage|injuries|casualties|deaths|tsunami)|scare|hits? the (?:market|shelves|road|stage|screen))\b|\?/i;
+const NOT_EVENT = /\b(?:shooting stars?|(?:blue|red|pink|silver|green) (?:tsunami|wave|hurricane|tide)|flood (?:the )?streets|flood of|accus\w+|alleg\w+|plot|plotted|foiled|thwarted|fact[- ]check\w*|disinformation|misinformation|conspiracy|fake|hoax|GoFundMe|anniversary|years? (?:after|since|ago|on)|remember\w*|memorial|commemorat\w*|trial|sentenced|convicted|jailed|guilty|acquitted|inquest|inquiry|lawsuit|sues|film|movie|documentary|series|season|finale|episode|book|novel|review|podcast|museum|exhibition|game|match|cup|league|olympic|tournament|F1|grand prix|NFL|NBA|cricket|football|soccer|tennis|golf|rugby|opinion|analysis|commentary|explainer|explained|what to know|quiz|in pictures|photos?|video game|simulat\w*|drill|exercise|rehears\w*|threat\w*|warns?|warnings?|could|would|might|fears?|risks?|brink|plans?|plann\w*|vows?|considers?|mulls?|prepar\w*|heads? for|heading for|forms|formed|forming|watch|alerts? (?:cancel+ed|lifted)|no (?:damage|injuries|casualties|deaths|tsunami)|scare|hits? the (?:market|shelves|road|stage|screen)|today in history|on this day|this day in history|marks|marking|days (?:of|since)|root causes?|lessons|legacy|poetry|poems?|art|music|songs?|theat(?:re|er)|prosecutors? (?:seeks?|sought|demands?|asks?|calls? for|charges?)|prosecution|court|verdict|appeal|hearing|indict\w*|death (?:penalty|sentence)|not|never|no longer|doesn['’]t|does not|don['’]t|didn['’]t|won['’]t|will not|wouldn['’]t|isn['’]t|aren['’]t|rules? out|needs? to|(?:to|will) (?:restart|resume|launch|strike|attack|invade|bomb|begin|start|send|deploy|hit))\b|\?/i;
+// Explainers and features start with a question word or a label: "How a bank collapse toppled ...".
+const FEATURE_START = /^(?:how|why|what|who|when|where|inside|explainer|analysis|opinion|comment|editorial|letters?|watch|listen|review)\b/i;
 // "may" in lower case only: "May" is also the month.
 const MODAL_MAY = /\bmay\b/;
 // De-escalation: a story about the end of an event supports it but never starts an alert.
-const DEESCALATE = /\b(?:halts?|halted|ceasefire|truce|peace|talks|negotiat\w*|ends?|ended|suspend\w*|pauses?|paused|lifts?|lifted|aid (?:arrives|convoy|package|pledge)|rebuild\w*|recover\w*|return\w*|reopen\w*|compensation|probe|investigat\w*|damage (?:to )?crops|study|climate change|freed|released|release of|swap)\b/i;
+const DEESCALATE = /\b(?:halts?|halted|ceasefire|truce|peace|talks|negotiat\w*|ends?|ended|suspend\w*|pauses?|paused|lifts?|lifted|aid (?:arrives|convoy|package|pledge)|rebuild\w*|recover\w*|return\w*|reopen\w*|compensation|probe|investigat\w*|damage (?:to )?crops|study|climate change|freed|released|release of|swap|breakthrough)\b/i;
+// An attack report that names only injuries, or one or two deaths: "mass shooting leaves 4 injured".
+const INJURED = /\b(?:injur\w*|wounded|hurt)\b/i;
+const DEATH_WORD = /\b(?:kill\w*|dead|dies|died|death\w*|fatal\w*)\b/i;
 // Follow-up stories about an earlier event.
 export const AFTERMATH = /\b(?:mourn\w*|vigils?|funerals?|silent march|marches|tributes?|suspect|what we know|aftermath|resign\w*|days after|weeks after|charged|identified|named as|survivors? (?:recall|describe|tell)|how it happened|timeline|dies in hospital|dies of (?:his|her|their) (?:wounds|injuries)|victims? (?:named|remembered|laid to rest)|black box|voice recorder|flight recorder|investigators)\b/i;
 const COUP_CLAIM = /\b(?:accus\w+|alleg\w+|plot\w*|attempt\w*|foil\w*|fail\w*|thwart\w*|calls? it a coup|branded|so-called|rumou?rs?)\b|["'‘“]coup["'’”]/i;
@@ -190,16 +218,20 @@ export function classify(title: string): Classification | null {
 
   const countries = new Set(matches.filter((m) => m.weight > 0).map((m) => m.id));
   const interstate = hits.some((h) => h.interstate) && countries.size >= 2;
-  const deaths = deathCount(title);
-  hits.sort((a, b) => b.tier - a.tier);
+  // On a tie, a disaster word wins: "Earthquake strikes Tibet, killing 16" is no military strike.
+  hits.sort((a, b) => b.tier - a.tier || Number(b.family === 'disaster') - Number(a.family === 'disaster'));
   const family = hits[0].family;
   let tier: number = hits[0].tier;
+  // In a war, "death toll passes 70,000" is the total of the war, not of this event.
+  const deaths = deathCount(title, family !== 'conflict');
 
   // Deaths set the tier of disasters, accidents and attacks. 50 or more dead is critical-class.
   if (family !== 'politics' && (family !== 'conflict' || tier < 3)) {
     if (deaths >= 50) tier = 3;
     else if (deaths >= 5) tier = Math.max(tier, 2);
     else if (family === 'accident' || family === 'disaster' || (family === 'conflict' && !interstate)) tier = 1;
+    else if (family === 'attack' && (deaths > 0 && deaths < 3)) tier = Math.min(tier, 1);
+    else if (family === 'attack' && deaths === 0 && INJURED.test(title) && !DEATH_WORD.test(title)) tier = Math.min(tier, 1);
   }
   if (family === 'disaster') {
     // A strong quake or a landfall is major-class with no death count, but never critical-class alone.
@@ -210,7 +242,7 @@ export function classify(title: string): Classification | null {
   // Claims and plots about a coup are politics, not a coup.
   if (family === 'politics' && /\bcoup\b/i.test(title) && COUP_CLAIM.test(title)) tier = Math.min(tier, 1);
   // A forecast, a question, a trial or a film supports a story but never starts an alert.
-  if (NOT_EVENT.test(title) || MODAL_MAY.test(title)) tier = Math.min(tier, 1);
+  if (NOT_EVENT.test(title) || MODAL_MAY.test(title) || FEATURE_START.test(title)) tier = Math.min(tier, 1);
   if (DEESCALATE.test(title)) tier = Math.min(tier, 1);
   if (family !== 'politics' && AFTERMATH.test(title)) tier = Math.min(tier, 1);
   return tier >= 1 ? { family, tier: tier as 1 | 2 | 3, deaths } : null;
