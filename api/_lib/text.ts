@@ -517,7 +517,8 @@ export function guessLang(title: string): string | null {
   if (/[ऀ-ॿ]/.test(title)) return 'hi';
   if (/[ঀ-৿]/.test(title)) return 'bn';
   if (/[฀-๿]/.test(title)) return 'th';
-  const words = title.toLowerCase().split(/[^\p{L}']+/u).filter(Boolean);
+  // "y/y", "q/q" and "m/m" are rate notes, not Spanish or Somali words.
+  const words = title.toLowerCase().replace(/\b\p{L}\/\p{L}\b/gu, ' ').split(/[^\p{L}']+/u).filter(Boolean);
   const english = words.filter((w) => ENGLISH_WORDS.has(w)).length;
   let best: string | null = null;
   let bestHits = 0;

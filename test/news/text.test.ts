@@ -167,6 +167,12 @@ describe('title and source clean-up', () => {
 });
 
 describe('guessLang', () => {
+  it('reads "y/y" and "q/q" as rate notes, not as Spanish words (review: X-kosovo)', () => {
+    expect(guessLang("Kosovo's Pristina airport passenger numbers up 4.24% y/y in Oct")).toBeNull();
+    expect(guessLang('Serbia GDP up 2.1% q/q, y/y growth slows')).toBeNull();
+    expect(guessLang('Sheinbaum y los gobernadores de Morena')).toBe('es');
+  });
+
   it('tags non-English titles and leaves English ones', () => {
     expect(guessLang('Jarmalka oo kala noqday magangelyadii haweeney Soomaaliyeed')).toBe('so');
     expect(guessLang('Amavubi yerekeje muri Mali')).toBe('rw');

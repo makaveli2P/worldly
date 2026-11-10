@@ -189,16 +189,37 @@ describe('hybrid (no English edition)', () => {
     expect(r.native.size).toBe(2);
   });
 
-  it('uses English only when 3 or more English stories are strong', () => {
+  it('keeps the strong English stories, and fills the other places with native stories by score', () => {
     const strong = (t: string, s: string) => cand(t, { source: s, outlets: ['Reuters', 'AP', 'BBC', 'DW', 'AFP'], publishedAt: hoursAgo(0) });
     const english = [
       strong('Germany passes rent cap law after long fight', 'Reuters'),
       strong('Germany orders new air defence systems for army', 'DW'),
       strong('German exports fall for third month in a row', 'AP'),
     ];
-    const r = rankHybrid(english, [native('Regierung beschließt Rentenreform', 1)], ctx);
-    expect(r.clusters.every((c) => c.rep.lang === null)).toBe(true);
-    expect(r.native.size).toBe(0);
+    const r = rankHybrid(english, [native('Regierung beschließt große Rentenreform', 1)], ctx);
+    expect(r.clusters.filter((c) => c.rep.lang === null)).toHaveLength(3);
+    expect(r.native.size).toBe(1);
+    // One list in score order: English does not come first only because it is English.
+    const scores = r.clusters.map((c) => c.score);
+    expect(scores).toEqual([...scores].sort((a, b) => b - a));
+  });
+
+  it('does not let English filler from 2 outlets push out the main native stories (review: JPN, UKR)', () => {
+    const two = (t: string, s: string) => cand(t, { source: s, outlets: ['Reuters', 'AP'], publishedAt: hoursAgo(1) });
+    const english = [
+      two("Toyota's Scion Brand Returns With Germany's Forbidden-Fruit Minitrucks", 'WSJ'),
+      two('BT to hold off Starlink launch in Germany until noise dies down', 'Reuters'),
+      two('Germany introduces AI in prisons to assist foreign inmates', 'AsiaNews'),
+    ];
+    for (const cl of rankPool(english, ctx)) expect(cl.score).toBeGreaterThanOrEqual(0.45);
+    const nat = [
+      native('Fall Fabian: Gina H. zu lebenslanger Haft verurteilt', 1),
+      native('Bombe in Bochum entschärft, Tausende evakuiert', 2),
+      native('Politiker fordern Rückkehr der Bannmeile am Reichstag', 3),
+    ];
+    const r = rankHybrid(english, nat, ctx);
+    expect(r.native.size).toBe(3);
+    expect(r.clusters.slice(0, 3).every((c) => c.rep.lang === 'de')).toBe(true);
   });
 
   it('does not count a fresh story from 1 outlet as strong coverage', () => {
@@ -231,6 +252,10 @@ describe('review cases: filler outside the audit countries', () => {
     ['Netherlands', 'Dutch', "Sudden call-up for Ajax player raises many questions: 'The worst in the Netherlands!'", 'LiveScore'],
     ['Singapore', 'Singaporean', "Singapore to host 'BTS The City Arirang' for all of December", 'Example'],
     ['South Africa', 'South African', 'John Legend brings The Muse Tour to South Africa in February 2027', 'Example'],
+    ['Fiji', 'Fijian', 'Tickets | Ireland XV v Fiji Latui At Virgin Media Park', 'Munster Rugby'],
+    ['Fiji', 'Fijian', 'Fiji name squad changes for Dublin', 'Munster Rugby'],
+    ['Germany', 'German', "Detroit Lions Kerby Joseph won't play in Germany", 'Pride Of Detroit'],
+    ['France', 'French', "At Festival America, France's America-Themed Literary Festival", 'The Paris Review'],
   ];
   it.each(titles)('%s: "%s" gets a penalty', (name, demonym, title, source) => {
     const c = rankContext(name, [name, demonym], NOW);
@@ -260,6 +285,22 @@ describe('review cases: the shown title', () => {
 });
 
 describe('review cases: one story, one row', () => {
+  it('treats a toll in words and in digits, and motorway and highway pile-ups, as one story (review: BGR)', () => {
+    const bgr = rankContext('Bulgaria', ['Bulgaria', 'Bulgarian', 'Sofia'], NOW);
+    const a = cand('Bulgaria highway pileup kills 12, dozens injured: PM', { source: 'DW' });
+    const b = cand('Twelve dead after motorway pile-ups in Bulgaria fog', { source: 'BBC News' });
+    const c = cand("Dense Fog Suspected in Bulgaria's Deadly Trakia Highway Crashes", { source: 'Novinite' });
+    expect(sameCandidates(a, b, bgr.ignore)).toBe(true);
+    expect(pick(rankPool([a, b, c], bgr), 5, bgr)).toHaveLength(1);
+  });
+
+  it('keeps two crashes with other tolls and other places apart', () => {
+    const bgr = rankContext('Bulgaria', ['Bulgaria', 'Bulgarian', 'Sofia'], NOW);
+    const a = cand('Bulgaria highway pileup kills 12, dozens injured: PM', { source: 'DW' });
+    const b = cand('Bulgarian parliament approves the 2027 budget after long debate', { source: 'BTA' });
+    expect(sameCandidates(a, b, bgr.ignore)).toBe(false);
+  });
+
   it('treats clusters that the hybrid boost links to the same native story as one story', () => {
     const ven = rankContext('Venezuela', ['Venezuela', 'Venezuelan', 'Caracas'], NOW);
     const english = [

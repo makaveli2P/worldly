@@ -16,10 +16,10 @@ export const PEN_SOFT = 0.5;
 export const PEN_OPINION = 0.7;
 export const PEN_LIST = 0.5;
 export const PEN_WORLD = 0.3;
-/** An English cluster with at least this score is "strong", when more than 1 outlet covers it (or the boost links it). */
+/** An English cluster with at least this score is "strong", when STRONG_OUTLETS cover it (or the boost links it). */
 export const STRONG_SCORE = 0.45;
-/** With fewer strong English clusters than this, native-language stories fill the list. */
-export const MIN_STRONG_ENGLISH = 3;
+/** Outlets that a strong English cluster needs when the boost does not link it to a native story. */
+export const STRONG_OUTLETS = 3;
 /** The hybrid boost compares English titles with this many native NATION titles. */
 export const NATIVE_BOOST_TOP = 20;
 /** A cluster that does not name the country (rel < 1) needs at least this score to reach the list. */
@@ -44,15 +44,15 @@ const TIER1 = new Set([
   'rnz', 'the straits times', 'cna', 'yonhap news agency', 'euronews', 'nz herald', 'the irish times', 'rte',
 ]);
 
-const SPORT = /\b(?:vs\.?|match|cup|league|squad|coach|rugby|cricket|football|soccer|basketball|baseball|softball|volleyball|handball|hockey|nba|wnba|nfl|nhl|mlb|mls|ncaa|fifa|uefa|olympics?|tennis|golf|f1|formula 1|grand prix|wicket|wickets|innings|batsman|batter|bowler|pitcher|homers?|home runs?|striker|midfielder|t20|odi|test (?:match|series)|qualifiers?|fixtures?|semi-?finals?|quarter-?finals?|7s|bundesliga|eredivisie|ligue 1|la liga|laliga|serie a|premier league|brasileirao|copa|futbol|futebol|fussball|wwe|ufc|boxing|marathon|grand slam|playoffs?|touchdown|quarterback|transfer window|world series|pga|lpga|liv golf|nascar|motogp|bowl|sevens|team to face|injur(?:y|ies) crisis|line-?up|friendl(?:y|ies)|game time|goalkeeper|winger|national team|selecao|derby|kick-?off|tournament|championships?|medals?|athletes?|world juniors|juniors|call-?up|called up|hat-?trick|scores? twice|captaincy|afcon|nations league|top seed|district seed|seeded|games?(?![- ](?:changer|theory|plan))|dortmund|bayern|real madrid|fc barcelona|barca|man utd|manchester united|manchester city|arsenal|chelsea|liverpool fc|juventus|psg|ajax|feyenoord|psv|benfica|celtic|galatasaray|fenerbahce|flamengo|palmeiras|corinthians|all blacks|wallabies|springboks|mariners|astros|yankees|dodgers)\b/i;
+const SPORT = /\b(?:vs\.?|match|cup|league|squad|coach|rugby|cricket|football|soccer|basketball|baseball|softball|volleyball|handball|hockey|nba|wnba|nfl|nhl|mlb|mls|ncaa|fifa|uefa|olympics?|tennis|golf|f1|formula 1|grand prix|wicket|wickets|innings|batsman|batter|bowler|pitcher|homers?|home runs?|striker|midfielder|t20|odi|test (?:match|series)|qualifiers?|fixtures?|semi-?finals?|quarter-?finals?|7s|bundesliga|eredivisie|ligue 1|la liga|laliga|serie a|premier league|brasileirao|copa|futbol|futebol|fussball|wwe|ufc|boxing|marathon|grand slam|playoffs?|touchdown|quarterback|transfer window|world series|pga|lpga|liv golf|nascar|motogp|bowl|sevens|team to face|injur(?:y|ies) crisis|line-?up|friendl(?:y|ies)|game time|goalkeeper|winger|national team|selecao|derby|kick-?off|tournament|championships?|medals?|athletes?|world juniors|juniors|call-?up|called up|hat-?trick|scores? twice|captaincy|afcon|nations league|top seed|district seed|seeded|games?(?![- ](?:changer|theory|plan))|dortmund|bayern|real madrid|fc barcelona|barca|man utd|manchester united|manchester city|arsenal|chelsea|liverpool fc|juventus|psg|ajax|feyenoord|psv|benfica|celtic|galatasaray|fenerbahce|flamengo|palmeiras|corinthians|all blacks|wallabies|springboks|mariners|astros|yankees|dodgers|(?:detroit|chicago|green bay|minnesota|dallas|philadelphia|new york|washington|san francisco|los angeles|seattle|arizona|new orleans|atlanta|carolina|tampa bay|kansas city|las vegas|denver|buffalo|miami|new england|pittsburgh|baltimore|cincinnati|cleveland|houston|indianapolis|jacksonville|tennessee) (?:lions|bears|packers|vikings|cowboys|eagles|giants|commanders|49ers|rams|chargers|seahawks|cardinals|saints|falcons|panthers|buccaneers|chiefs|raiders|broncos|bills|dolphins|patriots|jets|steelers|ravens|bengals|browns|texans|colts|jaguars|titans))\b/i;
 // Cricket and score lines, with their case: "Pakistan score 390-6 in first Test", "nears century", "80-72 victory".
 const SPORT_CASED =
-  /\b(?:first|second|third|fourth|fifth|final|opening|1st|2nd|3rd|4th|5th|day-night|pink-ball) Test\b|\bTest (?:match|series|squad|win|defeat)\b|\b(?:nears|hits|scores|maiden|brings up|smashes|slams) (?:a |his |her )?(?:century|ton|fifty)\b|\b\d{1,3}-\d{1,3} (?:win|victory|defeat|loss|draw|rout)\b|\b(?:beat|beats|defeat|defeats|edge|edges|thrash|thrashes|rout|routs) [\w' ]{2,40} \d{1,3}-\d{1,3}\b|\b\d{2,3}-\d (?:in|at|after)\b/;
-const SOFT = /\b(?:celebrity|celebrities|actress|actor|singer|rapper|kardashian|taylor swift|horoscope|recipes?|travel guide|travel|hotels?|resorts?|luxury|fashion|tips|how to|things to do|what to know before buying|review|deals?|discount|sale|black friday|ps5|playstation|xbox|iphone|guitar|netflix|box office|trailer|red carpet|dating|wedding|divorce|bollywood|hollywood|k-?pop|bts|blackpink|arirang|musical|biopic|sequel|grammys?|oscars?|emmys?|film rights|acquires? (?:the )?(?:film|rights)|influencer|lottery|jackpot|bikini|swimsuit|flaunts?|stuns|showbiz|paparazzi|honeymoon|steals? (?:the )?spotlight|ucapan|beauty|skincare|nonstop|flights? to|airfares?|cruises?|vacations?|getaways?|concerts?|tour dates|(?:world|concert|stadium|farewell|reunion|comeback|arena|global|anniversary|muse) tour|brings (?:the |his |her |their )?[\w' ]{2,30} tour|album|best \w+ (?:to buy|in \d{4})|\d+ (?:best|things|ways|reasons|places))\b/i;
+  /\b(?:first|second|third|fourth|fifth|final|opening|1st|2nd|3rd|4th|5th|day-night|pink-ball) Test\b|\bTest (?:match|series|squad|win|defeat)\b|\b(?:nears|hits|scores|maiden|brings up|smashes|slams) (?:a |his |her )?(?:century|ton|fifty)\b|\b\d{1,3}-\d{1,3} (?:win|victory|defeat|loss|draw|rout)\b|\b(?:beat|beats|defeat|defeats|edge|edges|thrash|thrashes|rout|routs) [\w' ]{2,40} \d{1,3}-\d{1,3}\b|\b\d{2,3}-\d (?:in|at|after)\b|^Tickets\b|\b(?:XV|XI|XIII) v\.? [A-Z]/;
+const SOFT = /\b(?:celebrity|celebrities|actress|actor|singer|rapper|kardashian|taylor swift|horoscope|recipes?|travel guide|travel|hotels?|resorts?|luxury|fashion|tips|how to|things to do|what to know before buying|review|deals?|discount|sale|black friday|ps5|playstation|xbox|iphone|guitar|netflix|box office|trailer|red carpet|dating|wedding|divorce|bollywood|hollywood|k-?pop|bts|blackpink|arirang|musical|biopic|sequel|grammys?|oscars?|emmys?|film rights|acquires? (?:the )?(?:film|rights)|influencer|lottery|jackpot|bikini|swimsuit|flaunts?|stuns|showbiz|paparazzi|honeymoon|steals? (?:the )?spotlight|ucapan|beauty|skincare|nonstop|flights? to|airfares?|cruises?|vacations?|getaways?|concerts?|tour dates|(?:world|concert|stadium|farewell|reunion|comeback|arena|global|anniversary|muse) tour|brings (?:the |his |her |their )?[\w' ]{2,30} tour|album|(?:literary|film|music|book) festival|best \w+ (?:to buy|in \d{4})|\d+ (?:best|things|ways|reasons|places))\b/i;
 // Service items in native-language feeds: weather, prices of goods, lottery, horoscope, history features.
 const SOFT_NATIVE = /الطقس|أسعار|سعر (?:الذهب|الدولار|الفراخ|اللحوم)|حظك|\bwetter\b|horoskop|\blotto\b|\bclima\b|hor[oó]scopo|loter[ií]a|mega-?sena|previs[aã]o do tempo|m[ée]t[ée]o|\bprix du\b|天気|運勢|天气|星座|気象予報士|冷え込み|最高気温|погода|гороскоп|курс (?:доллара|валют)|from the front page|on this day|this day in history|michelin|restaurants?|snövarning|vädret|\bsmhi\b/i;
 // Sport publishers: a story from them is sport, whatever its title says ("Church scores four after Fiji fight").
-const SPORT_SOURCE = /(?:^|[^a-z])sports?(?:[^a-z]|$)|foxsports|skysports|nbcsports|cbssports|eurosport|sportingnews|sportstar|sportskeeda|espn|the athletic|rugbypass|planet rugby|cricbuzz|cricinfo|wisden|goal\.com|\bmarca\b|\bole\b|lance!|ge\.globo|nrl\.com|wwos|motorsport|autosport|golf digest|golfweek|tennis\.com|livescore|sporting ?life|\brg\.org\b|sportsmole|90min|onefootball|fotmob|flashscore|transfermarkt|football ?365|tribal ?football|\b(?:arsenal|chelseafc|manutd|liverpoolfc|mancity|realmadrid|fcbarcelona)\.com\b|soccer|\bbarca\b/i;
+const SPORT_SOURCE = /(?:^|[^a-z])sports?(?:[^a-z]|$)|foxsports|skysports|nbcsports|cbssports|eurosport|sportingnews|sportstar|sportskeeda|espn|the athletic|rugbypass|planet rugby|cricbuzz|cricinfo|wisden|goal\.com|\bmarca\b|\bole\b|lance!|ge\.globo|nrl\.com|wwos|motorsport|autosport|golf digest|golfweek|tennis\.com|livescore|sporting ?life|\brg\.org\b|sportsmole|90min|onefootball|fotmob|flashscore|transfermarkt|football ?365|tribal ?football|\brugby\b|\bcricket\b|\bpride of detroit\b|\b(?:arsenal|chelseafc|manutd|liverpoolfc|mancity|realmadrid|fcbarcelona)\.com\b|soccer|\bbarca\b/i;
 // Weather and service sites in native-language feeds.
 const SERVICE_SOURCE = /tenki\.jp|weathernews|ウェザーニュース|wetter\.com|wetteronline|meteored|tempo\.com|climatempo|accuweather/i;
 // Market-data sites whose items are stock notes, not national news.
@@ -88,6 +88,13 @@ const SYNONYM: Record<string, string> = {
   intention: 'intent', intends: 'intent', intend: 'intent',
   fridge: 'fridge', fridges: 'fridge', freezer: 'fridge', freezers: 'fridge', refrigerator: 'fridge', refrigeration: 'fridge',
   hack: 'hack', hacks: 'hack', hacking: 'hack', hacked: 'hack', hackers: 'hack', cyberattack: 'hack', cyberattacks: 'hack',
+  deadly: 'kill', fatal: 'kill',
+  // Road and rail accidents: "Bulgaria highway pileup kills 12" and "Twelve dead after motorway pile-ups".
+  crash: 'crash', crashes: 'crash', crashed: 'crash', collision: 'crash', collisions: 'crash', pileup: 'crash', pileups: 'crash',
+  motorway: 'highway', motorways: 'highway', highways: 'highway', expressway: 'highway', freeway: 'highway',
+  // Number words, so a toll in words matches a toll in digits.
+  two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10',
+  eleven: '11', twelve: '12', thirteen: '13', fourteen: '14', fifteen: '15', twenty: '20',
 };
 
 // Phrases that headlines use for one thing, replaced before the split into words.
@@ -98,6 +105,7 @@ const PHRASES: [RegExp, string][] = [
   [/\bcyber[- ]attacks?\b/g, 'hack'],
   [/\bvice[- ]president\b/g, 'vp'],
   [/\bstep(?:s|ping|ped)? down\b/g, 'resign'],
+  [/\bpile[- ]ups?\b/g, 'pileup'],
 ];
 
 /** Stemmed word tokens of a title. CJK titles give character bigrams. */
@@ -112,7 +120,7 @@ export function storyTokens(title: string): Set<string> {
   let plain = t.replace(/['’]s\b/g, '');
   for (const [re, to] of PHRASES) plain = plain.replace(re, to);
   const words = plain.split(/[^\p{L}\p{N}]+/u);
-  return new Set(words.filter((w) => w.length > 1 && !STOP.has(w)).map((w) => SYNONYM[w] ?? stem(w)));
+  return new Set(words.filter((w) => (w.length > 1 || /\d/.test(w)) && !STOP.has(w)).map((w) => SYNONYM[w] ?? stem(w)));
 }
 
 /** The words of the country's aliases, which do not count when two titles are compared. */
@@ -507,18 +515,20 @@ export interface Ranked {
 }
 
 /**
- * Ranks the stories of a country with no English edition (owner decision: hybrid).
- * English stories come first, ranked with help from the native NATION feed (shared proper names).
- * Native stories fill the list only when fewer than 3 English clusters are strong (see isStrong).
- */
-/**
- * A strong English story: a score of STRONG_SCORE or more, and more than 1 outlet or a link to a
- * native top-20 story. A fresh story from one outlet scores 0.45 on recency alone, which is not coverage.
+ * A strong English story: a score of STRONG_SCORE or more, and STRONG_OUTLETS or more outlets or a link
+ * to a native top-20 story. A fresh story from 1 or 2 outlets scores about 0.45 on recency alone, which
+ * is not coverage ("Toyota's Scion Brand Returns With Japan's Forbidden-Fruit Minitrucks").
  */
 export function isStrong(cl: Cluster): boolean {
-  return cl.score >= STRONG_SCORE && (cl.outlets >= 2 || Number.isFinite(cl.boostRank));
+  return cl.score >= STRONG_SCORE && (cl.outlets >= STRONG_OUTLETS || Number.isFinite(cl.boostRank));
 }
 
+/**
+ * Ranks the stories of a country with no English edition (owner decision: hybrid).
+ * Strong English stories (see isStrong) take their places first, ranked with help from the native
+ * NATION feed (shared proper names). The other places go to native and weak English stories by score,
+ * so English filler never pushes out a main national story. The list is in score order.
+ */
 export function rankHybrid(englishCands: readonly Candidate[], nativeCands: readonly Candidate[], ctx: RankContext, max = 5): Ranked {
   const rankOf = linkNative(nativeCands, ctx.ignore);
   const covered = new Set<number>();
@@ -528,22 +538,19 @@ export function rankHybrid(englishCands: readonly Candidate[], nativeCands: read
   for (const cl of english) if (Number.isFinite(cl.boostRank) && isStrong(cl)) covered.add(cl.boostRank);
   const nativeAll = rankPool(nativeCands, ctx);
   const all = [...english, ...nativeAll];
-  const strong = english.filter(isStrong);
+  if (nativeAll.length === 0) return { clusters: pick(english, max, ctx), native: new Set(), all };
   // Count distinct strong stories: two clusters of one story count once, and a third angle
   // on one event counts only when it stays strong at CROWD_FACTOR.
-  const strongPicked = pick(strong, max, ctx).filter((cl) => cl.pickScore >= STRONG_SCORE);
-  if (strongPicked.length >= MIN_STRONG_ENGLISH || nativeAll.length === 0) {
-    return { clusters: pick(english, max, ctx), native: new Set(), all };
-  }
+  const strongPicked = pick(english.filter(isStrong), max, ctx).filter((cl) => cl.pickScore >= STRONG_SCORE);
   // A native story that an English story already tells (same native rank through the boost) is skipped.
   const nativeClusters = nativeAll.filter((cl) => !(Number.isFinite(cl.nationRank) && covered.has(cl.nationRank)));
   const weak = english.filter((cl) => !strongPicked.includes(cl));
-  // Tiers: strong English stories, then native stories, then weak English stories.
+  // Tiers: strong English stories, then native and weak English stories together, by score.
   const tierOf = new Map<Cluster, number>([
     ...strongPicked.map((c) => [c, 0] as const),
     ...nativeClusters.map((c) => [c, 1] as const),
-    ...weak.map((c) => [c, 2] as const),
+    ...weak.map((c) => [c, 1] as const),
   ]);
-  const clusters = pick([...tierOf.keys()], max, ctx, (c) => tierOf.get(c) ?? 3);
+  const clusters = pick([...tierOf.keys()], max, ctx, (c) => tierOf.get(c) ?? 2).sort((a, b) => b.score - a.score);
   return { clusters, native: new Set(clusters.filter((cl) => nativeClusters.includes(cl))), all };
 }
