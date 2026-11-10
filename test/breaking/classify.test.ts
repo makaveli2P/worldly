@@ -185,3 +185,40 @@ describe('classify: not an event', () => {
     expect(tier('Earthquake may kill thousands, experts say')).toBeLessThan(2);
   });
 });
+
+describe('classify: second review', () => {
+  it('reads a bomb blast as an attack', () => {
+    expect(classify('Bomb blast kills 25 at Pakistan market')).toMatchObject({ family: 'attack', tier: 2, deaths: 25 });
+    expect(classify('Roadside explosive device kills 7 soldiers')).toMatchObject({ family: 'attack', tier: 2 });
+    expect(classify('Gas explosion kills 12 at factory')).toMatchObject({ family: 'accident', tier: 2 });
+  });
+
+  it('reads a current leader by surname, and the King by "King Charles"', () => {
+    expect(classify('Xi dies')).toMatchObject({ family: 'politics', tier: 3 });
+    expect(classify('King Charles dies')).toMatchObject({ family: 'politics', tier: 3 });
+    expect(classify('Trump arrested')).toMatchObject({ family: 'politics', tier: 3 });
+    expect(classify('President Donald J. Trump shot at rally')).toMatchObject({ family: 'politics', tier: 3 });
+    expect(classify("Paraguay's President Pena resigns")).toMatchObject({ family: 'politics', tier: 3 });
+  });
+
+  it('does not read a relative or a namesake of a leader as the leader', () => {
+    expect(tier('Eric Trump arrested')).toBe(0);
+    expect(tier('Melania Trump dies')).toBe(0);
+    expect(tier('UN expert Francesca Albanese detained at airport')).toBe(0);
+    expect(tier('Adama Traoré dies aged 29')).toBe(0);
+  });
+
+  it('reads crash and collision headlines without a vehicle word first', () => {
+    expect(classify('Lisbon funicular crash kills 15')).toMatchObject({ family: 'accident', tier: 2 });
+    expect(classify('Truck crash kills 20 in Kenya')).toMatchObject({ family: 'accident', tier: 2 });
+    expect(classify('Boeing 737 crash kills 3 in Nepal')).toMatchObject({ family: 'accident', tier: 1 });
+    expect(classify('Air India Dreamliner crashes into Ahmedabad college hostel, kills over 240')).toMatchObject({ family: 'accident', tier: 3 });
+    expect(classify('Air India plane with 242 on board crashes in Ahmedabad')).toMatchObject({ family: 'accident', tier: 2 });
+    expect(classify('Plane collides with helicopter near Washington, D.C., killing 67')).toMatchObject({ family: 'accident', tier: 3 });
+    expect(tier('Plane with 180 on board crash-lands safely')).toBeLessThan(2);
+  });
+
+  it('reads a Category 5 landfall in either order', () => {
+    expect(classify('Hurricane Melissa slams into Jamaica as a Category 5 with 185 mph winds')).toMatchObject({ family: 'disaster', tier: 2 });
+  });
+});

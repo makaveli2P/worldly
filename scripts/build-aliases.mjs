@@ -73,7 +73,7 @@ const CAPITAL_BLOCK = new Set([
 // Regions and cities that headlines name instead of the country. Each one names one country only.
 const EXTRA_PLACES = {
   USA: [
-    'Washington D.C.', 'New York City', 'New York', 'Los Angeles', 'Chicago', 'Houston', 'Atlanta', 'San Francisco',
+    'Washington D.C.', 'Washington DC', 'Washington, D.C.', 'D.C.', 'DC', 'Panama City Beach', 'Panama City, Florida', 'New York City', 'New York', 'Los Angeles', 'Chicago', 'Houston', 'Atlanta', 'San Francisco',
     'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida',
     'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland',
     'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada',
@@ -86,7 +86,7 @@ const EXTRA_PLACES = {
   IND: [
     'New Delhi', 'Delhi', 'Mumbai', 'Kolkata', 'Chennai', 'Bengaluru', 'Bangalore', 'Hyderabad', 'Odisha',
     'Andhra Pradesh', 'Tamil Nadu', 'Kerala', 'West Bengal', 'Gujarat', 'Assam', 'Manipur', 'Uttarakhand',
-    'Himachal Pradesh', 'Uttar Pradesh', 'Bihar', 'Punjab, India',
+    'Himachal Pradesh', 'Uttar Pradesh', 'Bihar', 'Punjab, India', 'Ahmedabad',
   ],
   PAK: ['Karachi', 'Lahore', 'Peshawar', 'Balochistan', 'Khyber Pakhtunkhwa', 'Quetta'],
   JPN: ['Tokyo', 'Osaka', 'Hokkaido', 'Okinawa', 'Kyushu', 'Fukushima', 'Noto'],
@@ -101,7 +101,7 @@ const EXTRA_PLACES = {
   TUR: ['Ankara', 'Istanbul', 'Izmir', 'Aliağa', 'Antakya', 'Hatay'],
   MMR: ['Yangon', 'Mandalay', 'Rakhine'],
   ETH: ['Tigray', 'Amhara', 'Addis Ababa'],
-  NGA: ['Lagos', 'Niger Delta', 'Niger State', 'Borno', 'Kano'],
+  NGA: ['Lagos', 'Niger Delta', 'Niger State', 'Borno', 'Kano', 'Benin City'],
   PSE: ['Ramallah', 'Gaza City', 'Khan Younis', 'Rafah'],
   UKR: ['Kyiv', 'Kiev', 'Kharkiv', 'Odesa', 'Odessa', 'Zaporizhzhia', 'Donetsk', 'Dnipro'],
   ISR: ['Tel Aviv', 'Jerusalem'],
@@ -109,6 +109,7 @@ const EXTRA_PLACES = {
   SYR: ['Damascus', 'Aleppo'],
   SDN: ['Khartoum', 'Darfur', 'El Fasher', 'El-Fasher'],
   RUS: ['Moscow', 'St Petersburg', 'Saint Petersburg'],
+  GRC: ['Crete'],
   IRN: ['Tehran'],
   AFG: ['Kabul'],
   IRQ: ['Baghdad'],
@@ -131,6 +132,7 @@ const EXTRA_LEADERS = {
   CHN: [{ name: 'Xi Jinping', surname: 'Xi' }],
   PRK: [{ name: 'Kim Jong Un', surname: null }, { name: 'Kim Jong-un', surname: null }],
   VAT: [{ name: 'Pope', surname: null }],
+  GBR: [{ name: 'King Charles', surname: null }],
 };
 
 // Alternative spellings that are also common words or given names.
@@ -160,6 +162,9 @@ const SURNAME_BLOCK = new Set([
   'Frieden', 'Neves', 'Carvalho', 'Ramos', 'Chávez', 'Chavez', 'Fernández', 'Fernandez', 'Rodriguez', 'Rodríguez',
   'Sánchez', 'Sanchez', 'Ortega', 'Marcos', 'Schmidt', 'Herzog', 'Pellegrini', 'Sharif', 'Mohamud', 'Akhund',
   'Connolly', 'Pentinat', 'Zamora', 'Browne', 'Bostic', 'Selassie', 'Bellen', 'Nandi',
+  // Family names of ruling houses and common West African surnames: many people share them.
+  'Al Nahyan', 'Nahyan', 'Al Maktoum', 'Maktoum', 'Al-Sabah', 'Sabah', 'Traoré', 'Traore', 'Ouattara', 'Maïga',
+  'Maiga', 'Nguema', 'Obiang',
 ]);
 
 async function loadMledoze() {
@@ -249,7 +254,12 @@ async function main() {
         !SURNAME_BLOCK.has(s) && surnameOwners.get(s).size === 1 && !placeWords.has(s);
       l.surname = ok ? s : null;
     }
-    for (const extra of EXTRA_LEADERS[id] ?? []) if (!a.leaders.some((l) => l.name === extra.name)) a.leaders.push({ ...extra });
+    // An extra entry adds a leader, or sets the surname of a leader that is already present ("Xi").
+    for (const extra of EXTRA_LEADERS[id] ?? []) {
+      const known = a.leaders.find((l) => l.name === extra.name);
+      if (!known) a.leaders.push({ ...extra });
+      else if (extra.surname) known.surname = extra.surname;
+    }
     delete a.population;
   }
 

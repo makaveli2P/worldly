@@ -26,7 +26,7 @@ const TRAPS: Trap[] = [
   ['Israel and Hamas agree ceasefire', 0, null, ['ISR']],
   ['Former president Jimmy Carter dies at 100', 0, null, []],
   ['Ex-President of Peru dies aged 86', 0, null, ['PER']],
-  ['King Charles shot a stag at Balmoral, book claims', 0, null, []],
+  ['King Charles shot a stag at Balmoral, book claims', 0, null, ['GBR']],
   ['Chelsea manager resigns after Arsenal defeat', 0, null, []],
   ['Queen dies in season finale of The Crown', 0, null, []],
   ['Burger King president resigns', 0, null, []],
@@ -74,7 +74,7 @@ const TRAPS: Trap[] = [
   ["At least 68 people dead in Spain's second major train crash this year", 3, 'accident', ['ESP']],
   ['At least 68 people are killed in a collision between two high-speed trains in Toledo, Spain.', 3, 'accident', ['ESP']],
   ['Shipwreck Off Senegal Kills Dozens as Canary Islands Declare Migrant Emergency', 2, 'accident', ['SEN']],
-  ['At least 14 dead after boat carrying migrants found near Crete', 2, 'accident', []],
+  ['At least 14 dead after boat carrying migrants found near Crete', 2, 'accident', ['GRC']],
   ['Kenyan doomsday sect leader jailed for 200 years for murder of 190 children', 0, null, ['KEN']],
   ['COVID kills 500 in Brazil in a day', 0, null, ['BRA']],
   ['Heatwave kills 1,300 pilgrims in Saudi Arabia', 3, 'disaster', ['SAU']],
@@ -184,5 +184,48 @@ describe('false alarms found in the research corpora and in review', () => {
     expect(deathCount('More than 1,000 killed since the war began')).toBe(0);
     expect(deathCount('50 killed in worst flooding since 1950')).toBe(50);
     expect(deathCount('Floods kill 30 in two days in Kenya')).toBe(30);
+  });
+});
+
+// Real titles from Google News search that the second review found. None of them is a new event
+// that is critical-class: a past leader, a relative, a profile, a leader as the object of a verb.
+describe('real titles that must not give a critical-class result', () => {
+  it.each([
+    'Jimmy Carter, the 39th US president, has died at 100',
+    'Jimmy Carter, longest-lived US president, dies aged 100',
+    'Jimmy Carter, 39th US president, Nobel winner, dies at 100',
+    'Jimmy Carter, Longest Living U.S. President, Dies at 100',
+    'Jimmy Carter, longest-living US president, dies at 100',
+    'Jimmy Carter, 39th president of the United States, dies at 100',
+    'US President Jimmy Carter dies at 100',
+    "Thailand's Queen Mother Sirikit dies at 93",
+    "Thailand's Queen Mother Sirikit, influential style icon, dies at 93",
+    'Sirikit, Glamorous Queen of Thailand Who Wielded Power, Dies at 93',
+    "Thailand's Queen Mother Sirikit, mother of King Vajiralongkorn, dies at 93",
+    'Harrison Ruffin Tyler, grandson of the 10th U.S. president, dies at 96',
+    "Iran's supreme leader acknowledges thousands killed during recent protests",
+    'Man who said voices told him to kill Trump arrested near White House',
+    "Assimi Goita: Mali's army commander who seized power twice",
+    'Myanmar coup: Min Aung Hlaing, the general who seized power',
+    'Former Qatar ruler Sheikh Hamad, a moderniser who seized power, has died',
+    "Kenya's King of comedy dies",
+    'Eric Trump arrested',
+    'Melania Trump dies',
+    'UN expert Francesca Albanese detained at airport',
+    'Adama Traoré dies aged 29',
+    'Sheikh Saeed bin Zayed Al Nahyan dies',
+    'Shooting kills 19-year-old student in Chicago',
+    'Shooting leaves 70-year-old dead in Toronto',
+    'Heatwave kills 1,500 in Spain and Portugal this summer',
+  ])('%s gives at most tier 1', (title) => {
+    expect(classify(title)?.tier ?? 0).toBeLessThan(2);
+  });
+
+  it('reads ages and seasonal totals as no death count', () => {
+    expect(deathCount('Shooting kills 19-year-old student in Chicago')).toBe(0);
+    expect(deathCount('Crash kills 6-month-old baby')).toBe(0);
+    expect(deathCount('Heatwave kills 1,500 in Spain and Portugal this summer')).toBe(0);
+    expect(deathCount('Floods have killed 300 so far this year')).toBe(0);
+    expect(deathCount("At least 68 people dead in Spain's second major train crash this year")).toBe(68);
   });
 });

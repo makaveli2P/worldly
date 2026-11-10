@@ -151,3 +151,51 @@ describe('ongoingCountries', () => {
     expect([...ongoingCountries(['Iran war', 'Russo-Ukrainian war', 'Yemen offensives'])].sort()).toEqual(['IRN', 'RUS', 'UKR', 'YEM']);
   });
 });
+
+describe('primaryCountries: attackers, labels and speakers (second review)', () => {
+  it.each([
+    ['Iran supreme leader Khamenei killed in Israeli strike', ['IRN']],
+    ['Khamenei killed in Israeli strike', ['IRN']],
+    ['30 killed in Israeli strikes on Lebanon', ['LBN']],
+    ['Five dead in Russian drone attack on Moldova', ['MDA']],
+    ['At least 40 killed in Pakistani airstrikes in Afghanistan', ['AFG']],
+    ['Dozens killed in Saudi-led strikes on Yemen', ['YEM']],
+    ['Lebanon says Israeli strikes kill 47 as Israel says four soldiers killed by Hezbollah', ['LBN']],
+    ['Lebanon says Israeli strikes in south of the country kill at least 47', ['LBN']],
+    ['At least 47 people killed in Israeli strikes across Lebanon', ['LBN']],
+    ['Lebanon: Israeli strikes kill 20 in south', ['LBN']],
+    ['Gaza: Israeli strikes kill 40 including children', ['PSE']],
+    ['Kyiv: Russian missile strike kills 30', ['UKR']],
+    ['Pakistan: Afghan Taliban attack kills 23 soldiers', ['PAK']],
+    ['Trump says Iranian Supreme Leader Ali Khamenei killed in U.S.-Israeli strikes', ['IRN']],
+    ['Iran begins 40-day mourning after Khamenei killed in US-Israeli attack', ['IRN']],
+    ['Iran Supreme Leader Khamenei Killed in US Israel Strike Leaving No Successor', ['IRN']],
+    ["'One of the most evil people in history': Khamenei killed in strikes, Trump confirms", ['IRN']],
+    ['Burkina Faso coup: Ousted military ruler Damiba in Togo', ['BFA']],
+    ['Air India crash: 241 people killed after London-bound plane crashes', ['IND']],
+    ['Air India crash: 53 British nationals among 241 dead on London flight', ['IND']],
+    ['Iran-backed militia attack kills 12 in Iraq', ['IRQ']],
+    // A domestic attack and a coup by a country's own soldiers keep their country.
+    ['Pakistan attack kills 30', ['PAK']],
+    ['Malian soldiers seize power in coup', ['MLI']],
+    ['Killed by Israeli forces in Gaza', ['PSE']],
+  ])('%s -> %j', (title, expected) => {
+    expect(primaryCountries(title)).toEqual(expected);
+  });
+
+  it('keeps a country before another country name ("India Pakistan war")', () => {
+    expect(primaryCountries('India Pakistan war breaks out')).toEqual(['IND', 'PAK']);
+    expect(primaryCountries('Israel Iran war erupts')).toEqual(['ISR', 'IRN']);
+    expect(ids('Jordan Davis shot dead in Atlanta')).toEqual(['USA']);
+  });
+
+  it('reads Washington DC, Benin City and Panama City Beach', () => {
+    expect(primaryCountries('Washington DC plane crash kills 67')).toEqual(['USA']);
+    expect(primaryCountries('D.C. plane crash: 67 dead after jet collides with helicopter')).toEqual(['USA']);
+    expect(primaryCountries('Plane collides with helicopter near Washington, D.C., killing 67')).toEqual(['USA']);
+    expect(primaryCountries('DC plane crash: what we know')).toEqual(['USA']);
+    expect(ids('DC Comics announces new Batman film')).toEqual([]);
+    expect(primaryCountries('Benin City attack kills 12')).toEqual(['NGA']);
+    expect(primaryCountries('Panama City Beach shooting kills 5')).toEqual(['USA']);
+  });
+});
