@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "data": "node scripts/build-data.mjs",
     "bias": "node scripts/build-bias.mjs",
+    "aliases": "node scripts/build-news-aliases.mjs",
     "audit:news": "node scripts/audit-news.mjs",
     "test": "vitest run"
   },
