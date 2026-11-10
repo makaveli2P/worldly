@@ -150,7 +150,7 @@ A DeepL key translates the native-language titles of the news plate to English. 
 2. Local: set `DEEPL_API_KEY=<key>` in `.env`. Restart `npm run dev`.
 3. Vercel: run `vercel env add DEEPL_API_KEY production` (or add it under Project Settings > Environment Variables). Redeploy.
 
-The API Free plan has a monthly character limit (1,000,000 characters for the owner's key on 2026-11-11; `GET /v2/usage` shows it). One list sends 3 to 5 titles, about 100 to 400 characters. The server keeps each translation in memory and the CDN keeps each list for 15 minutes, so a title goes to DeepL about once for each server instance. When the limit is used up, DeepL answers 456, the log shows `[news] translate failed: http 456 (quota)`, and the titles stay in their language. With no key, the server sends nothing and the titles stay in their language.
+The API Free plan has a monthly character limit (1,000,000 characters for the owner's key on 2026-11-11; `GET /v2/usage` shows it). One list sends 3 to 5 titles, about 100 to 400 characters. The server keeps each translation in memory and the CDN keeps each list for 15 minutes, so a title goes to DeepL about once for each server instance. When the limit is used up, DeepL answers 456, the log shows `[news] translate failed: http 456 (quota), paused 1 h`, and the titles stay in their language. The server then sends no request to DeepL for 1 hour, and the lists keep their normal cache. A wrong key (HTTP 403) gives the same pause. With no key, the server sends nothing and the titles stay in their language.
 
 **BREAKING_CONTACT (optional)**
 

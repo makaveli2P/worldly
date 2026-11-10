@@ -99,7 +99,12 @@ The best score first. Pass 1 takes 1 cluster per publisher. Pass 2 allows a seco
 - Timeout: 1.5 s, and at least 0.5 s. The whole build, translation included, ends by 5 s (`BUILD_END_MS`).
 - Result: `title` becomes the English text, `originalTitle` keeps the source text, `translatedBy` is `'DeepL'`, and `lang` stays the source language. When DeepL finds English, or gives back the same text, the story stays as it is.
 - Memory: each translation (key: DeepL code and original title) stays in memory, at most 2000 entries (the oldest goes first). A title in memory is not sent again.
-- Failure (timeout, HTTP error, network error, bad answer): the titles stay as they are, and the log gets one line, for example `[news] translate failed: timeout` or `[news] translate failed: http 456 (quota)`. The result gets `untranslated`, so it stays in memory for 60 s and gets the failure cache header, and a later request tries again. With no key, nothing is sent and nothing is logged; the list keeps its normal cache.
+- DeepL emphasis: DeepL can put Markdown emphasis in a title (`*The Judge*`). `stripAddedEmphasis()` removes the `*` and `_` markers that are not in the source title.
+- Failure: the titles stay as they are, and the log gets one line, for example `[news] translate failed: timeout`. It never contains the key or a body. Two types of failure:
+  - An error that can go away soon (timeout, network error, HTTP 429 or 5xx, bad answer). The result gets `untranslated`, so the list stays in memory for 60 s and gets the failure cache header, and a later request tries again.
+  - An error that stays (HTTP 403 bad key, 456 quota used up, another 4xx). The list keeps its normal cache. After a 403 or a 456 (`[news] translate failed: http 456 (quota), paused 1 h`), the instance sends no request to DeepL for 1 hour (`PAUSE_MS`).
+- With no key, nothing is sent and nothing is logged; the list keeps its normal cache.
+- Last good list: a list with `untranslated` does not replace a translated last good list, so a later Google failure does not bring back the source titles.
 
 ### Publisher ratings
 
@@ -131,7 +136,7 @@ The best score first. Pass 1 takes 1 cluster per publisher. Pass 2 allows a seco
 - Last good list: when a run is degraded or failed, the server gives the last full list of the country (at most 24 hours old) if that list is not shorter, with the failure header.
 - Total failure (no source answered, no last good list): `503` with `no-store`. The CDN then serves its stale copy (`stale-if-error`), and the client shows the retry message.
 - Success: `Cache-Control: public, max-age=60, s-maxage=900, stale-while-revalidate=1800, stale-if-error=86400`. Vercel removes `s-maxage` and `stale-while-revalidate` before the browser. The worst age of a list is about 55 minutes.
-- Failure, and a list whose translation failed: `public, s-maxage=60`.
+- Failure, and a list whose translation failed with an error that can go away (timeout, 429, 5xx): `public, s-maxage=60`.
 - Client (`src/main.ts`): a list stays for at most 10 minutes.
 
 ### Keys and logs

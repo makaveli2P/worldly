@@ -2,9 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CACHE_MAX_ENTRIES,
+  PAUSE_MS,
   clearTranslationCache,
   deeplEndpoint,
   deeplSource,
+  stripAddedEmphasis,
   translateTitles,
   translationCacheSize,
 } from '../../api/_lib/translate';
@@ -136,7 +138,7 @@ describe('translateTitles', () => {
     const result = await translateTitles([{ title: '中国经济增长放缓', lang: 'zh' }], { fetch: d.fetch });
     expect(d.fn).not.toHaveBeenCalled();
     // No key is not a failure: the list keeps its normal cache.
-    expect(result).toEqual({ titles: [{ title: '中国经济增长放缓', originalTitle: null, translatedBy: null }], failed: false });
+    expect(result).toEqual({ titles: [{ title: '中国经济增长放缓', originalTitle: null, translatedBy: null }], retry: false });
   });
 
   it('does not send English titles or languages that DeepL does not read', async () => {
@@ -217,32 +219,90 @@ describe('translateTitles', () => {
     const started = Date.now();
     const result = await translateTitles([{ title: '中国经济增长放缓', lang: 'zh' }], { key: FREE_KEY, fetch: hang as unknown as typeof fetch, timeoutMs: 30 });
     expect(Date.now() - started).toBeLessThan(1000);
-    expect(result).toEqual({ titles: [{ title: '中国经济增长放缓', originalTitle: null, translatedBy: null }], failed: true });
+    expect(result).toEqual({ titles: [{ title: '中国经济增长放缓', originalTitle: null, translatedBy: null }], retry: true });
     expect(warn).toHaveBeenCalledWith('[news] translate failed: timeout');
   });
 
-  it('keeps the titles after an HTTP error, and logs no key and no body', async () => {
+  it('keeps the titles after HTTP 456, logs no key and no body, and sends nothing for 1 h', async () => {
     const quota = vi.fn(async () => new Response('{"message":"Quota exceeded"}', { status: 456 }));
-    const { titles: out } = await translateTitles([{ title: '国务院召开常务会议', lang: 'zh' }], { key: FREE_KEY, fetch: quota as unknown as typeof fetch });
-    expect(out[0]).toEqual({ title: '国务院召开常务会议', originalTitle: null, translatedBy: null });
+    const doFetch = quota as unknown as typeof fetch;
+    const result = await translateTitles([{ title: '国务院召开常务会议', lang: 'zh' }], { key: FREE_KEY, fetch: doFetch });
+    expect(result.titles[0]).toEqual({ title: '国务院召开常务会议', originalTitle: null, translatedBy: null });
+    // The quota does not come back in a minute: the list keeps its normal cache.
+    expect(result.retry).toBe(false);
     expect(warn).toHaveBeenCalledTimes(1);
     const line = String(warn.mock.calls[0][0]);
-    expect(line).toBe('[news] translate failed: http 456 (quota)');
+    expect(line).toBe('[news] translate failed: http 456 (quota), paused 1 h');
     expect(line).not.toContain(FREE_KEY);
-    // A failure is not kept in memory: the next list asks again.
+    // A failure is not kept in memory: the next list asks again after the pause.
     expect(translationCacheSize()).toBe(0);
+
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + PAUSE_MS - 1000);
+    expect((await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: doFetch })).retry).toBe(false);
+    expect(quota).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    clock.mockReturnValue(now + PAUSE_MS + 1000);
+    const d = fakeDeepl();
+    const after = await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: d.fetch });
+    expect(d.fn).toHaveBeenCalledTimes(1);
+    expect(after.titles[0].translatedBy).toBe('DeepL');
   });
 
+  it('pauses after HTTP 403 (bad key) too', async () => {
+    const denied = vi.fn(async () => new Response('', { status: 403 }));
+    const doFetch = denied as unknown as typeof fetch;
+    expect((await translateTitles([{ title: '国务院召开常务会议', lang: 'zh' }], { key: FREE_KEY, fetch: doFetch })).retry).toBe(false);
+    await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: doFetch });
+    expect(denied).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls.map((c) => c[0])).toEqual(['[news] translate failed: http 403 (key), paused 1 h']);
+  });
+
+  it('asks for a retry after HTTP 429 or 5xx, does not pause, and gives no retry for another 4xx', async () => {
+    for (const status of [429, 500, 503]) {
+      const err = vi.fn(async () => new Response('', { status }));
+      expect((await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: err as unknown as typeof fetch })).retry).toBe(true);
+    }
+    const bad = vi.fn(async () => new Response('', { status: 400 }));
+    expect((await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: bad as unknown as typeof fetch })).retry).toBe(false);
+    expect(bad).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls.map((c) => c[0])).toEqual([
+      '[news] translate failed: http 429',
+      '[news] translate failed: http 500',
+      '[news] translate failed: http 503',
+      '[news] translate failed: http 400',
+    ]);
+  });
+
+  it('removes the Markdown emphasis that DeepL adds', async () => {
+    const source = 'Los casos disímbolos de The Judge y el R2 frente a los Estados Unidos';
+    const d = fakeDeepl(() => ({ text: 'The landmark cases of *The Judge* and *R2* against the United States', detected_source_language: 'ES' }));
+    const { titles } = await translateTitles([{ title: source, lang: 'es' }], { key: FREE_KEY, fetch: d.fetch });
+    expect(titles[0]).toEqual({ title: 'The landmark cases of The Judge and R2 against the United States', originalTitle: source, translatedBy: 'DeepL' });
+  });
   it('keeps the titles after a network error or a bad answer', async () => {
     const down = vi.fn(async () => {
       throw new TypeError('fetch failed');
     });
     expect(await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: down as unknown as typeof fetch })).toEqual({
       titles: [{ title: '台风登陆广东', originalTitle: null, translatedBy: null }],
-      failed: true,
+      retry: true,
     });
     const short = vi.fn(async () => new Response(JSON.stringify({ translations: [] }), { status: 200 }));
-    expect((await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: short as unknown as typeof fetch })).failed).toBe(true);
+    expect((await translateTitles([{ title: '台风登陆广东', lang: 'zh' }], { key: FREE_KEY, fetch: short as unknown as typeof fetch })).retry).toBe(true);
     expect(warn.mock.calls.map((c) => c[0])).toEqual(['[news] translate failed: network error', '[news] translate failed: invalid response']);
+  });
+});
+
+describe('stripAddedEmphasis', () => {
+  it('removes * and _ markers that the source does not have', () => {
+    expect(stripAddedEmphasis('Cases of *The Judge* and **R2**', 'Casos de The Judge y R2')).toBe('Cases of The Judge and R2');
+    expect(stripAddedEmphasis('The _Bild_ report', 'Der Bild-Bericht')).toBe('The Bild report');
+    expect(stripAddedEmphasis('Rule on file_name keys', 'Regel')).toBe('Rule on file_name keys');
+  });
+
+  it('keeps the markers that the source has', () => {
+    expect(stripAddedEmphasis('Star *rating* rises', 'Die *Bewertung* steigt')).toBe('Star *rating* rises');
+    expect(stripAddedEmphasis('The _x_ case', 'Der _x_ Fall')).toBe('The _x_ case');
   });
 });

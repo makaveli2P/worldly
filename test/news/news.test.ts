@@ -7,8 +7,8 @@ interface Routes {
   /** The 2-day Google search, when it differs from the other Google feeds. */
   search2d?: Mode;
   outlets: Mode;
-  /** The DeepL API: 'ok', or an HTTP error for any other mode. */
-  deepl?: Mode;
+  /** The DeepL API: 'ok', or the HTTP status of an error. */
+  deepl?: 'ok' | number;
 }
 
 const NOW = Date.parse('2026-11-10T12:00:00Z');
@@ -32,6 +32,7 @@ const GERMAN = [
   'German rail strike halts trains across the country for two days',
 ];
 const JAPANESE = ['首相が臨時国会で所信表明演説', '東京株式市場で日経平均が反落', '台風が小笠原諸島に最接近へ', '阿波市長を詐欺容疑で逮捕', '政府が経済対策を閣議決定'];
+const JAPANESE_LATER = ['衆院予算委員会で論戦', '円相場が一時下落', '北海道で初雪を観測', '新型ロケットの打ち上げ成功', '最高裁が判決を言い渡し'];
 const VATICAN = ['Vatican City hosts climate summit for faith leaders', 'Pope meets refugees in Vatican City gardens'];
 
 function stubFetch(routes: Routes, titles: { google: string[]; outlets: string[] }) {
@@ -40,7 +41,7 @@ function stubFetch(routes: Routes, titles: { google: string[]; outlets: string[]
     const url = String(input);
     calls.push(url);
     if (url.startsWith('https://api-free.deepl.com/')) {
-      if (routes.deepl !== 'ok') return new Response('{"message":"error"}', { status: 503 });
+      if (routes.deepl !== 'ok') return new Response('{"message":"error"}', { status: routes.deepl ?? 503 });
       const text = (JSON.parse(String(init?.body)) as { text: string[] }).text;
       return Response.json({ translations: text.map((t) => ({ text: `EN: ${t}`, detected_source_language: 'JA' })) });
     }
@@ -148,9 +149,9 @@ describe('GET /api/news with translation', () => {
     expect(r.cache).toContain('s-maxage=900');
   });
 
-  it('keeps the native titles when DeepL fails, with the short cache so a later request tries again', async () => {
+  it('keeps the native titles when DeepL fails (5xx), with the short cache so a later request tries again', async () => {
     process.env.DEEPL_API_KEY = 'test-key:fx';
-    stubFetch({ google: 'ok', outlets: 'ok', deepl: 'reject' }, { google: JAPANESE, outlets: [] });
+    stubFetch({ google: 'ok', outlets: 'ok', deepl: 503 }, { google: JAPANESE, outlets: [] });
     const r = await get(await load(), 'JPN');
     expect(r.status).toBe(200);
     expect(r.cache).toBe('public, s-maxage=60');
@@ -159,5 +160,41 @@ describe('GET /api/news with translation', () => {
       expect(a.translatedBy ?? null).toBeNull();
       expect(JAPANESE).toContain(a.title);
     }
+  });
+
+  it('keeps the normal cache when the DeepL quota is used up (456), and sends no second request', async () => {
+    process.env.DEEPL_API_KEY = 'test-key:fx';
+    const calls = stubFetch({ google: 'ok', outlets: 'ok', deepl: 456 }, { google: JAPANESE, outlets: [] });
+    const api = await load();
+    const r = await get(api, 'JPN');
+    expect(r.status).toBe(200);
+    expect(r.cache).toContain('s-maxage=900');
+    expect(r.body.articles?.every((a) => (a.translatedBy ?? null) === null)).toBe(true);
+    // 11 minutes later the list is built again, but DeepL stays paused.
+    vi.setSystemTime(NOW + 11 * 60 * 1000);
+    await get(api, 'JPN');
+    expect(calls.filter((u) => u.includes('deepl.com'))).toHaveLength(1);
+  });
+
+  it('keeps a translated last good list when a later list is untranslated and the next build fails', async () => {
+    process.env.DEEPL_API_KEY = 'test-key:fx';
+    stubFetch({ google: 'ok', outlets: 'ok', deepl: 'ok' }, { google: JAPANESE, outlets: [] });
+    const api = await load();
+    const first = await get(api, 'JPN');
+    expect(first.body.articles?.some((a) => a.translatedBy === 'DeepL')).toBe(true);
+
+    // 11 minutes later: new headlines, and DeepL answers 503.
+    vi.setSystemTime(NOW + 11 * 60 * 1000);
+    stubFetch({ google: 'ok', outlets: 'ok', deepl: 503 }, { google: JAPANESE_LATER, outlets: [] });
+    const second = await get(api, 'JPN');
+    expect(second.cache).toBe('public, s-maxage=60');
+    expect(second.body.articles?.every((a) => (a.translatedBy ?? null) === null)).toBe(true);
+
+    // 2 minutes later every source fails: the server gives the translated list.
+    vi.setSystemTime(NOW + 13 * 60 * 1000);
+    stubFetch({ google: 'reject', outlets: 'reject' }, { google: [], outlets: [] });
+    const third = await get(api, 'JPN');
+    expect(third.status).toBe(200);
+    expect(third.body.articles).toEqual(first.body.articles);
   });
 });

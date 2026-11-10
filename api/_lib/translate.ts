@@ -7,6 +7,8 @@ export const TARGET_LANG = 'EN-GB';
 /** Translations that one function instance keeps in memory. */
 export const CACHE_MAX_ENTRIES = 2000;
 const DEFAULT_TIMEOUT_MS = 1500;
+/** After a 403 (bad key) or a 456 (quota used up), no request goes to DeepL for this long. */
+export const PAUSE_MS = 60 * 60 * 1000;
 
 /**
  * The source languages of DeepL (GET /v2/languages?type=source, read on 2026-11-11), without EN.
@@ -54,8 +56,11 @@ export interface TitleOut {
 export interface TranslateResult {
   /** One result for each input, in order. */
   titles: TitleOut[];
-  /** True when the DeepL request failed (timeout, HTTP error, bad answer). Then the titles stay as they are. */
-  failed: boolean;
+  /**
+   * True when the request failed for a reason that can go away soon (timeout, network error, HTTP 429 or 5xx, bad answer).
+   * The titles then stay as they are, and the caller can try again soon. An error that stays (HTTP 403, 456, other 4xx) gives false.
+   */
+  retry: boolean;
 }
 
 export interface TranslateOptions {
@@ -68,6 +73,8 @@ export interface TranslateOptions {
 
 // (DeepL code, original title) -> the English title, or null when DeepL found English or gave the same text.
 const cache = new Map<string, string | null>();
+/** No request before this time (ms since epoch). See PAUSE_MS. */
+let pausedUntil = 0;
 const cacheKey = (code: string, title: string) => `${code}\u0000${title}`;
 
 function remember(key: string, value: string | null): void {
@@ -76,9 +83,10 @@ function remember(key: string, value: string | null): void {
   if (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value!);
 }
 
-/** Empties the translation cache (tests). */
+/** Empties the translation cache and ends a pause (tests). */
 export function clearTranslationCache(): void {
   cache.clear();
+  pausedUntil = 0;
 }
 
 /** The number of translations in memory (tests). */
@@ -87,6 +95,17 @@ export function translationCacheSize(): number {
 }
 
 const unchanged = (item: TitleIn): TitleOut => ({ title: item.title, originalTitle: null, translatedBy: null });
+
+/**
+ * Removes the Markdown emphasis that DeepL can add ("*The Judge*"), when the source has no such marker.
+ * An underscore inside a word ("snake_case") stays.
+ */
+export function stripAddedEmphasis(text: string, source: string): string {
+  let out = text;
+  if (!source.includes('*')) out = out.replace(/\*+/g, '');
+  if (!source.includes('_')) out = out.replace(/(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu, '');
+  return out.replace(/\s{2,}/g, ' ').trim();
+}
 
 /** Reads the `translations` array of a DeepL answer. Null when the shape is wrong. */
 function parse(body: unknown, count: number): { text: string; detected: string }[] | null {
@@ -108,6 +127,7 @@ function parse(body: unknown, count: number): { text: string; detected: string }
  * - A title in memory is not sent again.
  * - When all sent titles have one language, the request names it (source_lang). Else DeepL finds the language of each text.
  * - No key, a timeout, an HTTP error or a bad answer: the titles stay as they are. The log gets one short line, never the key or a body.
+ * - After HTTP 403 (bad key) or 456 (quota used up), no request goes to DeepL for PAUSE_MS.
  */
 export async function translateTitles(items: readonly TitleIn[], opts: TranslateOptions = {}): Promise<TranslateResult> {
   const out = items.map(unchanged);
@@ -130,8 +150,8 @@ export async function translateTitles(items: readonly TitleIn[], opts: Translate
     entry.at.push(i);
     pending.set(k, entry);
   });
-  if (pending.size === 0 || !key) return { titles: out, failed: false };
-  const failed = { titles: out, failed: true };
+  if (pending.size === 0 || !key || Date.now() < pausedUntil) return { titles: out, retry: false };
+  const retryLater = { titles: out, retry: true };
 
   const batch = [...pending.entries()];
   const codes = new Set(batch.map(([, e]) => e.code));
@@ -149,29 +169,34 @@ export async function translateTitles(items: readonly TitleIn[], opts: Translate
     });
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});
-      // 456: the monthly character limit is used up.
-      console.warn(`[news] translate failed: http ${res.status}${res.status === 456 ? ' (quota)' : ''}`);
-      return failed;
+      // 456: the monthly character limit is used up. 403: the key is wrong. These errors stay, so stop for PAUSE_MS.
+      const pause = res.status === 456 || res.status === 403;
+      if (pause) pausedUntil = Date.now() + PAUSE_MS;
+      const note = res.status === 456 ? ' (quota)' : res.status === 403 ? ' (key)' : '';
+      console.warn(`[news] translate failed: http ${res.status}${note}${pause ? ', paused 1 h' : ''}`);
+      // 429 and 5xx can go away soon. Another 4xx is an error that stays: the list keeps its normal cache.
+      return res.status === 429 || res.status >= 500 ? retryLater : { titles: out, retry: false };
     }
     result = parse(await res.json(), batch.length);
   } catch (err) {
     const name = err instanceof Error ? err.name : '';
     console.warn(`[news] translate failed: ${name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : name === 'SyntaxError' ? 'invalid json' : 'network error'}`);
-    return failed;
+    return retryLater;
   }
   if (!result) {
     console.warn('[news] translate failed: invalid response');
-    return failed;
+    return retryLater;
   }
 
   const translations = result;
   batch.forEach(([k, entry], j) => {
-    const { text, detected } = translations[j];
+    const { detected } = translations[j];
+    const text = stripAddedEmphasis(translations[j].text, entry.title);
     // DeepL found English, or gave the text back: keep the original, and do not ask again.
     const english = text && detected !== 'EN' && text !== entry.title ? text : null;
     remember(k, english);
     if (!english) return;
     for (const i of entry.at) out[i] = { title: english, originalTitle: items[i].title, translatedBy: 'DeepL' };
   });
-  return { titles: out, failed: false };
+  return { titles: out, retry: false };
 }

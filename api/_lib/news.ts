@@ -209,13 +209,13 @@ function toArticle(cl: Cluster): NewsArticle {
  * Gives the non-English titles of the picked list in English (DeepL, src/types.ts NewsArticle).
  * It runs after the pick, so the clusters and the dedupe use the original titles. On a failure the titles stay as they are.
  */
-async function translated(articles: NewsArticle[], elapsedMs: number): Promise<{ articles: NewsArticle[]; failed: boolean }> {
-  if (!articles.some((a) => a.lang)) return { articles, failed: false };
+async function translated(articles: NewsArticle[], elapsedMs: number): Promise<{ articles: NewsArticle[]; retry: boolean }> {
+  if (!articles.some((a) => a.lang)) return { articles, retry: false };
   const timeoutMs = Math.min(TRANSLATE_TIMEOUT_MS, Math.max(TRANSLATE_MIN_MS, BUILD_END_MS - elapsedMs));
   // translateTitles never throws on an upstream failure. This guard keeps the news response for any other fault.
   const result = await translateTitles(articles, { timeoutMs }).catch(() => null);
-  if (!result) return { articles, failed: true };
-  return { articles: articles.map((a, i) => (result.titles[i].translatedBy ? { ...a, ...result.titles[i] } : a)), failed: result.failed };
+  if (!result) return { articles, retry: true };
+  return { articles: articles.map((a, i) => (result.titles[i].translatedBy ? { ...a, ...result.titles[i] } : a)), retry: result.retry };
 }
 
 /** The provider label: the feed family that gave most of the picked stories. */
@@ -239,8 +239,9 @@ export interface NewsResult {
   news: NewsResponse;
   state: BuildState;
   /**
-   * True when the translation failed: the list is good, but its native titles are not in English.
-   * The list then stays in memory and on the CDN for 60 s only, so a later request tries the translation again.
+   * True when the translation failed for a reason that can go away soon (timeout, network error, HTTP 429 or 5xx):
+   * the list is good, but its native titles are not in English. The list then stays in memory and on the CDN
+   * for 60 s only, so a later request tries the translation again. An error that stays (HTTP 403 or 456) does not set it.
    */
   untranslated?: boolean;
 }
@@ -270,7 +271,7 @@ async function build(country: NewsCountry): Promise<NewsResult> {
   }
 
   debugLog(country, picked, pools);
-  const { articles, failed: untranslated } = await translated(picked.map(toArticle), Date.now() - started);
+  const { articles, retry: untranslated } = await translated(picked.map(toArticle), Date.now() - started);
   const news: NewsResponse = { country: country.id, articles, provider: providerOf(picked), fetchedAt: new Date().toISOString() };
   const state: BuildState = pools.ok === 0 ? 'failed' : pools.google ? 'ok' : 'degraded';
   return { news, state, untranslated };
@@ -283,17 +284,21 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 /** The last list that a full build ('ok', with stories) gave, per country. */
-const lastGood = new Map<string, { at: number; news: NewsResponse }>();
+const lastGood = new Map<string, { at: number; news: NewsResponse; untranslated: boolean }>();
 
 /**
  * A failed or degraded build does not replace a good list: the last good list (at most 24 h old)
  * stands in for it, with the short failure cache, so the next request tries again soon.
+ * A list whose translation failed does not replace a translated last good list.
  */
 function settle(id: string, result: NewsResult): NewsResult {
   if (result.state === 'ok') {
-    if (result.news.articles.length > 0) {
+    const untranslated = result.untranslated === true;
+    const prev = lastGood.get(id);
+    const keepPrev = untranslated && prev !== undefined && !prev.untranslated && Date.now() - prev.at < LAST_GOOD_MS;
+    if (result.news.articles.length > 0 && !keepPrev) {
       lastGood.delete(id);
-      lastGood.set(id, { at: Date.now(), news: result.news });
+      lastGood.set(id, { at: Date.now(), news: result.news, untranslated });
       if (lastGood.size > CACHE_MAX_ENTRIES) lastGood.delete(lastGood.keys().next().value!);
     }
     return result;
