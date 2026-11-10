@@ -70,25 +70,68 @@ Other commands:
 
 ## News
 
-`GET /api/news?country=<ISO3>` returns up to 5 stories. The server tries these providers in this order, and stops when it has 5 distinct stories:
+`GET /api/news?country=<ISO3>` returns up to 5 stories, in order of importance. The server starts all sources at the same time and uses what arrives in 3 seconds:
 
-1. Google News edition (no key): national stories, for countries that have an English edition.
-2. NewsData.io (needs `NEWSDATA_API_KEY`): titles that name the country.
-3. Google News search (no key).
-4. GDELT (no key).
+1. Google News edition (no key): the national stories (NATION) and the front page (Top stories) of the country's English edition.
+2. Google News search (no key): English titles that name the country, from the last day.
+3. Front-page feeds of 11 outlets (no key): BBC, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India and The New York Times. Only titles that name the country count.
+4. Native edition (no key): for a country with no English edition, the national stories in the country's language.
 
-The server drops duplicates, near-duplicates, press releases and more than 2 stories from one publisher. See `api/_lib/README.md` for the details.
+The server groups the stories of all feeds into clusters (one cluster for each event). It gives each cluster a score from the number of outlets, the rank in Google's national feed, the outlet type and the age. It lowers the score of sport, celebrity, opinion and market-data items. Then it picks 5 clusters, with 1 story for each publisher on the first pass.
+
+A country with no English edition (for example Germany, Japan or Mexico) gets English stories first. An English story that names a person or place from the native top 20 gets that native rank. A native-language story fills the list only when fewer than 3 English stories are strong. It has a language tag (for example "DE").
+
+NewsData.io is a fallback only (see below). See `api/_lib/README.md` for the details.
+
+Each story row shows the number of outlets that cover the story, when there are 3 or more.
+
+### Publisher ratings
+
+Under each headline, a small row can show two ratings of the publisher. They are never ratings of the story.
+
+- **Lean** (Media Bias/Fact Check, MBFC): a 5-step mark from "Left" to "Right", and "MBFC" as a link to the MBFC page of the outlet. MBFC rates on a US scale.
+- **State media tag** (State Media Monitor): "STATE-CONTROLLED", "CAPTURED" or "PUBLIC".
+
+A publisher with no rating gets no row. The panel footer names a source only when the list shows its data.
+
+The MBFC terms do not allow redistribution, and this repo is public. So the MBFC table is never in git and never goes to the browser:
+
+- `npm run bias` (and `npm run dev` and `npm run build` before they start) writes the table to `api/_lib/generated/mbfc.json`. Git ignores this file.
+- The script gets the data from the official MBFC RapidAPI product. It does this only when `RAPIDAPI_KEY` is set and the table is missing or older than 25 days. The free plan allows 3 requests a month.
+- With no key, the script does nothing in about 50 ms. The lean stays hidden, and the state media tags still work.
+- If a fetch fails, the script keeps the old table and exits with code 0. It never prints the key.
+- On Vercel, the script fetches only for a production build. It keeps the last good table in `node_modules/.cache/worldly`, which Vercel keeps between builds.
+
+The State Media Monitor table (`api/_lib/state-media.json`, CC BY 4.0) is in git. `npm run bias -- --smm` builds it again from the dataset and the hand map `scripts/bias-smm-domains.json` (State Media Monitor id to hosts).
+
+#### Owner action: MBFC key
+
+1. Sign in to RapidAPI and subscribe to the Basic plan of https://rapidapi.com/mbfcnews/api/media-bias-fact-check-ratings-api2. RapidAPI can ask for a card.
+2. Local: set `RAPIDAPI_KEY=<key>` in `.env`. Run `npm run bias`.
+3. Vercel: add `RAPIDAPI_KEY` under Project Settings > Environment Variables, for Production only. Redeploy.
+
+Do not run `npm run bias -- --force` often: each fetch uses 1 of the 3 requests in the month.
 
 ### News API key (optional)
 
-Worldly works with no key. For better coverage, add a NewsData.io key. The free plan gives about 200 credits a day. Worldly uses NewsData.io instead of NewsAPI.org, because the NewsAPI.org free plan works only on localhost.
+Worldly works with no key. A NewsData.io key helps small countries that have few Google stories. The free plan gives about 200 credits a day, but its data is 12 hours late. So the server calls NewsData only when fewer than 5 good stories come from the other sources, and it keeps each NewsData result for 6 hours.
 
 1. Get a free key at https://newsdata.io/register.
 2. Copy `.env.example` to `.env`.
 3. Set `NEWSDATA_API_KEY=<your key>` in `.env`.
 4. Restart `npm run dev`.
 
-The server caches the news for each country for 3 hours, and the Vercel CDN caches it too. One country costs 1 or 2 credits every 3 hours. The key stays on the server.
+The key stays on the server.
+
+### Cache
+
+- The server keeps each list in memory for 10 minutes.
+- The Vercel CDN keeps it for 15 minutes, and can serve it for 30 more minutes while it gets a new one.
+- The browser keeps a list for at most 10 minutes.
+
+### Audit
+
+`npm run audit:news -- --base http://localhost:5173 --out after.json` loads the news of 15 countries and scores each list against Google's own national ranking (age, outlets, duplicates, sport and soft items, latency). `--from after.json --ref before.json` scores a saved run again on the reference of another run, with no network.
 
 ## Refresh the country data
 
@@ -113,8 +156,10 @@ The script takes 3 to 4 minutes. It writes `public/data/world.json`, `public/dat
 - Satellite image: NASA Blue Marble (public domain).
 - Fonts: Inter Tight and JetBrains Mono (SIL Open Font License).
 - News:
+  - Google News RSS (all editions and search) and the RSS feeds of BBC, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India and The New York Times. Terms risk: these feed terms allow personal, non-commercial use only, and Worldly is a public site. The owner accepts this risk. Use a licensed source for commercial use.
   - [NewsData.io](https://newsdata.io): follow its terms for your plan.
-  - Google News RSS: the feed terms allow personal, non-commercial use only. Use a NewsData.io key or another licensed source for a public or commercial site.
-  - [GDELT](https://www.gdeltproject.org): free to use with attribution.
+- Publisher ratings:
+  - Lean: [Media Bias/Fact Check](https://mediabiasfactcheck.com), through its official RapidAPI product. The terms require a link to MBFC and do not allow redistribution, so the table stays out of git and out of the browser. The MBFC scale is tailored to the United States.
+  - State media tags: Dragomir, M. (2026). State Media Monitor Global Dataset 2026 (Version 2026.1) [Data set]. Media and Journalism Research Center (MJRC). https://doi.org/10.5281/zenodo.23863495, CC BY 4.0. Worldly added domain names.
 
 Worldly links each story to the publisher. It does not copy article text.
