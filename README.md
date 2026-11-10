@@ -92,7 +92,7 @@ The downloads stay in `.cache/texture/` (git ignores it), so a second run makes 
 
 `<hash>` is the start of the SHA-256 of the file. A rebuild that changes a file gives it a new name, so the files can have a one-year immutable cache. With Save-Data, the page loads only the first tier.
 
-The page decodes the tiers with `createImageBitmap`, off the main thread. If that fails, it uses an `<img>`.
+The page decodes the tiers with `createImageBitmap`, off the main thread. If that fails, it uses an `<img>`. The upload of a decoded tier to the GPU runs on the main thread (about 13 ms for 4096 and 42 ms for 8192 on an Apple M4 Pro). So a larger tier waits for a frame with no drag, no turn to a selection, no inertia and no zoom ease. The 8192 tier also waits for the idle spin to stop and for 800 ms with no input (`canUploadTexture` in `src/globe/textureTiers.ts`).
 
 ### Texture licence
 
@@ -117,13 +117,13 @@ The page does this to show the globe sooner:
 
 Local preview, median of 3 cold loads (headless Chromium, DevTools throttling; Slow 4G is 390x844 with 6x CPU):
 
-| Profile | Globe ready (before → after) | Texture shown | Bytes |
-| --- | --- | --- | --- |
-| Desktop | 364 → 258 ms | 435 → 309 ms | 1.69 → 0.68 MB |
-| Fast 4G, 4x CPU | 2167 → 1411 ms | 3618 → 1547 ms | 1.69 → 0.68 MB |
-| Slow 4G, 6x CPU | 6415 → 4500 ms | 13512 → 5159 ms | 1.67 → 0.64 MB |
+| Profile | Globe ready (before → after) | Texture shown | Bytes to the first view | All bytes |
+| --- | --- | --- | --- | --- |
+| Desktop | 364 → 256 ms | 435 → 310 ms | 1.69 → 0.68 MB | 1.69 → 1.25 MB |
+| Fast 4G, 4x CPU | 2167 → 1406 ms | 3618 → 1552 ms | 1.69 → 0.68 MB | 1.69 → 1.25 MB |
+| Slow 4G, 6x CPU | 6415 → 4426 ms | 13512 → 5141 ms | 1.67 → 0.64 MB | 1.67 → 0.64 MB |
 
-The numbers change by about 5% with the load on the test machine. The preview sends gzip; Vercel sends brotli, which is about 12% smaller for the JS and `world.json`.
+"Bytes to the first view" stops 1 s after the first texture shows. "All bytes" also counts the tiers that load after the first view: a desktop then loads the 4096 tier (549 KB) about 1.5 s after the first texture. A phone loads the 4096 tier only after a zoom or a selection. The numbers change by about 5% with the load on the test machine. The preview sends gzip; Vercel sends brotli, which is about 12% smaller for the JS and `world.json`.
 
 ## News
 

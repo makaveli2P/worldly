@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { geoArea } from 'd3-geo';
@@ -149,9 +150,15 @@ describe('buildGlobeGeometry', () => {
     expect(worst).toBeLessThanOrEqual(MAX_EDGE + 1e-3);
   });
 
-  it('keeps the world mesh size', () => {
+  it('gives the same world mesh as the refine() of the base commit', () => {
+    // The base commit 4074dfb gives these counts and this hash for the same world.json.
+    // Run `npm run data` and this test fails: then check the mesh again and update the numbers.
     const g = buildGlobeGeometry(worldFeatures(world).filter((f) => (f.geometry as Polygon | MultiPolygon).coordinates.length));
-    expect(g.positions.length / 3).toBeGreaterThan(100_000);
-    expect(g.triangles.length % 3).toBe(0);
+    expect(g.positions.length / 3).toBe(245_872);
+    expect(g.triangles.length).toBe(1_172_460);
+    const hash = createHash('sha256');
+    hash.update(new Uint8Array(new Float32Array(g.positions).buffer));
+    hash.update(new Uint8Array(new Uint32Array(g.triangles).buffer));
+    expect(hash.digest('hex').slice(0, 16)).toBe('831b2e69d0bf224d');
   });
 });
