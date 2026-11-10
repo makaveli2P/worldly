@@ -442,7 +442,8 @@ a {
   bottom: 24px;
   transform: translateX(-50%);
   display: flex;
-  gap: 24px;
+  flex-direction: column;
+  align-items: center;
   padding: 4px 12px;
   background: var(--paper); /* stays legible when the globe fills the screen */
   font: 400 11px/16px var(--mono);
@@ -450,9 +451,56 @@ a {
   white-space: nowrap;
 }
 
+.readout-values {
+  display: flex;
+  gap: 24px;
+}
+
 .readout b {
   font-weight: 500;
   color: var(--ink);
+}
+
+/* ---------- Imagery credit (src/ui/credit.ts) ----------
+   The EOX licence needs a clearly visible credit on the satellite map. Desktop: one line under the
+   readout values, on the readout's paper. It wraps only when the space between the plates is narrow. */
+
+.credit {
+  max-width: max(360px, calc(100vw - 2 * (var(--edge) + var(--panel-width) + 32px)));
+  margin-top: 2px;
+  font: 400 10px/14px var(--sans);
+  white-space: normal;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.credit a,
+.credit-toggle,
+.credit-text {
+  pointer-events: auto; /* .ui passes pointer events through to the globe */
+}
+
+.credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.credit a:hover {
+  color: var(--ink);
+}
+
+.credit-toggle {
+  display: none;
+}
+
+:root[data-style='atlas'] .credit {
+  display: none;
+}
+
+/* The first-use hint sits above the taller bar. */
+:root[data-style='satellite'] .hint {
+  bottom: 88px;
 }
 
 /* ---------- Tooltip ---------- */
@@ -1123,12 +1171,80 @@ a {
     right: calc(-1 * var(--edge));
   }
 
+  .hint {
+    bottom: 24px;
+  }
+
+  /* Mobile: no readout values. The bar keeps only a short credit button at the bottom right,
+     above the sheet when the sheet is open. The button opens the full credit. */
   .readout {
+    left: auto;
+    right: 8px;
+    bottom: 8px;
+    transform: none;
+    align-items: flex-end;
+    padding: 0;
+    background: none;
+    transition: bottom 240ms var(--ease);
+  }
+
+  .ui:has(.panels[data-open]) .readout {
+    bottom: calc(46dvh + 8px);
+  }
+
+  :root[data-style='atlas'] .readout,
+  .readout-values {
     display: none;
   }
 
-  .hint {
-    bottom: 24px;
+  .credit {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 4px;
+    max-width: calc(100vw - 16px);
+    margin: 0;
+    text-align: left;
+  }
+
+  .credit-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    padding: 0 8px;
+    border: 0;
+    background: var(--paper);
+    color: var(--muted);
+    font: 400 10px/14px var(--sans);
+    cursor: pointer;
+  }
+
+  .credit-i {
+    display: inline-grid;
+    place-items: center;
+    width: 12px;
+    height: 12px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font: 500 8px/1 var(--mono);
+  }
+
+  .credit-text {
+    display: none;
+    max-width: 320px;
+    padding: 8px;
+    background: var(--paper);
+    border-top: 2px solid var(--ink);
+    color: var(--muted);
+  }
+
+  .credit[data-open] .credit-text {
+    display: block;
+  }
+
+  :root[data-style='satellite'] .hint {
+    bottom: 40px;
   }
 
   .panels {

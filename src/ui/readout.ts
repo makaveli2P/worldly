@@ -1,6 +1,8 @@
 // Bottom instrument bar: LAT / LON / ALT / SEL in mono. update() runs every frame,
 // so it writes to the DOM only when a value string changes.
+// The same bar holds the satellite imagery credit (src/ui/credit.ts), so the two never overlap.
 
+import { creditElement } from './credit';
 import { h } from './dom';
 
 export interface ReadoutView {
@@ -25,11 +27,17 @@ export class Readout {
   constructor() {
     const names = ['LAT', 'LON', 'ALT', 'SEL'];
     this.values = names.map(() => h('b'));
-    // Decorative: it changes every frame, and the selection has its own landmarks.
+    // The values are decorative: they change every frame, and the selection has its own landmarks.
+    // The credit is not decorative, so only the values are aria-hidden.
     this.el = h(
       'footer',
-      { class: 'readout', 'aria-hidden': 'true' },
-      names.map((n, i) => h('span', null, `${n} `, this.values[i])),
+      { class: 'readout' },
+      h(
+        'div',
+        { class: 'readout-values', 'aria-hidden': 'true' },
+        names.map((n, i) => h('span', null, `${n} `, this.values[i])),
+      ),
+      creditElement(),
     );
     this.update({ lat: 0, lng: 0, altitudeKm: 0 }, null);
   }
