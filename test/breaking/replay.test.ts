@@ -32,4 +32,10 @@ describe('replays of real inputs', () => {
     expect(r.alerts[0].outlets).toBe(3);
     expect(r.sources).toEqual({ ok: 26, total: 26 });
   });
+
+  it('2026-11-10 15:10Z live: the same pile-ups on 2 outlets only (NDTV left its edition, Euronews and NYT timed out): no alert', () => {
+    const r = replay('live-2026-11-10T1510Z');
+    expect(r.alerts).toEqual([]);
+    expect(r.sources).toEqual({ ok: 24, total: 27 });
+  });
 });
