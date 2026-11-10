@@ -764,15 +764,31 @@ a {
 
 /* ---------- Imagery credit (src/ui/credit.ts) ----------
    The EOX licence needs a clearly visible credit on the satellite map. Desktop: one line under the
-   readout values, on the readout's paper. It wraps only when the space between the plates is narrow. */
+   readout values, on the readout's paper. It wraps only when the space between the plates is narrow.
+   The credit is quiet but legible: 9.5px muted text (the readout paper keeps it at 4.5:1 or more over
+   any imagery), and faint link underlines that become solid on hover and focus. */
 
 .credit {
   max-width: max(360px, calc(100vw - 2 * (var(--edge) + var(--panel-width) + 32px)));
-  margin-top: 2px;
-  font: 400 10px/14px var(--sans);
+  margin-top: 1px;
+  font: 400 9.5px/12px var(--sans);
+  letter-spacing: 0.01em;
   white-space: normal;
   text-align: center;
   text-wrap: balance;
+}
+
+/* Desktop with no open plate: the credit can use the full width, so it stays on one line.
+   With left: 50%, the readout box would otherwise stop at half the viewport width. */
+@media (min-width: 768px) {
+  .readout {
+    width: max-content;
+    max-width: calc(100vw - 2 * var(--edge));
+  }
+
+  .ui:not(:has(.panels[data-open])) .credit {
+    max-width: calc(100vw - 2 * var(--edge) - 24px);
+  }
 }
 
 .credit a,
@@ -783,12 +799,15 @@ a {
 
 .credit a {
   color: inherit;
-  text-decoration: underline;
+  text-decoration: underline 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
   text-underline-offset: 2px;
 }
 
-.credit a:hover {
+.credit a:hover,
+.credit a:focus-visible {
   color: var(--ink);
+  text-decoration-color: currentColor;
 }
 
 .credit-toggle {
@@ -812,8 +831,7 @@ a {
     padding: 2px 8px;
   }
 
-  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout-values,
-  :root[data-style='satellite'] .ui:has(.panels[data-open]) .credit-extra {
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout-values {
     display: none;
   }
 
@@ -1798,6 +1816,8 @@ a {
     gap: 4px;
     max-width: calc(100vw - 16px);
     margin: 0;
+    font: 400 10px/14px var(--sans); /* the pop-up keeps the size of the button */
+    letter-spacing: normal;
     text-align: left;
   }
 

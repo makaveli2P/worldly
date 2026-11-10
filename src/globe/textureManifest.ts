@@ -35,5 +35,3 @@ export const TEXTURES: { s: TextureFile; m: TextureFile; l: TextureFile; fallbac
 
 /** The attribution that the EOX licence requires, word for word. */
 export const TEXTURE_ATTRIBUTION = "EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025)";
-
-export const TEXTURE_NASA_CREDIT = "NASA Earth Observatory";

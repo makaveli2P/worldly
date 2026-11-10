@@ -183,7 +183,8 @@ The page decodes the tiers with `createImageBitmap`, off the main thread. If tha
 The texture files are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). This licence is separate from the licence of the code (MIT, see [License](#license)). `public/textures/LICENSE.md` has the full notice: the attribution, the licence, and the changes to the source imagery.
 
 - Attribution (EOX requires these words): "EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025)". Polar ice: NASA Earth Observatory.
-- The map shows the credit when the satellite style is on: under the readout on desktop, and behind the "Imagery: EOX" button on mobile (`src/ui/credit.ts`). Do not remove it.
+- The map shows the credit when the satellite style is on: on one line under the readout on desktop, and behind the "Imagery: EOX" button on mobile (`src/ui/credit.ts`). The credit is small (9.5px) and muted, but it stays on the solid readout paper, so its contrast is 4.5:1 or more over any imagery (also over white ice). Do not remove it.
+- The map shows the EOX attribution and the licence only. NASA imagery is public domain, so the NASA credit (polar ice) is in `public/textures/LICENSE.md` and in this file, not on the map.
 - Put the credit on each screenshot or video of the satellite globe (the EOX FAQ requires it). Mobile screenshots do not show the full credit, so add it to the image.
 - Non-commercial use only. A fork that earns money (ads, paid features) must replace the texture files: rebuild from the CC BY 4.0 layer `s2cloudless` (2016; change `YEAR` and `LAYER` in the script) or buy a licence from EOX.
 - ShareAlike: if you change the texture files and share them, use the same licence.

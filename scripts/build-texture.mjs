@@ -212,8 +212,6 @@ export const TEXTURES: { s: TextureFile; m: TextureFile; l: TextureFile; fallbac
 
 /** The attribution that the EOX licence requires, word for word. */
 export const TEXTURE_ATTRIBUTION = ${JSON.stringify(ATTRIBUTION)};
-
-export const TEXTURE_NASA_CREDIT = ${JSON.stringify(NASA_CREDIT)};
 `;
 await writeFile(manifestFile, manifest);
 
