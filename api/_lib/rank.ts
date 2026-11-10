@@ -527,7 +527,7 @@ export function isStrong(cl: Cluster): boolean {
  * Ranks the stories of a country with no English edition (owner decision: hybrid).
  * Strong English stories (see isStrong) take their places first, ranked with help from the native
  * NATION feed (shared proper names). The other places go to native and weak English stories by score,
- * so English filler never pushes out a main national story. The list is in score order.
+ * so English filler never pushes out a main national story. English stories come first, then the native fill.
  */
 export function rankHybrid(englishCands: readonly Candidate[], nativeCands: readonly Candidate[], ctx: RankContext, max = 5): Ranked {
   const rankOf = linkNative(nativeCands, ctx.ignore);
@@ -551,6 +551,9 @@ export function rankHybrid(englishCands: readonly Candidate[], nativeCands: read
     ...nativeClusters.map((c) => [c, 1] as const),
     ...weak.map((c) => [c, 1] as const),
   ]);
-  const clusters = pick([...tierOf.keys()], max, ctx, (c) => tierOf.get(c) ?? 2).sort((a, b) => b.score - a.score);
+  const picked = pick([...tierOf.keys()], max, ctx, (c) => tierOf.get(c) ?? 2);
+  // Owner decision: English stories come first. The native fill goes after them. Each group is in score order.
+  const isNative = (cl: Cluster) => (nativeClusters.includes(cl) ? 1 : 0);
+  const clusters = picked.sort((a, b) => isNative(a) - isNative(b) || b.score - a.score);
   return { clusters, native: new Set(clusters.filter((cl) => nativeClusters.includes(cl))), all };
 }

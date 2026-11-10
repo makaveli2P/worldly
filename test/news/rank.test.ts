@@ -185,7 +185,8 @@ describe('hybrid (no English edition)', () => {
     const english = [cand('German startup raises funds for battery plant', { publishedAt: hoursAgo(20) })];
     const nat = [native('Regierung beschließt große Rentenreform', 1), native('Bahnstreik legt Fernverkehr lahm', 2)];
     const r = rankHybrid(english, nat, ctx);
-    expect(r.clusters.map((c) => c.rep.lang)).toEqual(['de', 'de', null]);
+    // Owner decision: English first, then the native fill.
+    expect(r.clusters.map((c) => c.rep.lang)).toEqual([null, 'de', 'de']);
     expect(r.native.size).toBe(2);
   });
 
@@ -199,9 +200,10 @@ describe('hybrid (no English edition)', () => {
     const r = rankHybrid(english, [native('Regierung beschließt große Rentenreform', 1)], ctx);
     expect(r.clusters.filter((c) => c.rep.lang === null)).toHaveLength(3);
     expect(r.native.size).toBe(1);
-    // One list in score order: English does not come first only because it is English.
-    const scores = r.clusters.map((c) => c.score);
-    expect(scores).toEqual([...scores].sort((a, b) => b - a));
+    // Owner decision: English stories come first, then the native fill. Each group is in score order.
+    expect(r.clusters.map((c) => c.rep.lang)).toEqual([null, null, null, 'de']);
+    const englishScores = r.clusters.slice(0, 3).map((c) => c.score);
+    expect(englishScores).toEqual([...englishScores].sort((a, b) => b - a));
   });
 
   it('does not let English filler from 2 outlets push out the main native stories (review: JPN, UKR)', () => {
@@ -219,7 +221,8 @@ describe('hybrid (no English edition)', () => {
     ];
     const r = rankHybrid(english, nat, ctx);
     expect(r.native.size).toBe(3);
-    expect(r.clusters.slice(0, 3).every((c) => c.rep.lang === 'de')).toBe(true);
+    // The native stories keep their places; they show after the English stories.
+    expect(r.clusters.slice(-3).every((c) => c.rep.lang === 'de')).toBe(true);
   });
 
   it('does not count a fresh story from 1 outlet as strong coverage', () => {
