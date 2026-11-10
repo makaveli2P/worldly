@@ -15,12 +15,13 @@ const lighting = /* glsl */ `
 
 // Equirectangular lookup by direction. The u derivative comes from whichever of two
 // parametrisations has no seam at this pixel, so the mip level stays right at the antimeridian.
+// The texture uploads with flipY = false (an ImageBitmap ignores flipY), so image row 0 (north) is v = 0.
 const earth = /* glsl */ `
   uniform sampler2D tMap;
   vec3 sampleEarth(vec3 d) {
     float lon = atan(d.x, d.z);
     float lat = asin(clamp(d.y, -1.0, 1.0));
-    vec2 uv = vec2(lon * 0.15915494 + 0.5, lat * 0.31830989 + 0.5);
+    vec2 uv = vec2(lon * 0.15915494 + 0.5, 0.5 - lat * 0.31830989);
     float u2 = fract(uv.x + 0.5);
     vec2 dx = vec2(dFdx(uv.x), dFdx(uv.y));
     vec2 dy = vec2(dFdy(uv.x), dFdy(uv.y));

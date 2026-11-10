@@ -13,6 +13,7 @@
     "bias": "node scripts/build-bias.mjs",
     "aliases": "node scripts/build-news-aliases.mjs",
     "audit:news": "node scripts/audit-news.mjs",
+    "texture": "node scripts/build-texture.mjs",
     "test": "vitest run"
   },
   "dependencies": {

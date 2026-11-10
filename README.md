@@ -6,7 +6,7 @@ Built with Vite, TypeScript and three.js. There is no UI framework.
 
 ## Features
 
-- **Satellite map (default).** The globe uses the NASA Blue Marble image (`public/textures/earth-4k.jpg`, 4096x2048, about 1.1 MB). The page loads the image only when the satellite style is on.
+- **Satellite map (default).** The globe uses EOX Sentinel-2 cloudless 2025 imagery with NASA Blue Marble polar ice. The page loads the image only when the satellite style is on, in tiers of 2048, 4096 and 8192 px. See [Satellite image](#satellite-image).
 - **Atlas map.** Flat land fills, a 15° graticule and a 1px limb. The selected country is solid red.
 - **Light and dark themes.** The theme follows `prefers-color-scheme`. The sun/moon button in the header sets a theme and keeps it. Both map styles work in both themes.
 - **Always-on labels.** Country names (uppercase) and capitals (small square and name) stay on the globe with no hover. The overlay hides labels on the far side, fades them near the limb, and stops labels from overlapping. Zoom in to see more countries. The selected country always has a label.
@@ -67,6 +67,63 @@ Other commands:
 - `npm run typecheck`: check the types.
 - `npm run build`: check the types and build to `dist/`.
 - `npm run preview`: serve the build. The preview does not run `api/`, so news does not load there.
+
+## Satellite image
+
+The files are in `public/textures/`. `scripts/build-texture.mjs` makes them:
+
+```sh
+npm run texture
+```
+
+1. The script requests the EOX WMS layer `s2cloudless-2025` in 8 parts of 4096 x 4096 px (EOX allows 4096 px for each request). It waits 2 s between requests.
+2. It stitches the parts to 16384 x 8192 px and resamples the result to 8192 x 4096 px (Lanczos 3).
+3. Poleward of 58°, it puts NASA Blue Marble Next Generation ice on the flat white EOX pixels. The Arctic Ocean has no sea ice in the result.
+4. It writes the tiers, `public/textures/LICENSE.md` and `src/globe/textureManifest.ts`. The app gets the file names only from that module.
+
+The downloads stay in `.cache/texture/` (git ignores it), so a second run makes no requests. The output is the same for the same downloads.
+
+| File | Use | Size |
+| --- | --- | --- |
+| `earth-2025-<hash>-2048.webp` (WebP q70) | First tier, on every device | 97 KB |
+| `earth-2025-<hash>-4096.webp` (WebP q80) | When the view needs more texels than 2048 gives (desktop at once, phone after a zoom or selection) | 549 KB |
+| `earth-2025-<hash>-8192.webp` (WebP q80) | Only on a desktop with `MAX_TEXTURE_SIZE` >= 8192, a fine pointer and 8 GB or more memory, after the first zoom or selection, when the globe is at rest | 2.1 MB |
+| `earth-2025-<hash>-4096.jpg` (JPEG q80) | Fallback when the WebP load fails | 642 KB |
+
+`<hash>` is the start of the SHA-256 of the file. A rebuild that changes a file gives it a new name, so the files can have a one-year immutable cache. With Save-Data, the page loads only the first tier.
+
+The page decodes the tiers with `createImageBitmap`, off the main thread. If that fails, it uses an `<img>`. The upload of a decoded tier to the GPU runs on the main thread (about 13 ms for 4096 and 42 ms for 8192 on an Apple M4 Pro). So a larger tier waits for a frame with no drag, no turn to a selection, no inertia and no zoom ease. The 8192 tier also waits for the idle spin to stop and for 800 ms with no input (`canUploadTexture` in `src/globe/textureTiers.ts`).
+
+### Texture licence
+
+The texture files are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). This licence is separate from the licence of the code. `public/textures/LICENSE.md` has the full notice: the attribution, the licence, and the changes to the source imagery.
+
+- Attribution (EOX requires these words): "EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025)". Polar ice: NASA Earth Observatory.
+- The map shows the credit when the satellite style is on: under the readout on desktop, and behind the "Imagery: EOX" button on mobile. Do not remove it.
+- Put the credit on each screenshot or video of the satellite globe (the EOX FAQ requires it). Mobile screenshots do not show the full credit, so add it to the image.
+- Non-commercial use only. A fork that earns money (ads, paid features) must replace the texture files: rebuild from the CC BY 4.0 layer `s2cloudless` (2016; change `YEAR` and `LAYER` in the script) or buy a licence from EOX.
+- ShareAlike: if you change the texture files and share them, use the same licence.
+
+## Performance
+
+The page does this to show the globe sooner:
+
+- `index.html` paints the loading text before the module runs. An inline script fetches `world.json`, `countries-lite.json` and `labels.json` with the HTML. When the first two are in, it fetches the full `countries.json` and the first texture tier. `src/main.ts` uses these requests.
+- The start does not wait for the web fonts. The overlay measures the labels again when the fonts load.
+- The build writes `/data/labels.json` (label sites and the features with a reversed winding) and `/data/countries-lite.json` (the fields that the first frame needs) from `public/data/` (`src/data/precompute.ts`, `vite.config.ts`). The dev server makes them on request. If `labels.json` does not match `world.json`, the page computes the label sites.
+- The globe mesh build uses a squared-length test for long edges.
+- The device pixel ratio is at most 1.5 on touch devices and 2 elsewhere.
+- `vercel.json`: `/assets/*` and the texture files have `public, max-age=31536000, immutable`. `/data/*` has `public, max-age=600, stale-while-revalidate=3600`, because the data names have no hash.
+
+Local preview, median of 3 cold loads (headless Chromium, DevTools throttling; Slow 4G is 390x844 with 6x CPU):
+
+| Profile | Globe ready (before → after) | Texture shown | Bytes to the first view | All bytes |
+| --- | --- | --- | --- | --- |
+| Desktop | 364 → 256 ms | 435 → 310 ms | 1.69 → 0.68 MB | 1.69 → 1.25 MB |
+| Fast 4G, 4x CPU | 2167 → 1406 ms | 3618 → 1552 ms | 1.69 → 0.68 MB | 1.69 → 1.25 MB |
+| Slow 4G, 6x CPU | 6415 → 4426 ms | 13512 → 5141 ms | 1.67 → 0.64 MB | 1.67 → 0.64 MB |
+
+"Bytes to the first view" stops 1 s after the first texture shows. "All bytes" also counts the tiers that load after the first view: a desktop then loads the 4096 tier (549 KB) about 1.5 s after the first texture. A phone loads the 4096 tier only after a zoom or a selection. The numbers change by about 5% with the load on the test machine. The preview sends gzip; Vercel sends brotli, which is about 12% smaller for the JS and `world.json`.
 
 ## News
 
@@ -191,7 +248,7 @@ The script takes 3 to 4 minutes. It writes `public/data/world.json`, `public/dat
 - Country shapes: [world-atlas](https://github.com/topojson/world-atlas) (Natural Earth, public domain).
 - Country facts: [mledoze/countries](https://github.com/mledoze/countries) (ODbL), [Wikidata](https://www.wikidata.org) (CC0), [World Bank Open Data](https://data.worldbank.org) (CC BY 4.0) and the IANA time zone database.
 - Flags: [flagcdn.com](https://flagcdn.com) and Wikimedia Commons.
-- Satellite image: NASA Blue Marble (public domain).
+- Satellite image: EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025), CC BY-NC-SA 4.0, modified. Polar ice: NASA Blue Marble Next Generation, credit NASA Earth Observatory. See [Texture licence](#texture-licence).
 - Fonts: Inter Tight and JetBrains Mono (SIL Open Font License).
 - News:
   - Google News RSS (all editions and search) and the RSS feeds of BBC, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India and The New York Times. Terms risk: these feed terms allow personal, non-commercial use only, and Worldly is a public site. The owner accepts this risk. Use a licensed source for commercial use.

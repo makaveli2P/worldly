@@ -8,3 +8,5 @@ _shots
 !.env.example
 # MBFC ratings: built by scripts/build-bias.mjs, never in git (MBFC does not allow redistribution).
 api/_lib/generated/
+.cache/
+.claude/worktrees/
