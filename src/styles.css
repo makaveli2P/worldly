@@ -36,11 +36,11 @@
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
-  --paper: #f4f4f1;
+  --paper: #e6e6e1; /* the canvas; the header, the plates and the sheet use the panel colour */
   --panel: #ffffff;
   --ink: #111111;
   --muted: #5c5c58;
-  --faint: #6b6b67; /* years, numbers in lists: 4.8:1 on paper */
+  --faint: #6b6b67; /* years, numbers in lists: 5.3:1 on panel */
   --rule: #dcdcd7;
   --accent: #e5361b; /* fills: brand square, markers */
   --accent-text: #d12f15; /* small red text: 5.1:1 on white */
@@ -51,16 +51,16 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --paper: #0e0e0e;
-  --panel: #161616;
+  --paper: #0a0a0a;
+  --panel: #1a1a1a;
   --ink: #f2f2ee;
   --muted: #9a9a94;
-  --faint: #85857f;
-  --rule: #2a2a2a;
+  --faint: #8a8a84; /* 4.7:1 on hover */
+  --rule: #333333;
   --accent: #f24b2f;
-  --accent-text: #f24b2f; /* 5.0:1 on the panel */
+  --accent-text: #f24b2f; /* 4.8:1 on the panel */
   --on-ink: #0e0e0e;
-  --hover: #1f1f1f;
+  --hover: #202020;
   --flag-edge: rgb(242 242 238 / 0.16);
 }
 
@@ -68,21 +68,24 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --paper: #0e0e0e;
-    --panel: #161616;
+    --paper: #0a0a0a;
+    --panel: #1a1a1a;
     --ink: #f2f2ee;
     --muted: #9a9a94;
-    --faint: #85857f;
-    --rule: #2a2a2a;
+    --faint: #8a8a84;
+    --rule: #333333;
     --accent: #f24b2f;
     --accent-text: #f24b2f;
     --on-ink: #0e0e0e;
-    --hover: #1f1f1f;
+    --hover: #202020;
     --flag-edge: rgb(242 242 238 / 0.16);
   }
 }
 
 :root {
+  /* Breaking news: signal yellow with an ink keyline, the same in both themes. Red stays "selected". */
+  --alert: #ffb800;
+  --on-alert: #111111; /* 10.9:1 on the yellow */
   --panel-width: 336px;
   --brand-space: 128px; /* brand width plus a 24px gap */
   --edge: 24px;
@@ -196,7 +199,7 @@ a {
   align-items: center;
   column-gap: 24px;
   padding: 0 var(--edge);
-  background: var(--paper);
+  background: var(--panel);
   border-bottom: 1px solid var(--ink);
   pointer-events: auto;
   z-index: 3;
@@ -362,8 +365,8 @@ a {
   padding: 0;
   list-style: none;
   background: var(--panel);
-  border-top: 2px solid var(--ink);
-  box-shadow: 0 0 0 1px var(--rule);
+  border: 1px solid var(--ink);
+  border-top-width: 2px;
 }
 
 .search[data-open] .search-list {
@@ -535,9 +538,9 @@ a {
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border-top: 2px solid var(--ink);
-  /* A plate that scrolls ends on a rule, so the cut edge reads as intentional. */
-  border-bottom: 1px solid var(--ink);
+  /* A full ink frame (2px at the top) sets the plate off the canvas and the globe. No shadow, no radius. */
+  border: 1px solid var(--ink);
+  border-top-width: 2px;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -1121,6 +1124,9 @@ a {
     top: 100%;
     left: calc(-1 * var(--edge));
     right: calc(-1 * var(--edge));
+    /* Full width: no side borders at the screen edges. */
+    border-left: 0;
+    border-right: 0;
   }
 
   .readout {
@@ -1232,8 +1238,7 @@ a {
     flex: 1;
     min-height: 0;
     display: none;
-    border-top: 0;
-    border-bottom: 0;
+    border: 0;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;

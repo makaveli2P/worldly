@@ -876,9 +876,8 @@ export class Overlay {
     let path = `M${sx} ${sy}L${ex} ${ey}`;
     if (Math.abs(ey - ty) > 0.5) path += `V${ty}`;
     path += `H${ed}`;
-    // The tick sits just outside the panel edge, so the panel does not cover it.
-    const tx = ed - dir * 1;
-    const tick = `M${tx} ${ty - 6}V${ty + 6}`;
+    // No tick: the 1px ink frame of the plate already closes the line in a clean T-join.
+    const tick = '';
     // Keep labels off the line: sample the diagonal, and block the horizontal run as one box.
     for (let s = 8; s < d; s += 10) pts.push([ax + s * dir, ay + Math.sign(dy) * s]);
     // Step a fixed count: a "step until near ty" loop can overshoot and swing back and forth forever.

@@ -2,7 +2,7 @@
 
 .wo-overlay {
   --wo-ink: #111111;
-  --wo-paper: #f4f4f1;
+  --wo-paper: #e6e6e1;
   --wo-red: #e5361b;
   --wo-ring: #ffffff;
   --wo-label: #2b2b29;
@@ -25,7 +25,7 @@
 
 .wo-overlay[data-theme='dark'] {
   --wo-ink: #f2f2ee;
-  --wo-paper: #0e0e0e;
+  --wo-paper: #0a0a0a;
   --wo-red: #f24b2f;
   --wo-ring: #f2f2ee;
   --wo-label: #dcdcd6;
