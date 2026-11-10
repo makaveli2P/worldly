@@ -180,7 +180,7 @@ The page decodes the tiers with `createImageBitmap`, off the main thread. If tha
 
 ### Texture licence
 
-The texture files are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). This licence is separate from the licence of the code. `public/textures/LICENSE.md` has the full notice: the attribution, the licence, and the changes to the source imagery.
+The texture files are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). This licence is separate from the licence of the code (MIT, see [License](#license)). `public/textures/LICENSE.md` has the full notice: the attribution, the licence, and the changes to the source imagery.
 
 - Attribution (EOX requires these words): "EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025)". Polar ice: NASA Earth Observatory.
 - The map shows the credit when the satellite style is on: under the readout on desktop, and behind the "Imagery: EOX" button on mobile (`src/ui/credit.ts`). Do not remove it.
@@ -316,3 +316,17 @@ npm run aliases:breaking
 **Terms risk (all news feeds).** The feed terms of Google News, The Times of India, Al Jazeera and The Guardian allow personal, non-commercial use only. The terms of the other feeds were not all checked. Worldly is a public site, and it uses all of these feeds for the news plate and for breaking news. The owner accepts this risk for this non-commercial site. For commercial use, replace the feeds with a licensed source.
 
 Worldly links each story to the publisher. It does not copy article text. Show BBC stories as "BBC News", with no BBC logo.
+
+## License
+
+The code is licensed under the [MIT License](LICENSE).
+
+These files keep their own licences. The MIT License does not apply to them:
+
+- `public/textures/earth-2025-*`: CC BY-NC-SA 4.0 (EOX, modified). See [Texture licence](#texture-licence) and `public/textures/LICENSE.md`.
+- `public/data/countries.json` and the files made from it: ODbL (mledoze/countries) and CC BY 4.0 (World Bank Open Data). Wikidata is CC0.
+- `public/data/world.json`: Natural Earth, public domain.
+- `api/_lib/state-media.json`: CC BY 4.0 (State Media Monitor, MJRC). Worldly added domain names.
+- `src/assets/fonts/` and `mockups/swiss/fonts/`: SIL Open Font License.
+
+The MBFC table is not in the repo. Each build gets it with the owner's own RapidAPI key.
