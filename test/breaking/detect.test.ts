@@ -120,6 +120,10 @@ describe('big events from the review do alert', () => {
     expect(summary(ESTONIA, { itn: null })).toEqual(['EST:critical']);
   });
 
+  it('the invasion stays critical with another chronic list', () => {
+    expect(summary(ESTONIA, { itn: { blurbs: [], ongoing: ['Sudanese civil war'] } })).toEqual(['EST:critical']);
+  });
+
   it('a quake that kills 2,000 alerts: major from news alone, critical with a red GDACS level', () => {
     expect(summary(QUAKE)).toEqual(['AFG:major']);
     const a = alerts(QUAKE, { hazards: [RED_QUAKE] });
