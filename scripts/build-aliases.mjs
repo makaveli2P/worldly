@@ -133,6 +133,7 @@ const EXTRA_LEADERS = {
   PRK: [{ name: 'Kim Jong Un', surname: null }, { name: 'Kim Jong-un', surname: null }],
   VAT: [{ name: 'Pope', surname: null }],
   GBR: [{ name: 'King Charles', surname: null }],
+  THA: [{ name: 'Maha Vajiralongkorn', surname: 'Vajiralongkorn' }],
 };
 
 // Alternative spellings that are also common words or given names.

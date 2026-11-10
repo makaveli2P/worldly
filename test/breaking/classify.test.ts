@@ -199,6 +199,8 @@ describe('classify: second review', () => {
     expect(classify('Trump arrested')).toMatchObject({ family: 'politics', tier: 3 });
     expect(classify('President Donald J. Trump shot at rally')).toMatchObject({ family: 'politics', tier: 3 });
     expect(classify("Paraguay's President Pena resigns")).toMatchObject({ family: 'politics', tier: 3 });
+    expect(classify('Thai King Vajiralongkorn dies')).toMatchObject({ family: 'politics', tier: 3 });
+    expect(classify('After Vote, President Trump Resigns')).toMatchObject({ family: 'politics', tier: 3 });
   });
 
   it('does not read a relative or a namesake of a leader as the leader', () => {

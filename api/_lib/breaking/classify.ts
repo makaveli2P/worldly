@@ -170,7 +170,7 @@ function namesOtherPerson(title: string, from: number, id: string, matches: Coun
 /** True when an appositive name comes before the title: "Sirikit, Glamorous Queen of Thailand". */
 function appositiveOther(title: string, subjectStart: number, matches: CountryMatch[]): boolean {
   const a = /(?:^|[.:;!?]\s*)(\p{Lu}[\p{L}'’.-]+(?:\s+\p{Lu}[\p{L}'’.-]+){0,3}),\s+(?:(?:the|a|an)\s+)?(?:[\p{L}'’-]+\s+){0,3}$/u.exec(title.slice(0, subjectStart));
-  if (!a) return false;
+  if (!a || /^(?:After|Before|In|On|At|As|With|Amid|Despite|Following|Breaking|Watch|Update|Live|Exclusive|Today|Tonight|Now|Yesterday)\b/.test(a[1])) return false;
   const start = (a.index ?? 0) + a[0].indexOf(a[1]);
   const end = start + a[1].length;
   return !matches.some((c) => (c.kind === 'leader' || c.kind === 'surname') && c.index >= start && c.end <= end);
@@ -203,7 +203,8 @@ function headOfStateEvent(title: string, matches: CountryMatch[]): boolean {
     if (subjectStart < 0) continue;
     const country = before.length && subjectEnd === headEnd ? before[before.length - 1].id : after?.id;
     if (country && subjectEnd === headEnd && !of && namesOtherPerson(title, headEnd, country, matches)) continue;
-    if (OBJECT_BEFORE.test(title.slice(0, subjectStart)) || appositiveOther(title, subjectStart, matches)) continue;
+    if (OBJECT_BEFORE.test(title.slice(0, subjectStart))) continue;
+    if (subjectStart === hi && appositiveOther(title, subjectStart, matches)) continue;
     if (NOT_HEAD.test(title.slice(Math.max(0, subjectStart - 30), subjectStart))) continue;
     if (NOT_HEAD.test(title.slice(subjectStart, subjectEnd))) continue;
     // The event verb must follow within 60 characters, with no speaker verb between.
