@@ -190,7 +190,7 @@ export class NewsPanel {
                 when && h('span', { class: 't mono' }, when),
               ),
             ),
-            // A translated title is English; a hover on it shows the original.
+            // A translated title is English and shows in full (no clamp); a hover on it shows the original.
             h('span', { class: 'story-title', lang: tr ? 'en' : (lang ?? null), title: tr ? tr.original : null }, a.title),
           ),
         ),
@@ -386,7 +386,8 @@ const NO_PROXY_HOST = /(?:^|\.)(?:google\.com|msn\.com|flipboard\.com|apple\.new
 /**
  * The article through the Google Translate page proxy, in the translate.goog form
  * ("https://www-example-com.translate.goog/path?_x_tr_sl=auto&_x_tr_tl=en"). The older form
- * translate.google.com/translate?u=... only redirects to it, and it can answer with a robot check.
+ * translate.google.com/translate?u=... only redirects to it. Both forms can answer with a robot check
+ * (HTTP 429, google.com/sorry) to automated traffic (seen in tests on 2026-11-11).
  * Null for an aggregator link (news.google.com, ...), an internationalised host or a URL with a port.
  */
 export function translateProxyUrl(raw: string): string | null {

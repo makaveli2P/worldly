@@ -1710,6 +1710,15 @@ a {
   letter-spacing: -0.005em;
 }
 
+/* A translation is often longer than its source. Show the full English title: the hover and the
+   Original row give only the source text, so the clamp must not cut the translation. */
+.story--tr .story-title {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+  overflow: visible;
+}
+
 .story-link:hover .story-title {
   color: var(--accent-text);
 }
