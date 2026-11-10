@@ -104,7 +104,7 @@ export class CountrySearch {
       h(
         'li',
         { id: `search-opt-${i}`, role: 'option', 'data-id': e.id, 'aria-selected': String(i === this.active) },
-        h('span', null, e.name),
+        h('span', { title: e.name }, e.name),
         h('span', { class: 'search-code', 'aria-hidden': 'true' }, e.id.startsWith('X-') ? '' : e.id),
       ),
     );

@@ -386,6 +386,14 @@ a {
   cursor: pointer;
 }
 
+/* A long name ("United States Virgin Islands") stays on one line in the fixed-height row. */
+.search-list li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .search-list li:first-child {
   border-top: 0;
 }
@@ -669,9 +677,10 @@ a {
 }
 
 /* Satellite style: the readout bar also holds the imagery credit (src/ui/credit.ts), so it is taller.
-   The hint sits above it. Mobile has its own value. Keep these in step with the .hint position. */
+   The credit wraps to 2 or 3 lines with the width, so src/ui/shell.ts writes the real readout height
+   to --readout-h. The hint sits 10px above the readout (readout bottom 24px). Mobile has its own value. */
 :root[data-style='satellite'] .hint {
-  bottom: 88px;
+  bottom: calc(34px + var(--readout-h, 54px));
 }
 
 .loader {
@@ -1654,7 +1663,12 @@ a {
     border-right: 0;
   }
 
-  /* Breaking news: a third header row, full width. */
+  /* Breaking news: a third header row, full width. The header is then 145px tall (3 rows and the
+     1px rule), so --bar grows with it: the load-error notice sits under the header (top: --bar + 16px). */
+  :root[data-breaking] {
+    --bar: 145px;
+  }
+
   .bar[data-breaking] {
     height: auto;
     grid-template-rows: 56px 48px 40px;

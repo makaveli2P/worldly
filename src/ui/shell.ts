@@ -118,6 +118,14 @@ export function mountShell(app: HTMLElement): Shell {
   app.append(globe, overlay, ui);
 
   const layout = getLayout(ui);
+  // The plates come before the readout and its credit links in the Tab order, as on the screen.
+  // .panels has z-index 2, so the change of DOM order does not change the paint order.
+  ui.append(readout.el);
+  // The credit wraps to 2 or 3 lines, so the readout height changes with the width.
+  // The satellite hint sits above the readout through --readout-h (src/styles.css).
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => ui.style.setProperty('--readout-h', `${readout.el.offsetHeight}px`)).observe(readout.el);
+  }
   syncStyle(prefs.mapStyle);
   syncTheme(prefs.theme);
   prefs.onMapStyleChange(syncStyle);
