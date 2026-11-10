@@ -502,8 +502,13 @@ a {
   }
 }
 
+/* The name shrinks (with an ellipsis) only when the headline has no width left: the headline has a zero
+   basis, so it takes only the free width and never makes the name give way. */
 .brk-name {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 13px;
   line-height: 16px;
   font-weight: 600;
@@ -511,6 +516,7 @@ a {
 }
 
 .brk-head {
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -615,25 +621,32 @@ a {
   border-left-color: var(--rule);
 }
 
-/* Narrow desktop: column 2 is the viewport minus about 613px. Drop the parts that fit least. */
-@media (min-width: 768px) and (max-width: 1099px) {
+/* Narrow desktop: column 2 is the viewport minus about 613px. The headline goes first. */
+@media (min-width: 1000px) and (max-width: 1099px) {
   .brk .brk-head {
     display: none;
   }
 }
 
-@media (min-width: 768px) and (max-width: 899px) {
-  .brk .brk-tag-text,
-  .brk .brk-age,
-  .brk > .brk-open {
-    display: none;
+/* Tablet (iPad portrait): column 2 is too narrow for BREAKING and a name. The chip moves to a second
+   header row, and the plates move down with the header. The text BREAKING stays in every tier. */
+@media (min-width: 768px) and (max-width: 999px) {
+  :root[data-breaking] {
+    --bar: 104px;
   }
 
-  .brk .brk-name {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .bar[data-breaking] {
+    grid-template-rows: 56px 48px;
+  }
+
+  .bar[data-breaking] .brk-slot {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-self: center;
+  }
+
+  .bar[data-breaking] .bar-tools {
+    grid-row: 1;
   }
 }
 
