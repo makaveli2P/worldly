@@ -501,9 +501,15 @@ a {
   box-shadow: 0 0 0 1.5px var(--on-alert);
 }
 
-/* A new alert: the dot blinks 3 times in 4.8 s, then stays on. */
+/* The dot blinks for as long as the alert is live: critical every 1.6 s, major every 2.4 s.
+   The dismiss button and reduced motion stop it. */
+.brk-dot {
+  animation: brk-dot 2400ms ease-in-out infinite;
+}
+
+.brk-tag[data-level='critical'] .brk-dot,
 .brk[data-pulse] .brk-dot {
-  animation: brk-dot 1600ms ease-in-out 3;
+  animation-duration: 1600ms;
 }
 
 @keyframes brk-dot {
