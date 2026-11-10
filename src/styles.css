@@ -367,6 +367,7 @@ a {
   background: var(--panel);
   border: 1px solid var(--ink);
   border-top-width: 2px;
+  z-index: 2; /* over the breaking-news row on mobile */
 }
 
 .search[data-open] .search-list {
@@ -402,6 +403,238 @@ a {
 .search-list .search-empty {
   color: var(--muted);
   cursor: default;
+}
+
+/* ---------- Breaking news (header chip) ---------- */
+
+/* Desktop: the empty grid column 2 of the header. The chip is as wide as its text, up to the column. */
+.brk-slot {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.brk-slot:empty {
+  display: none;
+}
+
+.brk {
+  display: flex;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid var(--ink);
+  background: var(--panel);
+}
+
+.brk-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 12px 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.brk-main:hover,
+.brk-btn:hover {
+  background: var(--hover);
+}
+
+.brk-main:focus-visible,
+.brk-btn:focus-visible,
+.brk-row-main:focus-visible {
+  outline-offset: -4px;
+}
+
+/* "BREAKING" with a dot. Critical: a yellow fill. Major: a yellow dot on the panel colour. */
+.brk-tag {
+  display: flex;
+  flex: none;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  padding: 0 10px;
+  border-right: 1px solid var(--ink);
+  color: var(--ink);
+  font: 500 11px/16px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brk-tag[data-level='critical'] {
+  background: var(--alert);
+  color: var(--on-alert);
+}
+
+.brk-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--on-alert);
+}
+
+.brk-tag[data-level='major'] .brk-dot {
+  background: var(--alert);
+  box-shadow: 0 0 0 1.5px var(--on-alert);
+}
+
+/* A new alert: the dot blinks 3 times in 4.8 s, then stays on. */
+.brk[data-pulse] .brk-dot {
+  animation: brk-dot 1600ms ease-in-out 3;
+}
+
+@keyframes brk-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.brk-name {
+  flex: none;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.brk-head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.brk-age {
+  flex: none;
+  font: 400 11px/16px var(--mono);
+  color: var(--muted);
+}
+
+.brk-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--ink);
+  background: none;
+  color: var(--ink);
+  font: 500 11px/16px var(--mono);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.brk-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max(100%, 360px);
+  max-width: calc(100vw - 2 * var(--edge));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  border-top-width: 2px;
+  z-index: 1;
+}
+
+.brk-list[hidden] {
+  display: none;
+}
+
+.brk-row {
+  display: flex;
+  border-top: 1px solid var(--rule);
+}
+
+.brk-row:first-child {
+  border-top: 0;
+}
+
+.brk-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 12px 10px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.brk-row-main:hover {
+  background: var(--hover);
+}
+
+.brk-row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brk-row .brk-tag {
+  height: 20px;
+  border: 1px solid var(--ink);
+  padding: 0 6px;
+}
+
+.brk-row-head {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.brk-row .brk-btn {
+  width: 40px;
+  border-left-color: var(--rule);
+}
+
+/* Narrow desktop: column 2 is the viewport minus about 613px. Drop the parts that fit least. */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .brk .brk-head {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 899px) {
+  .brk .brk-tag-text,
+  .brk .brk-age,
+  .brk > .brk-open {
+    display: none;
+  }
+
+  .brk .brk-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 /* ---------- Hint, loader, readout ---------- */
@@ -1131,6 +1364,52 @@ a {
 
   .readout {
     display: none;
+  }
+
+  /* Breaking news: a third header row, full width. */
+  .bar[data-breaking] {
+    height: auto;
+    grid-template-rows: 56px 48px 40px;
+  }
+
+  .brk-slot {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: stretch;
+    align-self: stretch;
+    max-width: none;
+    margin: 0 calc(-1 * var(--edge));
+  }
+
+  .brk {
+    height: 100%;
+    border: 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .brk-main {
+    flex: 1 1 auto;
+    gap: 8px;
+    padding-right: 8px;
+  }
+
+  .brk-tag {
+    padding: 0 8px 0 var(--edge);
+  }
+
+  .brk-btn {
+    width: 40px;
+    border-left-color: var(--rule);
+  }
+
+  .brk-list {
+    top: 100%;
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+    border-left: 0;
+    border-right: 0;
   }
 
   .hint {
