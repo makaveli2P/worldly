@@ -5,13 +5,17 @@ import {
   MAX_ALERTS,
   POLL_BACKOFF_MS,
   POLL_MS,
-  SessionSet,
+  NO_ALERTS,
+  SAME_STORY_MS,
+  StorySet,
   ageWords,
   announcement,
-  newKeys,
+  holdDropped,
+  newStories,
   nextPollDelay,
   parseAlert,
   parseBreakingResponse,
+  sameStory,
   sameView,
   sortAlerts,
   stripBadge,
@@ -21,6 +25,12 @@ import {
 import type { BreakingAlert } from '../../src/types';
 
 const NOW = Date.parse('2026-11-10T12:00:00Z');
+
+/** A StoryMatcher that knows only keys. `none.with('a')` knows the key 'a'. */
+const none = {
+  has: () => false,
+  with: (...keys: string[]) => ({ has: (a: { key: string }) => keys.includes(a.key) }),
+};
 const iso = (minAgo: number) => new Date(NOW - minAgo * 60_000).toISOString();
 
 function alert(p: Partial<BreakingAlert> & Pick<BreakingAlert, 'key' | 'country'>): BreakingAlert {
@@ -104,7 +114,7 @@ describe('order and filters', () => {
         alert({ key: 'c', country: 'ZZZ' }),
         alert({ key: 'd', country: 'FRA' }),
       ],
-      new Set(['d']),
+      none.with('d'),
       resolve,
       NOW,
     );
@@ -113,7 +123,7 @@ describe('order and filters', () => {
 
   it('shows at most MAX_ALERTS', () => {
     const list = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((c) => alert({ key: c, country: c }));
-    expect(visibleAlerts(list, new Set(), (id) => id, NOW)).toHaveLength(MAX_ALERTS);
+    expect(visibleAlerts(list, none, (id) => id, NOW)).toHaveLength(MAX_ALERTS);
   });
 
   it('drops an alert with no evidence in the last 24 hours', () => {
@@ -121,7 +131,7 @@ describe('order and filters', () => {
       alert({ key: 'fresh', country: 'JPN', since: iso(60 * 30), updatedAt: iso(60 * 23) }),
       alert({ key: 'stale', country: 'FRA', since: iso(60 * 30), updatedAt: iso(MAX_AGE_MS / 60_000 + 1) }),
     ];
-    expect(visibleAlerts(list, new Set(), resolve, NOW).map((a) => a.key)).toEqual(['fresh']);
+    expect(visibleAlerts(list, none, resolve, NOW).map((a) => a.key)).toEqual(['fresh']);
   });
 
   it('compares what the chip shows, but not the age', () => {
@@ -134,10 +144,10 @@ describe('order and filters', () => {
     expect(sameView(a, [a[0], { ...a[1], url: 'https://example.com/b' }])).toBe(false);
   });
 
-  it('finds the keys that are new', () => {
+  it('finds the stories that are new', () => {
     const list = [alert({ key: 'a', country: 'JPN' }), alert({ key: 'b', country: 'FRA' })];
-    expect(newKeys(list, new Set(['a']))).toEqual(['b']);
-    expect(newKeys(list, new Set(['a', 'b']))).toEqual([]);
+    expect(newStories(list, none.with('a')).map((a) => a.key)).toEqual(['b']);
+    expect(newStories(list, none.with('a', 'b'))).toEqual([]);
   });
 });
 
@@ -196,16 +206,20 @@ describe('nextPollDelay', () => {
   });
 });
 
-describe('SessionSet', () => {
+describe('StorySet', () => {
   function memory(): Pick<Storage, 'getItem' | 'setItem'> & { data: Map<string, string> } {
     const data = new Map<string, string>();
     return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
   }
+  const a = alert({ key: 'JPN-disaster-20261110', country: 'JPN', since: iso(30) });
+  const b = alert({ key: 'FRA-attack-20261110', country: 'FRA', kind: 'attack' });
 
-  it('keeps keys across instances (a reload)', () => {
+  it('keeps stories across instances (a reload)', () => {
     const s = memory();
-    new SessionSet('k', s).add('a', 'b');
-    expect(new SessionSet('k', s).has('b')).toBe(true);
+    new StorySet('k', s).add(a, b);
+    const again = new StorySet('k', s);
+    expect(again.has(b)).toBe(true);
+    expect(again.keys()).toEqual([a.key, b.key]);
   });
 
   it('works when storage throws or holds junk', () => {
@@ -217,21 +231,123 @@ describe('SessionSet', () => {
         throw new Error('blocked');
       },
     };
-    const set = new SessionSet('k', throwing);
-    set.add('a');
-    expect(set.has('a')).toBe(true);
+    const set = new StorySet('k', throwing);
+    set.add(a);
+    expect(set.has(a)).toBe(true);
     const junk = memory();
     junk.data.set('k', '{not json');
-    expect(new SessionSet('k', junk).has('a')).toBe(false);
-    expect(new SessionSet('k', null).has('a')).toBe(false);
+    expect(new StorySet('k', junk).has(a)).toBe(false);
+    junk.data.set('k', '[1, null, {"nokey": true}]');
+    expect(new StorySet('k', junk).keys()).toEqual([]);
+    expect(new StorySet('k', null).has(a)).toBe(false);
+  });
+
+  it('reads the key list of the format before 0.2.0, as keys only', () => {
+    const s = memory();
+    s.data.set('k', JSON.stringify([a.key]));
+    const set = new StorySet('k', s);
+    expect(set.has(a)).toBe(true);
+    // A legacy entry has no country, so it cannot match a moved key.
+    expect(set.has({ ...a, key: 'JPN-disaster-20261111' })).toBe(false);
   });
 
   it('keeps only the newest entries', () => {
     const s = memory();
-    const set = new SessionSet('k', s, 2);
-    set.add('a', 'b', 'c');
-    expect([...set.asSet()]).toEqual(['b', 'c']);
-    expect(s.data.get('k')).toBe('["b","c"]');
+    const set = new StorySet('k', s, 2);
+    const c = alert({ key: 'c', country: 'DEU' });
+    set.add(a, b, c);
+    expect(set.keys()).toEqual([b.key, 'c']);
+    expect(JSON.parse(s.data.get('k')!).map((r: { key: string }) => r.key)).toEqual([b.key, 'c']);
+  });
+
+  it('knows a story whose key moved at 00:00 UTC', () => {
+    const set = new StorySet('k', memory());
+    const before = alert({ key: 'UKR-attack-20261109', country: 'UKR', kind: 'attack', since: '2026-11-09T23:40:00Z' });
+    set.add(before);
+    const after = { ...before, key: 'UKR-attack-20261110', since: '2026-11-10T00:20:00Z' };
+    expect(set.has(after)).toBe(true);
+    // Another kind, another country, or a since 24 h or more later is a new story.
+    expect(set.has({ ...after, kind: 'disaster' })).toBe(false);
+    expect(set.has({ ...after, country: 'RUS' })).toBe(false);
+    expect(set.has({ ...after, since: new Date(Date.parse(before.since) + SAME_STORY_MS).toISOString() })).toBe(false);
+  });
+
+  it('follows a moved key, so a second move a day later is still known', () => {
+    const set = new StorySet('k', memory());
+    const day1 = alert({ key: 'SDN-conflict-20261108', country: 'SDN', kind: 'conflict', since: '2026-11-08T22:00:00Z' });
+    const day2 = { ...day1, key: 'SDN-conflict-20261109', since: '2026-11-09T18:00:00Z' };
+    const day3 = { ...day1, key: 'SDN-conflict-20261110', since: '2026-11-10T14:00:00Z' };
+    set.add(day1);
+    expect(set.has(day3)).toBe(false); // 40 h after day1
+    set.follow([day2]);
+    expect(set.hasKey(day2.key)).toBe(true);
+    expect(set.has(day3)).toBe(true); // 20 h after day2
+    // follow() adds nothing for a story that is not known.
+    set.follow([b]);
+    expect(set.hasKey(b.key)).toBe(false);
+  });
+});
+
+describe('story identity', () => {
+  const base = alert({ key: 'UKR-disaster-20261109', country: 'UKR', since: '2026-11-09T23:50:00Z' });
+
+  it('matches the same key, or the same country and kind less than 24 h apart', () => {
+    expect(sameStory(base, { ...base })).toBe(true);
+    expect(sameStory(base, { ...base, key: 'UKR-disaster-20261110', since: '2026-11-10T00:10:00Z' })).toBe(true);
+    expect(sameStory(base, { ...base, key: 'x', since: '2026-11-08T23:51:00Z' })).toBe(true);
+    expect(sameStory(base, { ...base, key: 'x', since: '2026-11-10T23:50:00Z' })).toBe(false);
+    expect(sameStory(base, { ...base, key: 'x', kind: 'accident' })).toBe(false);
+    expect(sameStory(base, { ...base, key: 'x', country: 'POL' })).toBe(false);
+  });
+
+  it('keeps a dismissed story hidden when its key moves at 00:00 UTC', () => {
+    const dismissed = new StorySet('k', null);
+    dismissed.add(base);
+    const moved = { ...base, key: 'UKR-disaster-20261110', since: '2026-11-10T00:10:00Z', updatedAt: iso(5) };
+    const other = alert({ key: 'FRA-attack-20261110', country: 'FRA', kind: 'attack' });
+    expect(visibleAlerts([moved, other], none, resolve, NOW).map((a) => a.key)).toEqual([moved.key, other.key]);
+    expect(visibleAlerts([moved, other], dismissed, resolve, NOW).map((a) => a.key)).toEqual([other.key]);
+  });
+
+  it('does not count a moved key as a new alert', () => {
+    const announced = new StorySet('k', null);
+    announced.add(base);
+    const moved = { ...base, key: 'UKR-disaster-20261110', since: '2026-11-10T00:10:00Z' };
+    const fresh = alert({ key: 'JPN-disaster-20261110', country: 'JPN' });
+    expect(newStories([moved, fresh], announced).map((a) => a.key)).toEqual([fresh.key]);
+  });
+});
+
+describe('holdDropped', () => {
+  const jpn = alert({ key: 'JPN-disaster-20261110', country: 'JPN' });
+  const fra = alert({ key: 'FRA-attack-20261110', country: 'FRA', kind: 'attack' });
+
+  it('keeps a dropped alert for one more poll, then lets it go', () => {
+    const p1 = holdDropped(NO_ALERTS, [jpn, fra]);
+    expect(p1.alerts.map((a) => a.key)).toEqual([jpn.key, fra.key]);
+    const p2 = holdDropped(p1, [jpn]);
+    expect(p2.alerts.map((a) => a.key)).toEqual([jpn.key, fra.key]);
+    expect(p2.missed.get(fra.key)).toBe(1);
+    const p3 = holdDropped(p2, [jpn]);
+    expect(p3.alerts.map((a) => a.key)).toEqual([jpn.key]);
+  });
+
+  it('resets the count when the alert comes back', () => {
+    const p2 = holdDropped(holdDropped(NO_ALERTS, [fra]), []);
+    const p3 = holdDropped(p2, [fra]);
+    expect(p3.missed.size).toBe(0);
+    const p4 = holdDropped(p3, []);
+    expect(p4.alerts.map((a) => a.key)).toEqual([fra.key]);
+  });
+
+  it('holds nothing when the story comes back under a new key', () => {
+    const moved = { ...jpn, key: 'JPN-disaster-20261111' };
+    const p2 = holdDropped(holdDropped(NO_ALERTS, [jpn]), [moved]);
+    expect(p2.alerts.map((a) => a.key)).toEqual([moved.key]);
+  });
+
+  it('holds nothing with polls = 0', () => {
+    expect(holdDropped(holdDropped(NO_ALERTS, [jpn]), [], 0).alerts).toEqual([]);
   });
 });
 

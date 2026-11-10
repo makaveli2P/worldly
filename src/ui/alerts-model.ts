@@ -1,5 +1,6 @@
-// Pure logic of the breaking-news UI: response checks, order, dismiss and announce sets,
-// the live-region message, the title badge and the poll delay. No DOM here, so tests run in Node.
+// Pure logic of the breaking-news UI: response checks, order, story identity, the dismiss and announce sets,
+// the hold of a dropped alert, the live-region message, the title badge and the poll delay.
+// No DOM here, so tests run in Node.
 
 import type { BreakingAlert, BreakingKind, BreakingLevel, CountryId } from '../types';
 
@@ -69,27 +70,87 @@ export function sortAlerts(alerts: readonly BreakingAlert[]): BreakingAlert[] {
 }
 
 /**
- * The alerts the UI shows: known countries only (ids go through `resolve`), no dismissed keys,
+ * Two alerts with different keys are the same story when the country and the kind are the same,
+ * and their `since` values are less than this far apart.
+ */
+export const SAME_STORY_MS = 24 * 60 * 60_000;
+/** Good polls that an alert stays on screen after it drops out of the feed. */
+export const HOLD_POLLS = 1;
+
+/** The fields that identify a story. A BreakingAlert fits this type. */
+export interface StoryRef {
+  key: string;
+  country: string;
+  kind: string;
+  since: string;
+}
+
+/**
+ * True when two alerts tell the same story. The server key holds the UTC day of `since`, and the key can move
+ * to the next day at 00:00 UTC (api/_lib/README.md). So the same country and kind, with `since` values less
+ * than SAME_STORY_MS apart, also count as the same story.
+ */
+export function sameStory(a: StoryRef, b: StoryRef): boolean {
+  if (a.key === b.key) return true;
+  if (!a.country || a.country !== b.country || a.kind !== b.kind) return false;
+  const gap = Math.abs(Date.parse(a.since) - Date.parse(b.since));
+  return gap < SAME_STORY_MS;
+}
+
+/** A set of stories. `has` uses sameStory, not only the key. */
+export interface StoryMatcher {
+  has(a: StoryRef): boolean;
+}
+
+/**
+ * The alerts the UI shows: known countries only (ids go through `resolve`), no dismissed stories,
  * no evidence older than MAX_AGE_MS, one alert per country (the most severe), sorted, at most MAX_ALERTS.
  */
 export function visibleAlerts(
   alerts: readonly BreakingAlert[],
-  dismissed: ReadonlySet<string>,
+  dismissed: StoryMatcher,
   resolve: (id: string) => CountryId | null,
   now = Date.now(),
 ): BreakingAlert[] {
   const out: BreakingAlert[] = [];
   const seen = new Set<CountryId>();
   for (const a of sortAlerts(alerts)) {
-    if (dismissed.has(a.key)) continue;
     if (now - Date.parse(a.updatedAt) > MAX_AGE_MS) continue;
     const id = resolve(a.country);
     if (!id || seen.has(id)) continue;
+    const shown = id === a.country ? a : { ...a, country: id };
+    if (dismissed.has(shown)) continue;
     seen.add(id);
-    out.push(id === a.country ? a : { ...a, country: id });
+    out.push(shown);
     if (out.length >= MAX_ALERTS) break;
   }
   return out;
+}
+
+/** The feed list and, for each alert that the last poll did not send, the number of polls it missed. */
+export interface HeldAlerts {
+  alerts: BreakingAlert[];
+  missed: ReadonlyMap<string, number>;
+}
+
+export const NO_ALERTS: HeldAlerts = { alerts: [], missed: new Map() };
+
+/**
+ * The list after a good poll: the new alerts, plus each earlier alert that has no story in `next` and
+ * that missed fewer than `polls` polls. A story near the 3-outlet threshold can leave the feed for one
+ * poll and come back. This keeps it on screen in that gap.
+ */
+export function holdDropped(prev: HeldAlerts, next: readonly BreakingAlert[], polls = HOLD_POLLS): HeldAlerts {
+  const alerts = [...next];
+  const missed = new Map<string, number>();
+  for (const a of prev.alerts) {
+    if (next.some((b) => sameStory(a, b))) continue;
+    const n = (prev.missed.get(a.key) ?? 0) + 1;
+    if (n > polls) continue;
+    missed.set(a.key, n);
+    alerts.push(a);
+  }
+  return { alerts, missed };
 }
 
 /**
@@ -114,9 +175,9 @@ export function sameView(a: readonly BreakingAlert[], b: readonly BreakingAlert[
   );
 }
 
-/** Keys in `alerts` that are not in `known`, in the order of `alerts`. */
-export function newKeys(alerts: readonly BreakingAlert[], known: ReadonlySet<string>): string[] {
-  return alerts.filter((a) => !known.has(a.key)).map((a) => a.key);
+/** Alerts in `alerts` whose story is not in `known`, in the order of `alerts`. */
+export function newStories(alerts: readonly BreakingAlert[], known: StoryMatcher): BreakingAlert[] {
+  return alerts.filter((a) => !known.has(a));
 }
 
 /** The polite live-region text for alerts that are new. Empty string when nothing is new. */
@@ -166,48 +227,74 @@ export function nextPollDelay(failures: number, random: number, hidden = false):
   return Math.round(base * (0.9 + 0.2 * Math.min(1, Math.max(0, random))));
 }
 
-/** A string set kept in sessionStorage as a JSON array. Every access is in try/catch: storage can be blocked. */
-export class SessionSet {
-  private readonly values: Set<string>;
+/**
+ * A set of stories kept in sessionStorage as a JSON array of StoryRef. Every access is in try/catch:
+ * storage can be blocked. A plain string in the stored array (the format before 0.2.0) counts as a key.
+ */
+export class StorySet implements StoryMatcher {
+  private readonly refs: StoryRef[];
 
   constructor(
     private readonly key: string,
     private readonly storage: Pick<Storage, 'getItem' | 'setItem'> | null,
     private readonly limit = 200,
   ) {
-    this.values = new Set(this.read());
+    this.refs = this.read();
   }
 
-  has(v: string): boolean {
-    return this.values.has(v);
+  /** True when a stored story is the same story as `a` (sameStory). */
+  has(a: StoryRef): boolean {
+    return this.refs.some((r) => sameStory(r, a));
   }
 
-  add(...vs: string[]): void {
+  hasKey(key: string): boolean {
+    return this.refs.some((r) => r.key === key);
+  }
+
+  add(...stories: StoryRef[]): void {
     let changed = false;
-    for (const v of vs) {
-      if (this.values.has(v)) continue;
-      this.values.add(v);
+    for (const a of stories) {
+      if (this.hasKey(a.key)) continue;
+      this.refs.push({ key: a.key, country: a.country, kind: a.kind, since: a.since });
       changed = true;
     }
     if (!changed) return;
     // Keep the newest entries only, so the stored list cannot grow without end.
-    while (this.values.size > this.limit) this.values.delete(this.values.values().next().value as string);
+    if (this.refs.length > this.limit) this.refs.splice(0, this.refs.length - this.limit);
     try {
-      this.storage?.setItem(this.key, JSON.stringify([...this.values]));
+      this.storage?.setItem(this.key, JSON.stringify(this.refs));
     } catch {
       // Blocked storage: the set lasts for this page only.
     }
   }
 
-  asSet(): ReadonlySet<string> {
-    return this.values;
+  /**
+   * Adds each alert that is a known story under a new key. Then a story whose `since` moves again on a
+   * later day is still known, because each new key is less than SAME_STORY_MS from the key before it.
+   */
+  follow(alerts: readonly StoryRef[]): void {
+    this.add(...alerts.filter((a) => !this.hasKey(a.key) && this.has(a)));
   }
 
-  private read(): string[] {
+  keys(): string[] {
+    return this.refs.map((r) => r.key);
+  }
+
+  private read(): StoryRef[] {
     try {
       const raw = this.storage?.getItem(this.key);
       const v: unknown = raw ? JSON.parse(raw) : [];
-      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+      if (!Array.isArray(v)) return [];
+      const out: StoryRef[] = [];
+      for (const x of v) {
+        if (typeof x === 'string') out.push({ key: x, country: '', kind: '', since: '' });
+        else if (x && typeof x === 'object' && typeof (x as StoryRef).key === 'string') {
+          const r = x as Partial<StoryRef>;
+          const str = (f: unknown) => (typeof f === 'string' ? f : '');
+          out.push({ key: r.key!, country: str(r.country), kind: str(r.kind), since: str(r.since) });
+        }
+      }
+      return out;
     } catch {
       return [];
     }

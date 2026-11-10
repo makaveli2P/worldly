@@ -1,7 +1,9 @@
 // Breaking-news chip in the header. Desktop: grid column 2. Mobile: a third header row.
 // It shows the most severe alert: BREAKING, the country, the headline (cut to fit) and the age.
 // "+N" opens a list of the other alerts. A click selects the country; × dismisses the alert for the session.
-// A polite live region announces each new alert key once. With no alert, the slot is empty.
+// A polite live region announces each new story once. With no alert, the slot is empty.
+// A story keeps its identity when its key moves at 00:00 UTC (sameStory), and an alert stays on screen
+// for one more poll after it drops out of the feed (holdDropped).
 
 import type { BreakingAlert, CountryId } from '../types';
 import { closeIcon, h, svgIcon } from './dom';
@@ -9,14 +11,18 @@ import { age } from './format';
 import {
   ANNOUNCED_KEY,
   DISMISSED_KEY,
-  SessionSet,
+  NO_ALERTS,
+  StorySet,
   ageWords,
   announcement,
+  holdDropped,
+  newStories,
   sameView,
   sessionStore,
   stripBadge,
   visibleAlerts,
   withBadge,
+  type HeldAlerts,
 } from './alerts-model';
 
 export type { BreakingAlert, BreakingResponse, BreakingLevel, BreakingKind } from '../types';
@@ -48,10 +54,11 @@ export interface BreakingBarOptions {
 export class BreakingBar {
   private readonly bar: HTMLElement | null;
   private readonly live: HTMLElement;
-  private readonly dismissed: SessionSet;
-  private readonly announced: SessionSet;
+  private readonly dismissed: StorySet;
+  private readonly announced: StorySet;
   private readonly reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  private all: BreakingAlert[] = [];
+  /** The feed list, plus the alerts that holdDropped keeps for one more poll. */
+  private held: HeldAlerts = NO_ALERTS;
   private shown: BreakingAlert[] = [];
   private listOpen = false;
   private ageTimer = 0;
@@ -71,8 +78,8 @@ export class BreakingBar {
   ) {
     this.bar = slot.closest<HTMLElement>('.bar');
     const store = sessionStore();
-    this.dismissed = new SessionSet(DISMISSED_KEY, store);
-    this.announced = new SessionSet(ANNOUNCED_KEY, store);
+    this.dismissed = new StorySet(DISMISSED_KEY, store);
+    this.announced = new StorySet(ANNOUNCED_KEY, store);
     // The live region exists, empty, before the first message (screen readers watch it from the start).
     this.live = h('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
     liveHost.append(this.live);
@@ -124,9 +131,9 @@ export class BreakingBar {
     });
   }
 
-  /** A new list from the feed. Dismissed keys and unknown countries drop out. */
+  /** A new list from the feed. Dismissed stories and unknown countries drop out. */
   set(alerts: readonly BreakingAlert[]): void {
-    this.all = [...alerts];
+    this.held = holdDropped(this.held, alerts);
     this.refresh(true);
   }
 
@@ -139,9 +146,12 @@ export class BreakingBar {
 
   private refresh(fromFeed: boolean): void {
     const prev = this.shown;
-    const list = visibleAlerts(this.all, this.dismissed.asSet(), this.opts.resolve);
+    // A known story under a new key (00:00 UTC) stays dismissed or announced under that key too.
+    this.dismissed.follow(this.held.alerts);
+    this.announced.follow(this.held.alerts);
+    const list = visibleAlerts(this.held.alerts, this.dismissed, this.opts.resolve);
     this.shown = list;
-    const fresh = fromFeed ? list.filter((a) => !this.announced.has(a.key)) : [];
+    const fresh = fromFeed ? newStories(list, this.announced) : [];
     if (list.length < 2) this.listOpen = false;
     // A poll with the same list changes nothing in the DOM: a focused control stays, and a screen
     // reader does not read it again.
@@ -149,7 +159,7 @@ export class BreakingBar {
     else this.render();
 
     if (fresh.length > 0) {
-      this.announced.add(...fresh.map((a) => a.key));
+      this.announced.add(...fresh);
       const msg = announcement(fresh, this.opts.nameOf);
       const hidden = document.visibilityState === 'hidden';
       if (hidden) {
@@ -195,7 +205,7 @@ export class BreakingBar {
 
   private dismiss(key: string): void {
     const i = this.shown.findIndex((a) => a.key === key);
-    this.dismissed.add(key);
+    if (i >= 0) this.dismissed.add(this.shown[i]);
     this.refresh(false);
     // Focus goes to the next alert, or to the globe when none is left.
     const next = this.shown[Math.min(Math.max(i, 0), this.shown.length - 1)];
