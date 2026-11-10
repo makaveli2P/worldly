@@ -3,11 +3,15 @@
   "version": "0.2.0",
   "description": "A 3D globe: spin it, pick a country, read its facts and news.",
   "scripts": {
+    "predev": "node scripts/build-bias.mjs --quiet",
     "dev": "vite",
+    "prebuild": "node scripts/build-bias.mjs --quiet",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "data": "node scripts/build-data.mjs",
+    "bias": "node scripts/build-bias.mjs",
+    "audit:news": "node scripts/audit-news.mjs",
     "test": "vitest run"
   },
   "dependencies": {
