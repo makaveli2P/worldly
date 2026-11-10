@@ -1,7 +1,7 @@
 // Ranking of candidate stories: cluster across feeds, score each cluster, pick 5.
 // Pure functions with no network, so tests can drive them with fixtures.
 import type { Candidate } from './providers/types.js';
-import { fold, isJunk, isPressRelease, listsCountry, properNames, publisherKey, relevance } from './text.js';
+import { fold, isJunk, isPressRelease, listsCountry, properNames, publisherKey, relevance, type Relevance } from './text.js';
 
 export const W_COV = 0.35;
 export const W_RANK = 0.3;
@@ -22,6 +22,10 @@ export const STRONG_SCORE = 0.45;
 export const MIN_STRONG_ENGLISH = 3;
 /** The hybrid boost compares English titles with this many native NATION titles. */
 export const NATIVE_BOOST_TOP = 20;
+/** A cluster that does not name the country (rel < 1) needs at least this score to reach the list. */
+export const MIN_OTHER_SCORE = 0.2;
+/** Two clusters younger than this can be one story on looser evidence (see sameCluster). */
+export const FRESH_H = 12;
 /** Age used for a story with no date. */
 const UNKNOWN_AGE_H = 12;
 
@@ -40,12 +44,15 @@ const TIER1 = new Set([
   'rnz', 'the straits times', 'cna', 'yonhap news agency', 'euronews', 'nz herald', 'the irish times', 'rte',
 ]);
 
-const SPORT = /\b(?:vs\.?|match|cup|league|squad|coach|rugby|cricket|football|soccer|nba|nfl|nhl|mlb|fifa|uefa|olympics?|tennis|golf|f1|formula 1|grand prix|wicket|innings|striker|midfielder|t20|odi|test (?:match|series)|qualifiers?|fixtures?|semi-?finals?|quarter-?finals?|7s|bundesliga|ligue 1|la liga|serie a|premier league|brasileirao|copa|futbol|futebol|fussball|wwe|ufc|boxing|marathon|grand slam|playoffs?|touchdown|quarterback|transfer window|world series|pga|lpga|liv golf|nascar|motogp|bowl|sevens|team to face|injur(?:y|ies) crisis|line-?up|friendl(?:y|ies)|game time|goalkeeper|winger|national team|selecao|derby|kick-?off|tournament|championships?|medals?|athletes?|dortmund|bayern|real madrid|fc barcelona|barca|man utd|manchester united|manchester city|arsenal|chelsea|liverpool fc|juventus|psg|flamengo|palmeiras|corinthians|all blacks|wallabies|springboks)\b/i;
-const SOFT = /\b(?:celebrity|celebrities|actress|actor|singer|rapper|kardashian|taylor swift|horoscope|recipes?|travel guide|travel|hotels?|resorts?|luxury|fashion|tips|how to|things to do|what to know before buying|review|deals?|discount|sale|black friday|ps5|playstation|xbox|iphone|guitar|netflix|box office|trailer|red carpet|dating|wedding|divorce|bollywood|hollywood|k-?pop|influencer|lottery|jackpot|bikini|swimsuit|flaunts?|stuns|showbiz|paparazzi|honeymoon|steals? (?:the )?spotlight|ucapan|beauty|skincare|nonstop|flights? to|airfares?|cruises?|vacations?|getaways?|concerts?|tour dates|album|best \w+ (?:to buy|in \d{4})|\d+ (?:best|things|ways|reasons|places))\b/i;
+const SPORT = /\b(?:vs\.?|match|cup|league|squad|coach|rugby|cricket|football|soccer|basketball|baseball|softball|volleyball|handball|hockey|nba|wnba|nfl|nhl|mlb|mls|ncaa|fifa|uefa|olympics?|tennis|golf|f1|formula 1|grand prix|wicket|wickets|innings|batsman|batter|bowler|pitcher|homers?|home runs?|striker|midfielder|t20|odi|test (?:match|series)|qualifiers?|fixtures?|semi-?finals?|quarter-?finals?|7s|bundesliga|eredivisie|ligue 1|la liga|laliga|serie a|premier league|brasileirao|copa|futbol|futebol|fussball|wwe|ufc|boxing|marathon|grand slam|playoffs?|touchdown|quarterback|transfer window|world series|pga|lpga|liv golf|nascar|motogp|bowl|sevens|team to face|injur(?:y|ies) crisis|line-?up|friendl(?:y|ies)|game time|goalkeeper|winger|national team|selecao|derby|kick-?off|tournament|championships?|medals?|athletes?|world juniors|juniors|call-?up|called up|hat-?trick|scores? twice|captaincy|afcon|nations league|top seed|district seed|seeded|games?(?![- ](?:changer|theory|plan))|dortmund|bayern|real madrid|fc barcelona|barca|man utd|manchester united|manchester city|arsenal|chelsea|liverpool fc|juventus|psg|ajax|feyenoord|psv|benfica|celtic|galatasaray|fenerbahce|flamengo|palmeiras|corinthians|all blacks|wallabies|springboks|mariners|astros|yankees|dodgers)\b/i;
+// Cricket and score lines, with their case: "Pakistan score 390-6 in first Test", "nears century", "80-72 victory".
+const SPORT_CASED =
+  /\b(?:first|second|third|fourth|fifth|final|opening|1st|2nd|3rd|4th|5th|day-night|pink-ball) Test\b|\bTest (?:match|series|squad|win|defeat)\b|\b(?:nears|hits|scores|maiden|brings up|smashes|slams) (?:a |his |her )?(?:century|ton|fifty)\b|\b\d{1,3}-\d{1,3} (?:win|victory|defeat|loss|draw|rout)\b|\b(?:beat|beats|defeat|defeats|edge|edges|thrash|thrashes|rout|routs) [\w' ]{2,40} \d{1,3}-\d{1,3}\b|\b\d{2,3}-\d (?:in|at|after)\b/;
+const SOFT = /\b(?:celebrity|celebrities|actress|actor|singer|rapper|kardashian|taylor swift|horoscope|recipes?|travel guide|travel|hotels?|resorts?|luxury|fashion|tips|how to|things to do|what to know before buying|review|deals?|discount|sale|black friday|ps5|playstation|xbox|iphone|guitar|netflix|box office|trailer|red carpet|dating|wedding|divorce|bollywood|hollywood|k-?pop|bts|blackpink|arirang|musical|biopic|sequel|grammys?|oscars?|emmys?|film rights|acquires? (?:the )?(?:film|rights)|influencer|lottery|jackpot|bikini|swimsuit|flaunts?|stuns|showbiz|paparazzi|honeymoon|steals? (?:the )?spotlight|ucapan|beauty|skincare|nonstop|flights? to|airfares?|cruises?|vacations?|getaways?|concerts?|tour dates|(?:world|concert|stadium|farewell|reunion|comeback|arena|global|anniversary|muse) tour|brings (?:the |his |her |their )?[\w' ]{2,30} tour|album|best \w+ (?:to buy|in \d{4})|\d+ (?:best|things|ways|reasons|places))\b/i;
 // Service items in native-language feeds: weather, prices of goods, lottery, horoscope, history features.
-const SOFT_NATIVE = /الطقس|أسعار|سعر (?:الذهب|الدولار|الفراخ|اللحوم)|حظك|\bwetter\b|horoskop|\blotto\b|\bclima\b|hor[oó]scopo|loter[ií]a|mega-?sena|previs[aã]o do tempo|m[ée]t[ée]o|\bprix du\b|天気|運勢|天气|星座|気象予報士|冷え込み|最高気温|погода|гороскоп|курс (?:доллара|валют)|from the front page|on this day|this day in history|michelin|restaurants?/i;
+const SOFT_NATIVE = /الطقس|أسعار|سعر (?:الذهب|الدولار|الفراخ|اللحوم)|حظك|\bwetter\b|horoskop|\blotto\b|\bclima\b|hor[oó]scopo|loter[ií]a|mega-?sena|previs[aã]o do tempo|m[ée]t[ée]o|\bprix du\b|天気|運勢|天气|星座|気象予報士|冷え込み|最高気温|погода|гороскоп|курс (?:доллара|валют)|from the front page|on this day|this day in history|michelin|restaurants?|snövarning|vädret|\bsmhi\b/i;
 // Sport publishers: a story from them is sport, whatever its title says ("Church scores four after Fiji fight").
-const SPORT_SOURCE = /(?:^|[^a-z])sports?(?:[^a-z]|$)|foxsports|skysports|nbcsports|cbssports|eurosport|sportingnews|sportstar|sportskeeda|espn|the athletic|rugbypass|planet rugby|cricbuzz|cricinfo|wisden|goal\.com|\bmarca\b|\bole\b|lance!|ge\.globo|nrl\.com|wwos|motorsport|autosport|golf digest|golfweek|tennis\.com/i;
+const SPORT_SOURCE = /(?:^|[^a-z])sports?(?:[^a-z]|$)|foxsports|skysports|nbcsports|cbssports|eurosport|sportingnews|sportstar|sportskeeda|espn|the athletic|rugbypass|planet rugby|cricbuzz|cricinfo|wisden|goal\.com|\bmarca\b|\bole\b|lance!|ge\.globo|nrl\.com|wwos|motorsport|autosport|golf digest|golfweek|tennis\.com|livescore|sporting ?life|\brg\.org\b|sportsmole|90min|onefootball|fotmob|flashscore|transfermarkt|football ?365|tribal ?football|\b(?:arsenal|chelseafc|manutd|liverpoolfc|mancity|realmadrid|fcbarcelona)\.com\b|soccer|\bbarca\b/i;
 // Weather and service sites in native-language feeds.
 const SERVICE_SOURCE = /tenki\.jp|weathernews|ウェザーニュース|wetter\.com|wetteronline|meteored|tempo\.com|climatempo|accuweather/i;
 // Market-data sites whose items are stock notes, not national news.
@@ -53,7 +60,11 @@ const TICKER_SOURCES = new Set([
   'gurufocus', 'tradingview', 'marketscreener', 'benzinga', 'seeking alpha', 'zacks', 'zacks investment research',
   'simply wall st', 'simply wall st.', 'marketbeat', 'stocktitan', 'stock titan', 'investing.com', 'the motley fool',
   'motley fool', 'tipranks', 'insider monkey', 'etf daily news', 'defense world', 'stocktwits', 'finimize', 'gurufocus.com',
+  'kalkine media', 'kalkine', 'asktraders', 'asktraders.com', 'investing.com india', 'investing.com canada', 'investing.com uk',
+  'investing.com australia', 'investing.com south africa', 'marketscreener.com', 'stockstory', 'tikr',
 ]);
+// Stock-move and results notes: "Shares Fade From 6% Intraday Jump", "What Will Q3 Results Reveal".
+const STOCK_NOTE = /\b(?:shares|stock) (?:fade|fades|rise|rises|fall|falls|jump|jumps|slide|slides|surge|surges|drop|drops|climb|climbs|tumble|tumbles|soar|soars|sink|sinks)\b|\b(?:q[1-4]|h[12]) (?:results|earnings)\b|\bby investing\.com$|most-watched stock|worth (?:betting|buying|a look)|stocks? to (?:buy|watch)|\beps\b/i;
 const TICKER = /\((?:NYSE|NASDAQ|Nasdaq|TSX|TSXV|ASX|LSE|OTC|OTCQX|TSE|HKEX|NSE|BSE|NYSE American)\s*:\s*[A-Z0-9.]{1,6}\)/;
 const OPINION =/^(?:opinion|commentary|analysis|editorial|column|view|letters?|op-ed)\b|\bop-ed\b|^(?:opinion|analysis)\s*[|:]/i;
 
@@ -118,12 +129,17 @@ export interface RankContext {
   name: string;
   aliases: readonly string[];
   ignore: Set<string>;
+  /** Folded words of every country's names and leaders. They never make two stories one (see sameCluster). */
+  places: ReadonlySet<string>;
   now: number;
 }
 
-export function rankContext(name: string, aliases: readonly string[], now: number): RankContext {
-  return { name, aliases, ignore: ignoreSet(name, aliases), now };
+export function rankContext(name: string, aliases: readonly string[], now: number, places: ReadonlySet<string> = new Set()): RankContext {
+  return { name, aliases, ignore: ignoreSet(name, aliases), places, now };
 }
+
+/** The words that the pick step needs from the context. */
+export type PickContext = Pick<RankContext, 'ignore'> & Partial<Pick<RankContext, 'places'>>;
 
 interface Member {
   c: Candidate;
@@ -244,12 +260,19 @@ export function cluster(cands: readonly Candidate[], ctx: RankContext): Cluster[
 
 const isTier1 = (name: string) => TIER1.has(fold(name).trim());
 
-function representative(cl: Cluster, now: number): Candidate {
+/**
+ * The story that the list shows for a cluster: the best NATION item; else, among the members whose
+ * title names the country (all members when none does), a tier-1 outlet, else the newest.
+ * So a cluster that holds a national story never shows a sister title about another country.
+ */
+function representative(cl: Cluster, now: number, rels: readonly Relevance[]): Candidate {
   const nation = cl.members.filter((m) => m.feed === 'nation').sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
   if (nation.length > 0) return nation[0];
-  const tier1 = cl.members.find((m) => isTier1(m.source));
+  const named = cl.members.filter((_, i) => rels[i] === 'yes');
+  const pool = named.length > 0 ? named : cl.members;
+  const tier1 = pool.find((m) => isTier1(m.source));
   if (tier1) return tier1;
-  return [...cl.members].sort((a, b) => (ageHours(a, now) ?? UNKNOWN_AGE_H) - (ageHours(b, now) ?? UNKNOWN_AGE_H))[0];
+  return [...pool].sort((a, b) => (ageHours(a, now) ?? UNKNOWN_AGE_H) - (ageHours(b, now) ?? UNKNOWN_AGE_H))[0];
 }
 
 /** Scores one cluster in place and returns the score. */
@@ -266,7 +289,12 @@ export function score(cl: Cluster, ctx: RankContext): number {
   cl.topRank = Math.min(Infinity, ...m.filter((x) => x.feed === 'top').map((x) => x.rank ?? Infinity));
   const ages = m.map((x) => ageHours(x, ctx.now)).filter((x): x is number => x !== null);
   cl.ageH = ages.length > 0 ? Math.min(...ages) : UNKNOWN_AGE_H;
-  cl.rep = representative(cl, ctx.now);
+  // A 'weak' match counts as named when the search already tied the story to the country (a capital hint).
+  const rels = m.map((x) => {
+    const r = relevance(x.title, ctx.name, ctx.aliases);
+    return r === 'weak' && x.confirmed ? 'yes' : r;
+  });
+  cl.rep = representative(cl, ctx.now, rels);
   cl.repMember = cl.rep === cl.seed.c ? cl.seed : member(cl.rep, ctx.ignore);
 
   const sCov = Math.min(1, Math.log2(1 + cl.outlets) / Math.log2(11));
@@ -276,17 +304,20 @@ export function score(cl: Cluster, ctx: RankContext): number {
   const sRec = Math.pow(0.5, cl.ageH / HALF_LIFE_H);
 
   const national = m.some((x) => x.feed === 'nation');
-  const rels = m.map((x) => relevance(x.title, ctx.name, ctx.aliases));
+  // 'weak' (only the bare name of a homonym country, with no context word) does not count as named.
   const named = rels.includes('yes');
-  // A homonym or a longer place in the shown title ("Mexico, NY") decides, because users read that title.
-  const trapped = !national && relevance(cl.rep.title, ctx.name, ctx.aliases) === 'trap';
+  // A homonym or a longer place ("Mexico, NY") decides when as many members show it as name the country:
+  // then the members that name the country only leave out the town.
+  const traps = rels.filter((r) => r === 'trap').length;
+  const trapped = !national && traps > 0 && traps >= rels.filter((r) => r === 'yes').length;
   cl.rel = trapped ? 0 : national || named ? 1 : rels.includes('trap') ? 0 : REL_OTHER;
 
   let pen = 1;
   // Sport: the representative, or most members, read as sport.
   const sportSource = SPORT_SOURCE.test(cl.rep.source) || SPORT_SOURCE.test(cl.rep.domain ?? '');
-  if (SPORT.test(cl.rep.title) || sportSource || m.filter((x) => SPORT.test(x.title)).length * 2 > m.length) pen *= PEN_SPORT;
-  const ticker = TICKER_SOURCES.has(fold(cl.rep.source).trim()) || TICKER.test(cl.rep.title);
+  const sporty = (t: string) => SPORT.test(t) || SPORT_CASED.test(t);
+  if (sporty(cl.rep.title) || sportSource || m.filter((x) => sporty(x.title)).length * 2 > m.length) pen *= PEN_SPORT;
+  const ticker = TICKER_SOURCES.has(fold(cl.rep.source).trim()) || TICKER.test(cl.rep.title) || STOCK_NOTE.test(cl.rep.title);
   const service = SOFT_NATIVE.test(cl.rep.title) || SERVICE_SOURCE.test(cl.rep.source);
   if (SOFT.test(cl.rep.title) || service || ticker) pen *= PEN_SOFT;
   if (OPINION.test(cl.rep.title)) pen *= PEN_OPINION;
@@ -307,16 +338,57 @@ function overlap(a: Member, b: Member, ignore: ReadonlySet<string>): { shared: n
   return { shared, dice: sa.length + sb.size > 0 ? (2 * shared) / (sa.length + sb.size) : 0 };
 }
 
+/** Two capitalised names are one name when one starts with the other ("Exxon", "ExxonMobil"). */
+const sameName = (a: string, b: string) => a === b || (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)));
+
 /**
- * True when two clusters tell one story: their seeds or representatives pass the same-story test,
- * or, a little looser for the pick step, share 2 words with a Dice overlap of 0.25 or more.
+ * The names of a story: its proper names, and the first word of a sentence-case title when that word
+ * is a capitalised name ("ExxonMobil signs ..."). A Title Case title gives none.
  */
-function sameCluster(a: Cluster, b: Cluster, ignore: ReadonlySet<string>): boolean {
+function storyNames(m: Member): Set<string> {
+  const out = new Set(m.names);
+  const title = m.c.title.trim();
+  const first = fold((title.split(/\s+/)[0] ?? '').replace(/['’]s$/, '').replace(/[^\p{L}'’-]/gu, ''));
+  const sentence = title.split(/\s+/).some((w) => w.length >= 4 && /^\p{Ll}/u.test(w));
+  if (sentence && first.length >= 5 && m.caps.has(first)) out.add(first);
+  return out;
+}
+
+const isTitleCase = (title: string) => {
+  const long = title.split(/\s+/).filter((w) => /^\p{L}/u.test(w) && w.length >= 4);
+  return long.length >= 3 && long.every((w) => /^\p{Lu}/u.test(w));
+};
+
+/**
+ * True when two members share a name of 5 or more letters that is not a place word or a leader.
+ * A Title Case title has no proper names of its own, so there its capitalised words count.
+ */
+function shareName(a: Member, b: Member, places: ReadonlySet<string>): boolean {
+  const namesOf = (m: Member) => [...(isTitleCase(m.c.title) ? m.caps : storyNames(m))].filter((w) => !places.has(w));
+  const na = namesOf(a);
+  const nb = namesOf(b);
+  // Two Title Case titles share capitalised common words ("Takes", "First"): not enough.
+  if (isTitleCase(a.c.title) && isTitleCase(b.c.title)) return false;
+  return na.some((x) => x.length >= 5 && nb.some((y) => sameName(x, y)));
+}
+
+/**
+ * True when two clusters tell one story, for the pick step (a little looser than the clustering):
+ * - their seeds or representatives pass the same-story test, or share 2 words with a Dice overlap of 0.25 or more;
+ * - both link to the same native NATION story through the hybrid boost;
+ * - both are younger than FRESH_H, and share 2 words with a Dice overlap of 0.2 or more, or share
+ *   a name (brand variants count: "Exxon" and "ExxonMobil").
+ */
+function sameCluster(a: Cluster, b: Cluster, ignore: ReadonlySet<string>, places: ReadonlySet<string>): boolean {
+  if (Number.isFinite(a.boostRank) && a.boostRank === b.boostRank) return true;
+  const fresh = a.ageH < FRESH_H && b.ageH < FRESH_H;
   for (const x of [a.seed, a.repMember]) {
     for (const y of [b.seed, b.repMember]) {
       if (sameStory(x, y, ignore) > 0) return true;
       const o = overlap(x, y, ignore);
       if (o.shared >= 2 && o.dice >= 0.25) return true;
+      if (fresh && o.shared >= 2 && o.dice >= 0.2) return true;
+      if (fresh && shareName(x, y, places)) return true;
     }
   }
   return false;
@@ -324,7 +396,7 @@ function sameCluster(a: Cluster, b: Cluster, ignore: ReadonlySet<string>): boole
 
 /** True when 2 picked stories already share a capitalised name with this one (one event, many angles). */
 function crowded(picked: readonly Cluster[], cl: Cluster): boolean {
-  for (const w of cl.repMember.caps) if (picked.filter((p) => p.repMember.caps.has(w)).length >= 2) return true;
+  for (const w of cl.repMember.caps) if (picked.filter((p) => [...p.repMember.caps].some((x) => sameName(x, w))).length >= 2) return true;
   return false;
 }
 
@@ -335,15 +407,17 @@ export const CROWD_FACTOR = 0.6;
  * Picks up to `max` clusters, greedily: the lowest tier first, then the best score.
  * Pass 1 takes at most 1 cluster per publisher; pass 2 allows a second one, only to fill the list.
  * A cluster that tells the same story as a picked cluster is skipped. A cluster that shares a
- * capitalised name with 2 picked clusters counts at CROWD_FACTOR of its score.
+ * capitalised name with 2 picked clusters counts at CROWD_FACTOR of its score. A cluster that does
+ * not name the country needs MIN_OTHER_SCORE, so a thin pool gives fewer than `max` stories, not filler.
  * The result is in tier order, then score order. `tier` defaults to 0 for every cluster.
  */
 export function pick(
   clusters: readonly Cluster[],
-  max = 5,
-  ignore: ReadonlySet<string> = new Set(),
+  max: number,
+  ctx: PickContext,
   tier: (cl: Cluster) => number = () => 0,
 ): Cluster[] {
+  const places = ctx.places ?? new Set<string>();
   const picked: Cluster[] = [];
   const perPublisher = new Map<string, number>();
   for (const pass of [1, 2]) {
@@ -352,8 +426,9 @@ export function pick(
       let bestKey: [number, number] = [Infinity, -Infinity];
       for (const cl of clusters) {
         if (cl.score <= 0 || picked.includes(cl)) continue;
+        if (cl.rel < 1 && cl.score < MIN_OTHER_SCORE) continue;
         if ((perPublisher.get(publisherKey(cl.rep.source)) ?? 0) >= pass) continue;
-        if (picked.some((p) => sameCluster(p, cl, ignore))) continue;
+        if (picked.some((p) => sameCluster(p, cl, ctx.ignore, places))) continue;
         const key: [number, number] = [tier(cl), cl.score * (crowded(picked, cl) ? CROWD_FACTOR : 1)];
         if (key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] > bestKey[1])) {
           best = cl;
@@ -372,7 +447,9 @@ export function pick(
 
 /** Clusters, scores and sorts one pool of candidates. */
 export function rankPool(cands: readonly Candidate[], ctx: RankContext, boost?: (cl: Cluster) => void): Cluster[] {
-  const clusters = cluster(filterCandidates(cands, ctx.now), ctx);
+  // A title that holds only the country's own words ("Saint Vincent and the Grenadines") is no story.
+  const stories = filterCandidates(cands, ctx.now).filter((c) => [...storyTokens(c.title)].some((w) => !ctx.ignore.has(w)));
+  const clusters = cluster(stories, ctx);
   for (const cl of clusters) {
     boost?.(cl);
     score(cl, ctx);
@@ -404,7 +481,7 @@ const HYBRID_STOP = new Set([
 
 /**
  * The hybrid boost: an English cluster that shares a capitalised name with one of the native NATION
- * top-20 titles takes that native rank as its edition rank. Works for Latin scripts only.
+ * top-20 titles takes that native rank as its edition rank ("Exxon" matches "ExxonMobil"). Works for Latin scripts only.
  * Returns a function that gives the best native rank for the members of a cluster (Infinity for none).
  */
 export function linkNative(native: readonly Candidate[], ignore: ReadonlySet<string>): (members: readonly Candidate[]) => number {
@@ -414,7 +491,7 @@ export function linkNative(native: readonly Candidate[], ignore: ReadonlySet<str
     let best = Infinity;
     for (const m of members) {
       const names = capitalisedWords(m.title, ignore);
-      for (const n of natNames) if (n.rank < best && [...names].some((w) => n.names.has(w))) best = n.rank;
+      for (const n of natNames) if (n.rank < best && [...names].some((w) => [...n.names].some((x) => sameName(w, x)))) best = n.rank;
     }
     return best;
   };
@@ -454,9 +531,9 @@ export function rankHybrid(englishCands: readonly Candidate[], nativeCands: read
   const strong = english.filter(isStrong);
   // Count distinct strong stories: two clusters of one story count once, and a third angle
   // on one event counts only when it stays strong at CROWD_FACTOR.
-  const strongPicked = pick(strong, max, ctx.ignore).filter((cl) => cl.pickScore >= STRONG_SCORE);
+  const strongPicked = pick(strong, max, ctx).filter((cl) => cl.pickScore >= STRONG_SCORE);
   if (strongPicked.length >= MIN_STRONG_ENGLISH || nativeAll.length === 0) {
-    return { clusters: pick(english, max, ctx.ignore), native: new Set(), all };
+    return { clusters: pick(english, max, ctx), native: new Set(), all };
   }
   // A native story that an English story already tells (same native rank through the boost) is skipped.
   const nativeClusters = nativeAll.filter((cl) => !(Number.isFinite(cl.nationRank) && covered.has(cl.nationRank)));
@@ -467,6 +544,6 @@ export function rankHybrid(englishCands: readonly Candidate[], nativeCands: read
     ...nativeClusters.map((c) => [c, 1] as const),
     ...weak.map((c) => [c, 2] as const),
   ]);
-  const clusters = pick([...tierOf.keys()], max, ctx.ignore, (c) => tierOf.get(c) ?? 3);
+  const clusters = pick([...tierOf.keys()], max, ctx, (c) => tierOf.get(c) ?? 3);
   return { clusters, native: new Set(clusters.filter((cl) => nativeClusters.includes(cl))), all };
 }

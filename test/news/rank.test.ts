@@ -155,7 +155,7 @@ describe('pick', () => {
       cand('Rail strike halts trains across the country', { feed: 'nation', rank: 2, source: 'Spiegel' }),
       cand('Farmers block roads in protest over diesel tax', { feed: 'nation', rank: 3, source: 'Zeit Online' }),
     ];
-    const picked = pick(rankPool(pool, ctx), 2, ctx.ignore);
+    const picked = pick(rankPool(pool, ctx), 2, ctx);
     expect(picked.map((c) => c.rep.source)).toEqual(['Spiegel', 'Zeit Online']);
   });
 
@@ -165,7 +165,7 @@ describe('pick', () => {
       cand('Rail strike halts trains across the country', { feed: 'nation', rank: 2, source: 'Spiegel' }),
       cand('Farmers block roads in protest over diesel tax', { feed: 'nation', rank: 3, source: 'Zeit Online' }),
     ];
-    const picked = pick(rankPool(pool, ctx), 5, ctx.ignore);
+    const picked = pick(rankPool(pool, ctx), 5, ctx);
     expect(picked.map((c) => c.rep.title)).toEqual(pool.map((c) => c.title));
   });
 });
@@ -219,5 +219,123 @@ describe('market-data filler', () => {
     const base = rankPool([cand('Germany passes new law on rent caps in big cities')], ctx)[0].score;
     expect(rankPool([cand('Quantinuum expands quantum work with German partner', { source: 'GuruFocus' })], ctx)[0].score).toBeLessThan(base * 0.6);
     expect(rankPool([cand('Acme Corp (NASDAQ: ACME) opens German plant')], ctx)[0].score).toBeLessThan(base * 0.6);
+  });
+});
+
+describe('review cases: filler outside the audit countries', () => {
+  const titles: [string, string, string, string][] = [
+    ['Georgia', 'Georgian', "Georgian Dream party wins basketball federation vote in 80-72 count", 'Example'],
+    ['Pakistan', 'Pakistani', 'Shakeel nears century as Pakistan score 390-6 in first Test', 'France 24'],
+    ['Sweden', 'Swedish', 'Sweden Will Not Play Russia if Matched at World Juniors', 'Example'],
+    ['Hungary', 'Hungarian', "Kyori Audi (Hungary) defeated Blomberg Lippe to continue its unbeaten run in the Women's Handball Championship", 'Example'],
+    ['Netherlands', 'Dutch', "Sudden call-up for Ajax player raises many questions: 'The worst in the Netherlands!'", 'LiveScore'],
+    ['Singapore', 'Singaporean', "Singapore to host 'BTS The City Arirang' for all of December", 'Example'],
+    ['South Africa', 'South African', 'John Legend brings The Muse Tour to South Africa in February 2027', 'Example'],
+  ];
+  it.each(titles)('%s: "%s" gets a penalty', (name, demonym, title, source) => {
+    const c = rankContext(name, [name, demonym], NOW);
+    const [cl] = rankPool([cand(title, { source })], c);
+    expect(cl.pen).toBeLessThan(1);
+  });
+
+  it('drops a title that holds only the country name', () => {
+    const vct = rankContext('Saint Vincent and the Grenadines', ['Saint Vincent and the Grenadines'], NOW);
+    expect(rankPool([cand('Saint Vincent and the Grenadines')], vct)).toHaveLength(0);
+  });
+});
+
+describe('review cases: the shown title', () => {
+  it('shows a member that names the country, not a tier-1 title about something else', () => {
+    const ven = rankContext('Venezuela', ['Venezuela', 'Venezuelan', 'Caracas'], NOW);
+    const ranked = rankPool(
+      [
+        cand('What are the impeachment articles facing US Defence Secretary Pete Hegseth?', { source: 'The Straits Times', publishedAt: hoursAgo(1) }),
+        cand('Hegseth impeachment push grows over Venezuela boat strikes', { source: 'Local Paper', publishedAt: hoursAgo(2) }),
+      ],
+      ven,
+    );
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].rep.title).toContain('Venezuela');
+  });
+});
+
+describe('review cases: one story, one row', () => {
+  it('treats clusters that the hybrid boost links to the same native story as one story', () => {
+    const ven = rankContext('Venezuela', ['Venezuela', 'Venezuelan', 'Caracas'], NOW);
+    const english = [
+      cand("ExxonMobil explores return to Venezuela after calling nation 'uninvestable'", { source: 'Financial Times' }),
+      cand('Exxon Takes First Step Toward Investing in Venezuela', { source: 'WSJ' }),
+      cand('ExxonMobil signs Venezuela MoU but stops short of investment commitment', { source: 'BNamericas' }),
+    ];
+    const nat = [cand('ExxonMobil firma memorando con Venezuela', { feed: 'nation', rank: 1, lang: 'es', outlets: ['A', 'B', 'C'] })];
+    const r = rankHybrid(english, nat, ven);
+    const exxon = r.clusters.filter((c) => /exxon/i.test(c.rep.title));
+    expect(exxon).toHaveLength(1);
+  });
+
+  it('treats two fresh titles that share a name as one story (brand variants count)', () => {
+    const ven = rankContext('Venezuela', ['Venezuela', 'Venezuelan', 'Caracas'], NOW);
+    const pool = [
+      cand("ExxonMobil explores return to Venezuela after calling nation 'uninvestable'", { source: 'Financial Times' }),
+      cand('ExxonMobil signs Venezuela MoU but stops short of investment commitment', { source: 'BNamericas' }),
+    ];
+    expect(pick(rankPool(pool, ven), 5, ven)).toHaveLength(1);
+  });
+
+  it('treats two fresh titles that share 2 words as one story', () => {
+    const ukr = rankContext('Ukraine', ['Ukraine', 'Ukrainian', 'Kyiv'], NOW);
+    const pool = [
+      cand("US officials seek 'final end' to Russia-Ukraine war as Abu Dhabi talks begin", { source: 'The Guardian' }),
+      cand("First day of Ukraine peace talks 'very productive', US says", { source: 'BBC News' }),
+    ];
+    expect(pick(rankPool(pool, ukr), 5, ukr)).toHaveLength(1);
+  });
+
+  it('keeps two different stories apart', () => {
+    const pool = [
+      cand('Germany passes rent cap law after long fight', { source: 'Reuters' }),
+      cand('German exports fall for third month in a row', { source: 'AP' }),
+    ];
+    expect(pick(rankPool(pool, ctx), 5, ctx)).toHaveLength(2);
+  });
+});
+
+describe('review cases: no low filler', () => {
+  it('leaves out a cluster that does not name the country and scores under 0.2', () => {
+    const vat = rankContext('Vatican City', ['Vatican City', 'Vatican', 'Holy See'], NOW);
+    const pool = [
+      cand('Vatican City hosts climate summit for faith leaders', { publishedAt: hoursAgo(2) }),
+      cand('Kenya shuts down embassy in Switzerland', { publishedAt: hoursAgo(20) }),
+    ];
+    const picked = pick(rankPool(pool, vat), 5, vat);
+    expect(picked.map((c) => c.rep.title)).toEqual(['Vatican City hosts climate summit for faith leaders']);
+  });
+});
+
+describe('review cases: second live run', () => {
+  it('treats a sentence-case and a Title Case title with one name as one story', () => {
+    const che = rankContext('Switzerland', ['Switzerland', 'Swiss', 'Bern'], NOW);
+    const pool = [
+      cand('Watches of Switzerland lifts outlook floor as US, UK demand remains strong', { source: 'Reuters', publishedAt: hoursAgo(5) }),
+      cand('Watches of Switzerland Shares Fade From 6% Intraday Jump After H1 Update', { source: 'AskTraders.com', publishedAt: hoursAgo(6) }),
+      cand('Mafioso given six-year prison sentence in Switzerland', { source: 'SWI swissinfo.ch', publishedAt: hoursAgo(1) }),
+    ];
+    const picked = pick(rankPool(pool, che), 5, che).map((c) => c.rep.source);
+    expect(picked).toHaveLength(2);
+    expect(picked).toContain('Reuters');
+  });
+
+  it('counts a weak match as named when the search asked for the capital too', () => {
+    const geo = rankContext('Georgia', ['Georgia', 'Georgian', 'Tbilisi'], NOW);
+    expect(rankPool([cand('Georgia approves new budget for next year')], geo)[0].rel).toBe(0.3);
+    expect(rankPool([cand('Georgia approves new budget for next year', { confirmed: true })], geo)[0].rel).toBe(1);
+  });
+
+  it('penalises an NFL game abroad and stock notes', () => {
+    const [game] = rankPool([cand('What Ann Arbor bars will be open for the Detroit Lions’ 9:30 a.m. Germany game?')], ctx);
+    expect(game.pen).toBeLessThan(1);
+    const pan = rankContext('Panama', ['Panama', 'Panamanian'], NOW);
+    const [note] = rankPool([cand("What Will Franco-Nevada's Q3 Results Reveal on Panama and Royalties?", { source: 'Kalkine Media' })], pan);
+    expect(note.pen).toBeLessThan(1);
   });
 });

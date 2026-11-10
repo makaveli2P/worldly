@@ -1,5 +1,5 @@
 // GET /api/news?country=<CountryId> -> NewsResponse
-import { findCountry, getNews } from './_lib/news.js';
+import { findCountry, getNewsResult } from './_lib/news.js';
 
 // Vercel removes s-maxage and stale-while-revalidate before the browser, so the browser keeps 60 s.
 // Worst case for the list a user sees: 10 min server memory + 15 min fresh + 30 min stale.
@@ -22,11 +22,12 @@ export async function GET(request: Request): Promise<Response> {
   if (!country) return json({ error: 'unknown country' }, 400, 'no-store');
 
   try {
-    const news = await getNews(country);
-    return json(news, 200, news.provider ? SUCCESS_CACHE : FAILURE_CACHE);
+    const { news, state } = await getNewsResult(country);
+    // No source answered and no earlier list exists: 503, so the CDN can serve its stale copy (stale-if-error).
+    if (state === 'failed' && news.articles.length === 0) return json({ error: 'news sources unavailable' }, 503, 'no-store');
+    return json(news, 200, state === 'ok' && news.provider ? SUCCESS_CACHE : FAILURE_CACHE);
   } catch {
     console.warn(`[news] unexpected failure for ${country.id}`);
-    const empty = { country: country.id, articles: [], provider: null, fetchedAt: new Date().toISOString() };
-    return json(empty, 200, FAILURE_CACHE);
+    return json({ error: 'news sources unavailable' }, 503, 'no-store');
   }
 }

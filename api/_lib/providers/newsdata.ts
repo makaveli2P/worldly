@@ -2,7 +2,7 @@
 // The free plan delays data by 12 hours, so a result stays in memory for 6 hours.
 import { publisherHost } from '../domain.js';
 import { getJson } from '../fetch.js';
-import { cleanText, isPressRelease, namesCountry, safeUrl, titleKey, toIso } from '../text.js';
+import { cleanText, isPressRelease, namesCountry, safeUrl, tidySource, tidyTitle, titleKey, toIso } from '../text.js';
 import { UpstreamError, type Candidate, type NewsCountry } from './types.js';
 
 const BASE = 'https://newsdata.io/api/1/latest';
@@ -110,19 +110,24 @@ export function newsdataEnabled(): boolean {
   return apiKey() !== undefined;
 }
 
-async function call(country: NewsCountry, params: Record<string, string>, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
+/**
+ * One call with the country name in the title (qInTitle), English, the top 10% of domains,
+ * and no sport, entertainment or lifestyle. The `country` filter is not used: it matches the
+ * publisher's country, not the subject.
+ */
+async function call(country: NewsCountry, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
   const key = apiKey();
   if (!key) return [];
-  // One line per call, so credit use shows in the logs. The key and the URL stay out.
-  console.info(`[news] newsdata call for ${country.id}: ${Object.keys(params).sort().join('+')}`);
+  // With NEWS_DEBUG=1, one line per call, so credit use shows in the logs. The key and the URL stay out.
+  if (process.env.NEWS_DEBUG === '1') console.info(`[news] newsdata call for ${country.id}`);
   const search = new URLSearchParams({
     apikey: key,
     qInTitle: `"${country.name}"`,
     language: 'en',
+    prioritydomain: 'top',
     excludecategory: 'sports,entertainment,lifestyle',
     removeduplicate: '1',
     size: '10',
-    ...params,
   });
   const data = (await getJson(`${BASE}?${search}`, signal, timeoutMs)) as { status?: unknown; results?: unknown };
   if (data.status !== 'success') throw new UpstreamError('status not success');
@@ -134,13 +139,14 @@ async function call(country: NewsCountry, params: Record<string, string>, signal
     const url = safeUrl(raw.link);
     let title = cleanText(raw.title, 300);
     if (!url || !title) continue;
-    let source = publisherName(cleanText(raw.source_id, 80), cleanText(raw.source_name, 80), url);
+    let source = tidySource(publisherName(cleanText(raw.source_id, 80), cleanText(raw.source_name, 80), url));
     // NewsData also indexes Google News, whose titles end in " - Publisher".
     const dash = title.lastIndexOf(' - ');
     if (/^google news$/i.test(source) && dash > 0) {
       source = cleanText(title.slice(dash + 3), 80) || source;
       title = title.slice(0, dash).trim();
     }
+    title = tidyTitle(title, source);
     if (isPressRelease(url, source) || !namesCountry(title, country.name)) continue;
     const key = titleKey(title);
     if (seen.has(key)) continue;
@@ -164,29 +170,27 @@ async function call(country: NewsCountry, params: Record<string, string>, signal
   return articles;
 }
 
-/**
- * One call with the country name in the title (qInTitle), English, the top 10% of domains,
- * and no sport, entertainment or lifestyle. A second call without prioritydomain runs only
- * when the first gives nothing. The `country` filter is not used: it matches the publisher's
- * country, not the subject.
- */
-async function fetchCountry(country: NewsCountry, timeoutMs: number): Promise<Candidate[]> {
-  const first = await call(country, { prioritydomain: 'top' }, AbortSignal.timeout(timeoutMs), timeoutMs);
-  if (first.length > 0) return first;
-  return call(country, {}, AbortSignal.timeout(timeoutMs), timeoutMs);
-}
-
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 10 * 60 * 1000;
 const cache = new Map<string, { expires: number; value: Promise<Candidate[]> }>();
 
-/** NewsData stories for a country. A result stays in memory for 6 hours, because the data is 12 hours late. */
+/** The NewsData result in memory for a country, when it is fresh. Costs no credit. */
+export function newsdataCached(country: NewsCountry): Promise<Candidate[]> | null {
+  const hit = cache.get(country.id);
+  return hit && hit.expires > Date.now() ? hit.value : null;
+}
+
+/**
+ * NewsData stories for a country. A result stays in memory for 6 hours, because the data is 12 hours late.
+ * The call has its own timeout and does not depend on the caller, so a caller that stops waiting
+ * does not waste the credit: the next request for the country gets the result from memory.
+ */
 export function newsdata(country: NewsCountry, timeoutMs: number): Promise<Candidate[]> {
   if (!newsdataEnabled()) return Promise.resolve([]);
   const now = Date.now();
   const hit = cache.get(country.id);
   if (hit && hit.expires > now) return hit.value;
-  const entry = { expires: now + CACHE_TTL_MS, value: fetchCountry(country, timeoutMs) };
+  const entry = { expires: now + CACHE_TTL_MS, value: call(country, AbortSignal.timeout(timeoutMs), timeoutMs) };
   cache.set(country.id, entry);
   entry.value.catch(() => {
     entry.expires = Date.now() + FAILURE_TTL_MS;

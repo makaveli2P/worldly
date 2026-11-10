@@ -26,6 +26,11 @@ export interface Candidate {
   lang: string | null;
   /** NewsData source_priority: a reach rank (lower is bigger). */
   priority?: number;
+  /**
+   * True when the source already tied the story to the country: a search that asked for the capital
+   * too. Then the bare name of a homonym country ("Georgia") is enough (see relevance 'weak').
+   */
+  confirmed?: boolean;
 }
 
 /** Thrown for a failed upstream call. The message never holds the request URL or the body. */

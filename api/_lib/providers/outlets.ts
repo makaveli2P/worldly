@@ -3,8 +3,8 @@
 import { publisherHost } from '../domain.js';
 import { getText } from '../fetch.js';
 import { parseRssItems } from '../rss.js';
-import { cleanText, safeUrl, toIso } from '../text.js';
-import type { Candidate } from './types.js';
+import { cleanText, safeUrl, tidyTitle, toIso } from '../text.js';
+import { UpstreamError, type Candidate } from './types.js';
 
 export interface OutletFeed {
   source: string;
@@ -43,7 +43,9 @@ export function outletCandidates(xml: string, feed: OutletFeed): Candidate[] {
   const out: Candidate[] = [];
   for (const item of parseRssItems(xml, 100)) {
     const url = safeUrl(item.link.trim());
-    const title = cleanText(item.title, 300);
+    let title = tidyTitle(cleanText(item.title, 300), feed.source);
+    // The Guardian ends some titles with a topic tag: "... 'copycat car' claim | Jaguar Land Rover".
+    if (feed.source === 'The Guardian') title = title.replace(/\s+\|\s+[^|]{2,60}$/, '').trim();
     if (!url || !title) continue;
     out.push({
       title,
@@ -63,10 +65,16 @@ export function outletCandidates(xml: string, feed: OutletFeed): Candidate[] {
 
 async function fetchAll(timeoutMs: number): Promise<Candidate[]> {
   const results = await Promise.allSettled(
-    OUTLET_FEEDS.map(async (f) => outletCandidates(await getText(f.url, AbortSignal.timeout(timeoutMs), timeoutMs), f)),
+    OUTLET_FEEDS.map(async (f) => {
+      const xml = await getText(f.url, AbortSignal.timeout(timeoutMs), timeoutMs);
+      // A captive portal or an error page answers 200 with HTML: that is a failure, not an empty feed.
+      if (!/<rss[\s>]|<rdf:RDF[\s>]/i.test(xml)) throw new UpstreamError('not rss');
+      return outletCandidates(xml, f);
+    }),
   );
   const ok = results.filter((r): r is PromiseFulfilledResult<Candidate[]> => r.status === 'fulfilled');
   const failed = results.length - ok.length;
+  if (ok.length === 0) throw new UpstreamError('all outlet feeds failed');
   if (failed > 0) console.warn(`[news] outlet feeds: ${failed} of ${results.length} failed`);
   return ok.flatMap((r) => r.value);
 }

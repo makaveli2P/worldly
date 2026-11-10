@@ -37,6 +37,22 @@ export function isAggregatorHost(host: string): boolean {
   return AGGREGATORS.has(host) || host.endsWith('.google.com');
 }
 
+// Social and aggregator platforms. A story whose publisher is one of these is not news from an outlet.
+const PLATFORMS = new Set([
+  'facebook.com', 'instagram.com', 'x.com', 'twitter.com', 'youtube.com', 'tiktok.com', 'reddit.com', 'linkedin.com',
+  'threads.net', 'pinterest.com', 'quora.com', 'newsbreak.com', 'flipboard.com', 'ground.news', 'apple.news', 'msn.com',
+]);
+const PLATFORM_NAMES = /^(?:facebook|instagram|x|twitter|youtube|tiktok|reddit|linkedin|threads|pinterest|quora|newsbreak|news break|flipboard|ground news|apple news|msn)$/i;
+
+/** True for a story from a social or aggregator platform: by host when known, else by publisher name. */
+export function isPlatform(host: string | null, source: string): boolean {
+  if (host) {
+    const h = registrableDomain(host);
+    return PLATFORMS.has(host) || PLATFORMS.has(h);
+  }
+  return PLATFORM_NAMES.test(source.trim());
+}
+
 /**
  * The publisher host of a story. Tries each input in order and skips aggregator hosts,
  * so a news.google.com redirect link never gives the domain.

@@ -6,11 +6,11 @@ import countries from './countries.json' with { type: 'json' };
 import { editionsFor } from './editions.js';
 import aliasTable from './news-aliases.json' with { type: 'json' };
 import { nation, search, top } from './providers/google.js';
-import { newsdata, newsdataEnabled } from './providers/newsdata.js';
+import { newsdata, newsdataCached, newsdataEnabled } from './providers/newsdata.js';
 import { outletItems } from './providers/outlets.js';
 import type { Candidate, NewsCountry } from './providers/types.js';
 import { pick, rankContext, rankHybrid, rankPool, type Cluster, type RankContext } from './rank.js';
-import { relevance } from './text.js';
+import { fold, relevance } from './text.js';
 
 export const MAX_ARTICLES = 5;
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -22,9 +22,35 @@ const DEADLINE_MS = 3000;
 const REQUEST_TIMEOUT_MS = 2500;
 /** A search with fewer items than this in 1 day is repeated for 2 days. */
 const MIN_SEARCH_ITEMS = 20;
+/** The NewsData fallback starts only when at least this much of TOTAL_BUDGET_MS is left. */
+const MIN_FALLBACK_MS = 600;
+/** The whole build, NewsData fallback included, ends by this time. */
+const TOTAL_BUDGET_MS = 4000;
+/** A last good list stands in for a failed rebuild for at most this long (as stale-if-error). */
+const LAST_GOOD_MS = 24 * 60 * 60 * 1000;
 
 const COUNTRIES = countries as Record<string, { name: string; iso2: string | null }>;
 const ALIASES = aliasTable as Record<string, string[]>;
+// Countries whose bare name brings mostly other places or people ("Georgia" brings the US state).
+// Their search also asks for the capital or the demonym; Google News matches it in the full text.
+const SEARCH_HINTS: Record<string, string> = {
+  GEO: '(Tbilisi OR Georgian)',
+  JOR: '(Amman OR Jordanian)',
+  NER: '(Niamey OR Nigerien)',
+  TCD: "(N'Djamena OR Chadian)",
+  PSE: '(Gaza OR "West Bank" OR Palestinian)',
+};
+
+/** The Google News search expression for a country. */
+export function searchQuery(country: NewsCountry): string {
+  const hint = Object.hasOwn(SEARCH_HINTS, country.id) ? SEARCH_HINTS[country.id] : '';
+  return hint ? `"${country.name}" ${hint}` : `"${country.name}"`;
+}
+
+/** Folded words of every country's aliases. Two stories that share only such a word are not one story. */
+const PLACE_WORDS: ReadonlySet<string> = new Set(
+  Object.values(ALIASES).flatMap((list) => list.flatMap((a) => fold(a).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4))),
+);
 /** Lowercase id -> id, so "deu" and "x-kosovo" resolve. */
 const ID_BY_LOWER = new Map(Object.keys(COUNTRIES).map((id) => [id.toLowerCase(), id]));
 
@@ -50,7 +76,7 @@ interface Pools {
   native: Candidate[];
   ok: number;
   total: number;
-  /** True when a Google feed answered. */
+  /** True when a Google feed answered with RSS (even with no items). False when Google failed or hung. */
   google: boolean;
 }
 
@@ -62,16 +88,21 @@ async function gather(country: NewsCountry, aliases: readonly string[]): Promise
   const ctrl = new AbortController();
   const pools: Pools = { english: [], native: [], ok: 0, total: 0, google: false };
   const jobs: Promise<void>[] = [];
-  const job = (name: string, google: boolean, run: () => Promise<Candidate[]>, into: Candidate[]) => {
+  // Each job adds its items through `add`, so a job can add a first part before a later part fails.
+  const job = (name: string, google: boolean, run: (add: (items: Candidate[]) => void) => Promise<void>, into: Candidate[]) => {
     pools.total += 1;
+    let answered = false;
+    // A source counts as answered at its first result, even when a later part of the job fails or is late.
+    const add = (items: Candidate[]) => {
+      if (ctrl.signal.aborted) return;
+      into.push(...items);
+      if (!answered) pools.ok += 1;
+      answered = true;
+      if (google) pools.google = true;
+    };
     jobs.push(
-      run().then(
-        (items) => {
-          if (ctrl.signal.aborted) return;
-          into.push(...items);
-          pools.ok += 1;
-          if (google && items.length > 0) pools.google = true;
-        },
+      run(add).then(
+        () => {},
         (err: unknown) => {
           // Log only the source and a short reason. Never the URL or the body.
           const reason = err instanceof Error && err.name === 'UpstreamError' ? err.message : 'error';
@@ -80,23 +111,29 @@ async function gather(country: NewsCountry, aliases: readonly string[]): Promise
       ),
     );
   };
+  const simple = (fetchItems: () => Promise<Candidate[]>) => async (add: (items: Candidate[]) => void) => add(await fetchItems());
 
   if (en) {
-    job('google nation', true, () => nation(en, ctrl.signal, REQUEST_TIMEOUT_MS), pools.english);
-    job('google top', true, () => top(en, ctrl.signal, REQUEST_TIMEOUT_MS), pools.english);
+    job('google nation', true, simple(() => nation(en, ctrl.signal, REQUEST_TIMEOUT_MS)), pools.english);
+    job('google top', true, simple(() => top(en, ctrl.signal, REQUEST_TIMEOUT_MS)), pools.english);
   }
-  if (nat) job('google native nation', true, () => nation(nat, ctrl.signal, REQUEST_TIMEOUT_MS), pools.native);
+  if (nat) job('google native nation', true, simple(() => nation(nat, ctrl.signal, REQUEST_TIMEOUT_MS)), pools.native);
+  const query = searchQuery(country);
+  const confirm = (items: Candidate[]) => (query.includes('(') ? items.map((c) => ({ ...c, confirmed: true })) : items);
   job(
     'google search',
     true,
-    async () => {
-      const day = await search(country.name, 1, ctrl.signal, REQUEST_TIMEOUT_MS);
-      if (day.length >= MIN_SEARCH_ITEMS) return day;
-      // A small country: look at 2 days. Keep the 1-day items if this fails.
+    async (add) => {
+      const day = confirm(await search(query, 1, ctrl.signal, REQUEST_TIMEOUT_MS));
+      // Keep the 1-day items now: a slow 2-day search must not lose them at the deadline.
+      add(day);
+      if (day.length >= MIN_SEARCH_ITEMS) return;
+      // A small country: look at 2 days, and add only the items that the 1-day search did not give.
       try {
-        return await search(country.name, 2, ctrl.signal, REQUEST_TIMEOUT_MS);
+        const seen = new Set(day.map((c) => c.url));
+        add(confirm(await search(query, 2, ctrl.signal, REQUEST_TIMEOUT_MS)).filter((c) => !seen.has(c.url)));
       } catch {
-        return day;
+        // The 1-day items are in the pool.
       }
     },
     pools.english,
@@ -105,9 +142,12 @@ async function gather(country: NewsCountry, aliases: readonly string[]): Promise
   job(
     'outlet feeds',
     false,
-    async () => (await outletItems(REQUEST_TIMEOUT_MS)).filter((c) => relevance(c.title, country.name, aliases) === 'yes'),
+    simple(async () => (await outletItems(REQUEST_TIMEOUT_MS)).filter((c) => relevance(c.title, country.name, aliases) === 'yes')),
     pools.english,
   );
+  // A NewsData result in memory costs no credit, so it joins the pool at once.
+  const kept = newsdataCached(country);
+  if (kept) job('newsdata (memory)', false, simple(() => kept), pools.english);
 
   await Promise.race([Promise.allSettled(jobs), sleep(DEADLINE_MS)]);
   ctrl.abort();
@@ -128,7 +168,7 @@ function rankAll(pools: Pools, ctx: RankContext): Ranking {
     return { picked: clusters, relevant: relevant(all) };
   }
   const ranked = rankPool(pools.english, ctx);
-  return { picked: pick(ranked, MAX_ARTICLES, ctx.ignore), relevant: relevant(ranked) };
+  return { picked: pick(ranked, MAX_ARTICLES, ctx), relevant: relevant(ranked) };
 }
 
 function debugLog(country: NewsCountry, picked: readonly Cluster[], pools: Pools): void {
@@ -172,17 +212,29 @@ function providerOf(picked: readonly Cluster[]): NewsProvider | null {
   return best;
 }
 
-async function build(country: NewsCountry): Promise<NewsResponse> {
+/** How a build went: 'ok', 'degraded' (Google gave nothing; the list can be partial) or 'failed' (no source answered). */
+export type BuildState = 'ok' | 'degraded' | 'failed';
+
+export interface NewsResult {
+  news: NewsResponse;
+  state: BuildState;
+}
+
+async function build(country: NewsCountry): Promise<NewsResult> {
+  const started = Date.now();
   const aliases = aliasesOf(country);
   const pools = await gather(country, aliases);
-  const ctx = rankContext(country.name, aliases, Date.now());
+  const ctx = rankContext(country.name, aliases, Date.now(), PLACE_WORDS);
   let { picked, relevant: passing } = rankAll(pools, ctx);
 
   // NewsData is only a fallback: small countries with no edition, or a Google failure.
-  if (passing < MAX_ARTICLES && newsdataEnabled()) {
+  // It gets only the time that is left of TOTAL_BUDGET_MS. A late answer stays in memory for the next request.
+  const left = TOTAL_BUDGET_MS - (Date.now() - started);
+  if (passing < MAX_ARTICLES && newsdataEnabled() && !newsdataCached(country) && left >= MIN_FALLBACK_MS) {
+    const call = newsdata(country, REQUEST_TIMEOUT_MS);
     try {
-      const extra = await newsdata(country, REQUEST_TIMEOUT_MS);
-      if (extra.length > 0) {
+      const extra = await Promise.race([call, sleep(left).then(() => null)]);
+      if (extra && extra.length > 0) {
         pools.english.push(...extra);
         ({ picked } = rankAll(pools, ctx));
       }
@@ -194,28 +246,55 @@ async function build(country: NewsCountry): Promise<NewsResponse> {
 
   debugLog(country, picked, pools);
   const articles = picked.map(toArticle);
-  return { country: country.id, articles, provider: providerOf(picked), fetchedAt: new Date().toISOString() };
+  const news: NewsResponse = { country: country.id, articles, provider: providerOf(picked), fetchedAt: new Date().toISOString() };
+  const state: BuildState = pools.ok === 0 ? 'failed' : pools.google ? 'ok' : 'degraded';
+  return { news, state };
 }
 
 interface CacheEntry {
   expires: number;
-  value: Promise<NewsResponse>;
+  value: Promise<NewsResult>;
 }
 
 const cache = new Map<string, CacheEntry>();
+/** The last list that a full build ('ok', with stories) gave, per country. */
+const lastGood = new Map<string, { at: number; news: NewsResponse }>();
 
-/** Returns cached news when fresh. Parallel calls for one country share one upstream run. */
-export function getNews(country: NewsCountry): Promise<NewsResponse> {
+/**
+ * A failed or degraded build does not replace a good list: the last good list (at most 24 h old)
+ * stands in for it, with the short failure cache, so the next request tries again soon.
+ */
+function settle(id: string, result: NewsResult): NewsResult {
+  if (result.state === 'ok') {
+    if (result.news.articles.length > 0) {
+      lastGood.delete(id);
+      lastGood.set(id, { at: Date.now(), news: result.news });
+      if (lastGood.size > CACHE_MAX_ENTRIES) lastGood.delete(lastGood.keys().next().value!);
+    }
+    return result;
+  }
+  const good = lastGood.get(id);
+  if (good && Date.now() - good.at < LAST_GOOD_MS && good.news.articles.length >= result.news.articles.length) {
+    return { news: good.news, state: 'degraded' };
+  }
+  return result;
+}
+
+/**
+ * Returns cached news when fresh, with the state of the build. Parallel calls for one country share one
+ * upstream run. A degraded or failed result stays in memory for FAILURE_TTL_MS only.
+ */
+export function getNewsResult(country: NewsCountry): Promise<NewsResult> {
   const now = Date.now();
   const hit = cache.get(country.id);
   if (hit && hit.expires > now) return hit.value;
 
-  const value = build(country);
+  const value = build(country).then((r) => settle(country.id, r));
   const entry: CacheEntry = { expires: now + CACHE_TTL_MS, value };
   cache.set(country.id, entry);
   value.then(
     (result) => {
-      if (result.provider === null) entry.expires = Date.now() + FAILURE_TTL_MS;
+      if (result.state !== 'ok' || result.news.provider === null) entry.expires = Date.now() + FAILURE_TTL_MS;
     },
     () => cache.delete(country.id),
   );
@@ -227,4 +306,9 @@ export function getNews(country: NewsCountry): Promise<NewsResponse> {
     }
   }
   return value;
+}
+
+/** Returns cached news when fresh. See getNewsResult. */
+export async function getNews(country: NewsCountry): Promise<NewsResponse> {
+  return (await getNewsResult(country)).news;
 }

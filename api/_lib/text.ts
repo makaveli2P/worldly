@@ -90,15 +90,19 @@ export function titleKey(title: string): string {
 }
 
 const JUNK_TITLE = /^watch\b.*\bvs\.?\b|\bhow to watch\b|\blive\s*score|live\s*-?\s*stream|\bwatch\b.*\blive\b|\blive\s+free\b|free\s+online|\[#|[™®]|air quality index|\bweather (?:forecast|today)\b/i;
-const JUNK_SOURCE = /britannica|\biflr\b|asialaw|legal500|wikipedia|iqair|tripadvisor|weather\.com|accuweather|universidad|university/i;
+// Company filings ("Form 6-K TAIWAN SEMICONDUCTOR"), earthquake bots ("Light mag. 3.3 earthquake - ..."),
+// puzzle answers and expert-for-hire notices.
+const JUNK_ROBOT =
+  /^form (?:3|4|5|144)\b|\bform (?:6-k|8-k|10-k|10-q|20-f|40-f|s-1|f-1|13d|13g|424b\d?)\b|\bsc 13[dg]\b|\b(?:light|minor|moderate|weak|strong|very strong|major) mag\. ?\d|\bmag\. ?\d(?:\.\d)? (?:earth)?quake\b|\bavailable for (?:interviews?|comment)\b|\b(?:wordle|quordle|flagle|worldle|connections|strands|crossword)\b.*\b(?:answers?|hints?|today|solution)\b|\b(?:answers?|hints?) (?:today|for (?:today|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+const JUNK_SOURCE = /britannica|\biflr\b|asialaw|legal500|wikipedia|iqair|tripadvisor|weather\.com|accuweather|universidad|university|volcano ?discovery|earthquake ?track|streetinsider|sec\.gov|quakes? today|reliefweb/i;
 
-const JUNK_ADVERT = /\b(?:university|universidad|bachelor'?s program|master'?s program|admissions? open)\b/i;
+const JUNK_ADVERT = /\b(?:university|universidad|bachelor'?s program|master'?s program|admissions? open|scholarships?|open call|call for (?:applications|papers|proposals|entries)|webinar|job (?:openings|vacancies)|vacancies)\b/i;
 
 /** True for spam streams, reference pages, course adverts and other items that are not news. */
 export function isJunk(title: string, source: string): boolean {
   // Chinese, Japanese and Korean titles have few or no spaces: count characters instead.
   if (/[぀-ヿ㐀-鿿가-힯]/.test(title) ? title.length < 8 : title.split(' ').length < 4) return true;
-  if (JUNK_TITLE.test(title) || JUNK_SOURCE.test(source) || JUNK_ADVERT.test(title)) return true;
+  if (JUNK_TITLE.test(title) || JUNK_ROBOT.test(title) || JUNK_SOURCE.test(source) || JUNK_ADVERT.test(title)) return true;
   // Directory pages repeat one tag: "Firm Mongolia (asialaw): Mongolia (asialaw)".
   const tags = title.match(/\([^)]{2,40}\)/g) ?? [];
   return new Set(tags.map((x) => x.toLowerCase())).size < tags.length;
@@ -208,20 +212,55 @@ const LONGER_PLACES: Record<string, string[]> = {
   samoa: ['american samoa'],
   dominica: ['dominican'],
   congo: ['dr congo', 'democratic republic of the congo', 'democratic republic of congo'],
-  niger: ['nigeria'],
+  niger: ['nigeria', 'niger state', 'niger delta', 'niger river'],
   georgia: ['south georgia'],
   macedonia: ['north macedonia'],
   jersey: ['new jersey'],
-  mexico: ['new mexico', 'gulf of mexico'],
+  mexico: ['new mexico', 'gulf of mexico', 'village of mexico', 'town of mexico', 'mexico academy'],
+  panama: ['panama city beach', 'panama city news herald'],
+  palestine: ['palestine action', 'palestine, texas', 'palestine, tx'],
 };
 
 // Words that show a title is about another place or a person with the country's name.
 const HOMONYMS: Record<string, RegExp> = {
   peru: /\b(?:plattsburgh|saranac|ny|new york|indiana|illinois|vermont)\b/,
-  georgia: /\b(?:atlanta|savannah|bulldogs|ga|georgia tech|georgia state|kemp|uga|braves|falcons|hawks)\b/,
-  jordan: /\b(?:michael jordan|jordan (?:love|poole|spieth|clarkson|chiles|peterson|pickford|henderson|mailata|addison|hicks|walsh))\b/,
-  chad: /\bchad (?:smith|johnson|daniels)\b/,
-  lebanon: /\b(?:lebanon,? (?:pa|ohio|oh|nh|tn|indiana)|lebanon (?:county|valley|high))\b/,
+  // Mexico, New York (Oswego County): "Watertown woman killed in Village of Mexico crash".
+  mexico: /\b(?:watertown|oswego|syracuse|central new york|village of mexico|town of mexico)\b/,
+  georgia: new RegExp(
+    '\\b(?:atlanta|savannah|augusta|athens|macon|bulldogs|ga|georgia tech|georgia state|georgia southern|kemp|uga|braves|falcons|hawks|' +
+      'ole miss|sec|ossoff|warnock|raffensperger|jimmy carter|carter|peach state|georgia (?:house|senate|general assembly|legislature|' +
+      'supreme court|gop|democrats?|republicans?|voters?|power|governor|county|sheriff|deputies|game|football|basketball|baseball|' +
+      'softball|volleyball|soccer|coach|quarterback|offense|defense)|' +
+      "(?:men|women)'?s (?:basketball|soccer|golf|tennis)|basketball|football|touchdown|game|playoffs?)\\b",
+  ),
+  jordan: /\b(?:michael jordan|jim jordan|rep\. jordan|scalise|gop|house republicans?|judiciary committee|air jordans?|jordan (?:brand|sneakers?|shoes?|love|poole|spieth|clarkson|chiles|peterson|pickford|henderson|mailata|addison|hicks|walsh|fisher|donica|elliott|travis|lawlar|davis|morgan|hall|neely|stolz|whitehead|larsson|eberle|kyrou|staal|binnington|montgomery|battle|mclaughlin|knight|matthews|belfort|peele))\b/,
+  niger: /\b(?:niger state|niger govt|minna|bago|naira|n\d[\d,]*)\b/,
+  chad: /\bchad (?:smith|johnson|daniels|kroeger|michael murray|le clos|pennington|reed|kelly|wolf|morris|ochocinco)\b/,
+  lebanon: /\b(?:mt\.? lebanon|lebanon,? (?:pa|ohio|oh|nh|tn|indiana|mo|or|ky|va|nj|ct|me)|lebanon (?:county|valley|high|township|city|police|school|schools|daily))\b/,
+  panama: /\b(?:panama city beach|panama city,? (?:fl|fla|florida)|bay county|florida|news herald|pcb)\b/,
+  samoa: /\b(?:humboldt|eureka|arcata|california|calif|samoa (?:bridge|peninsula|boulevard|blvd|dunes|cookhouse))\b/,
+  palestine: /\b(?:palestine action|palestine,? (?:tx|texas)|palestine (?:native|high|isd|herald|police|city|wildcats|mules)|east texas|anderson county)\b/,
+  turkiye: /\b(?:thanksgiving|turkey (?:day|dinner|dinners|recipe|recipes|breast|sandwich|sandwiches|trot|pardon|pardoning|prices?|farm|farmers|hunting|season|leg|legs|gravy|fryer)|roast|roasted|stuffing|gobble|butterball|wild turkey|cold turkey|turkeys)\b/,
+};
+
+// "Jordan Fisher cast as ...": the country's name as a first name, before a capitalised surname.
+// Checked only in a sentence-case title, because in Title Case every word has a capital.
+const PERSON_AFTER: Record<string, RegExp> = {
+  jordan: /\bJordan (?!Valley|River|Times|Rift|King|Crown|Queen|Prime|Foreign|Government|Army|Armed|News|Hashemite)[A-Z][a-z]{2,}/,
+  chad: /\bChad (?!Basin|Lake|Government|Army|Junta|President|Foreign)[A-Z][a-z]{2,}/,
+};
+
+/** True when some words of 4 or more letters start in lower case. */
+const isSentenceCase = (title: string) => title.split(/\s+/).some((w) => w.length >= 4 && /^\p{Ll}/u.test(w));
+
+// Country names that are also common names of other places or people. A title that names such a
+// country only by its bare name counts as "weak" unless it also holds one of these words.
+const CONTEXT: Record<string, RegExp> = {
+  georgia: /\b(?:tbilisi|georgian|kobakhidze|kavelashvili|ivanishvili|georgian dream|abkhazia|south ossetia|batumi|kutaisi|caucasus|caucasian|black sea|kremlin|moscow|russia|russian|armenia|azerbaijan|eu|european union|brussels|nato|zourabichvili|saakashvili|ex-soviet|former soviet|ruling party|opposition|parliament|protesters|pro-western|pro-russian|foreign agents?)\b/,
+  jordan: /\b(?:amman|jordanian|king abdullah|abdullah ii|queen rania|crown prince hussein|hashemite|aqaba|petra|zarqa|irbid|jafar hassan|west bank|gaza|israel|israeli|syria|syrian|iraq|iraqi|palestinians?|refugees?|middle east|arab|egypt|saudi|iran|hamas|muslim brotherhood|mosque|kingdom|iaea|unhcr|unrwa|wfp)\b/,
+  niger: /\b(?:niamey|nigerien|tiani|zeine|junta|sahel|mali|burkina faso|uranium|orano|ecowas|aes|bazoum|agadez|tillaberi|diffa|zinder|maradi|jihadists?|islamic state|coup|french troops|france|benin|chad|algeria)\b/,
+  chad: /\b(?:n'?djamena|chadian|deby|sahel|sudan|sudanese|darfur|refugees?|boko haram|lake chad|junta|libya|niger|cameroon|central african|french troops|france|rsf)\b/,
+  palestine: /\b(?:gaza|west bank|palestinians?|israel|israeli|hamas|fatah|abbas|ramallah|unrwa|recogni[sz]\w*|statehood|state of palestine|jerusalem|occupied|ceasefire|un|united nations|two-state|plo|palestinian authority|refugees?)\b/,
 };
 
 /**
@@ -274,7 +313,8 @@ function withoutUsTown(text: string, name: string): string {
 export function namesCountry(title: string, name: string): boolean {
   const n = fold(name);
   let t = fold(withoutUsTown(title.normalize('NFKD').replace(/[̀-ͯ]/g, ''), name));
-  for (const longer of LONGER_PLACES[n] ?? []) t = t.split(longer).join(' ');
+  const longer = LONGER_RE.get(n);
+  if (longer) t = t.replace(longer, ' ');
   if (!hasWord(t, n)) return false;
   const other = HOMONYMS[n];
   return !(other && other.test(t));
@@ -292,34 +332,55 @@ const BLOCK_PHRASES = [
   'qatar airways', 'singapore airlines', 'british airways', 'american eagle', 'china eastern', 'china southern',
 ];
 
+/** One regex that finds any of the phrases as whole words, in any case. */
+const phraseRe = (phrases: readonly string[]) =>
+  new RegExp(`(?<![\\p{L}\\p{N}])(?:${phrases.map(escapeRe).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+const BLOCK_RE = phraseRe(BLOCK_PHRASES);
+const LONGER_RE = new Map(Object.entries(LONGER_PLACES).map(([k, v]) => [k, phraseRe(v)]));
+
+export type Relevance = 'yes' | 'weak' | 'trap' | 'no';
+
 /**
  * How a title relates to a country, from its aliases (name, demonym, capital, leader):
  * - 'yes': the title names the country or an alias, as a whole word.
+ * - 'weak': the only match is the bare name of a country that shares its name with other places or
+ *   people (Georgia, Jordan, Niger, Chad, Palestine), and no word of the country's context is there.
  * - 'trap': the only match is a longer place ("New Mexico") or a homonym ("Michael Jordan").
  * - 'no': no alias in the title.
+ * Blocked phrases ("Air India") are removed as whole words first, so "Repair India-made trains" still names India.
  * An alias of 3 letters or fewer, or in capitals ("US", "UK", "DRC"), must match with its case.
  */
-export function relevance(title: string, name: string, aliases: readonly string[]): 'yes' | 'trap' | 'no' {
+export function relevance(title: string, name: string, aliases: readonly string[]): Relevance {
   const n = fold(name);
   const raw = withoutUsTown(title.normalize('NFKD').replace(/[̀-ͯ]/g, ''), name);
-  let plain = fold(raw);
-  let cased = raw;
-  for (const p of [...BLOCK_PHRASES, ...(LONGER_PLACES[n] ?? [])]) {
-    plain = plain.split(p).join(' ');
-    cased = cased.replace(new RegExp(escapeRe(p), 'gi'), ' ');
+  let plain = fold(raw).replace(BLOCK_RE, ' ');
+  let cased = raw.replace(BLOCK_RE, ' ');
+  const longer = LONGER_RE.get(n);
+  if (longer) {
+    plain = plain.replace(longer, ' ');
+    cased = cased.replace(longer, ' ');
   }
-  const other = HOMONYMS[n];
   const shouty = raw === raw.toUpperCase();
-  let found = false;
+  let found: string | null = null;
   for (const alias of aliases) {
     const a = alias.normalize('NFKD').replace(/[̀-ͯ]/g, '');
     const strict = a.length <= 3 || (a === a.toUpperCase() && /\p{Lu}/u.test(a));
     if (strict ? !shouty && hasWord(cased, a) : hasWord(plain, fold(a))) {
-      found = true;
-      break;
+      found = fold(a);
+      // The bare name is the weakest match. Look on for a stronger alias.
+      if (found !== n) break;
     }
   }
-  if (found) return other && other.test(fold(title)) ? 'trap' : 'yes';
+  if (found !== null) {
+    const t = fold(title);
+    const other = HOMONYMS[n];
+    if (other && other.test(t)) return 'trap';
+    const context = CONTEXT[n];
+    const person = PERSON_AFTER[n];
+    if (found === n && person && isSentenceCase(title) && person.test(title) && !(context && context.test(t))) return 'trap';
+    if (found === n && context && !context.test(t)) return 'weak';
+    return 'yes';
+  }
   // The raw name is in the title, but only inside a blocked or longer place.
   return hasWord(fold(title), n) ? 'trap' : 'no';
 }
@@ -368,3 +429,105 @@ const GENERIC_NAMES = new Set([
   'brasil', 'mexico', 'indonesia', 'france', 'germany', 'brazil', 'japan', 'china', 'russia', 'ukraine', 'trump',
   'putin', 'opinion', 'analysis', 'exclusive', 'explainer', 'editorial',
 ]);
+
+// Words that name an outlet in a publisher credit at the end of a title ("— ABC News Australia").
+const OUTLET_WORD =
+  /\b(?:news|times|post|herald|tribune|journal|daily|tv|radio|channel|press|gazette|telegraph|guardian|express|chronicle|observer|mail|star|sun|mirror|standard|review|today|online|media|network|broadcasting|corporation|agency|wire|insider|weekly|magazine|bulletin|reporter|courier|independent|week|monitor|nation|world|live)\b/i;
+
+function looksLikeOutlet(tail: string, source: string): boolean {
+  const t = fold(tail).trim();
+  const s = fold(source).trim();
+  if (s && (t === s || t.includes(s) || s.includes(t))) return true;
+  if (/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(t)) return true;
+  const words = tail.trim().split(/\s+/);
+  if (words.length > 6 || tail.length > 50) return false;
+  const capped = words.every((w) => /^[\p{Lu}\d&(]/u.test(w) || /^(?:of|the|and|de|du|la|le|del|da|for|on)$/.test(w));
+  if (!capped) return false;
+  // "TygerBurger": one word with an inner capital is a brand.
+  if (words.length === 1 && /\p{Ll}\p{Lu}/u.test(words[0])) return true;
+  return OUTLET_WORD.test(tail);
+}
+
+/**
+ * Removes debris from the end of a title: a dangling dash ("... Paris -") and a publisher credit
+ * (" | TygerBurger", " — ABC News Australia"). A subtitle that is not an outlet stays.
+ */
+export function tidyTitle(title: string, source = ''): string {
+  let t = title.replace(/(?:\s+[-–—|:·•]+)+\s*$/u, '').trim();
+  // A format tag at the end: "... the politics | Explained".
+  t = t.replace(/\s+[|–—-]\s+(?:explained|explainer|analysis|opinion|live updates?|live|watch|video|photos|in pictures|podcast|editorial)$/i, '').trim();
+  // A site suffix and a section path from the publisher's site: "... ends: Paris - Region - World".
+  t = t.replace(/\s+-\s+news and statistics$/i, '').trim();
+  t = t.replace(/\s+-\s+\p{Lu}[\p{L}&]*(?: [&\p{Lu}][\p{L}&]*)?\s+-\s+\p{Lu}[\p{L}&]*(?: \p{Lu}[\p{L}&]*)?$/u, '').trim();
+  const m = t.match(/^(.{20,}?)\s+[|—–]\s+([^|—–]{2,60})$/u);
+  if (m && looksLikeOutlet(m[2], source)) t = m[1].replace(/(?:\s+[-–—|:·•]+)+\s*$/u, '').trim();
+  return t;
+}
+
+/**
+ * Cleans a publisher name: a URL becomes its host ("https://novanews.co.za/" -> "novanews.co.za"),
+ * a long name stops at a dash or a bar ("ABC News & Headlines – Australian Broadcasting Corporation"
+ * -> "ABC News & Headlines"), and a dangling dash goes ("Radio Rebelde - ").
+ */
+export function tidySource(source: string): string {
+  let s = source.trim();
+  if (/^https?:\/\//i.test(s) || /^www\./i.test(s)) {
+    try {
+      s = new URL(/^https?:/i.test(s) ? s : `https://${s}`).hostname.replace(/^www\./, '');
+    } catch {
+      // Keep the name as it is.
+    }
+  }
+  s = s.split(/\s+[–—|]\s+/u)[0];
+  return s.replace(/(?:\s+[-–—|:·•]+)+\s*$/u, '').trim();
+}
+
+// Function words of the languages that reach the English pool most often. A title with no English
+// function word and some of these is not English. Words that English also uses ("a", "in", "die",
+// "as", "no", "an") are not here.
+const FUNCTION_WORDS: Record<string, readonly string[]> = {
+  es: ['de', 'el', 'los', 'las', 'del', 'y', 'por', 'con', 'para', 'una', 'que', 'se', 'es', 'al', 'tras', 'sobre', 'según', 'más', 'su', 'sus', 'entre', 'como', 'desde'],
+  pt: ['de', 'os', 'do', 'da', 'dos', 'das', 'em', 'na', 'nas', 'nos', 'com', 'uma', 'ao', 'após', 'mais', 'não', 'pela', 'pelo', 'sobre', 'para', 'que', 'é'],
+  fr: ['de', 'le', 'la', 'les', 'des', 'du', 'une', 'et', 'pour', 'sur', 'au', 'aux', 'dans', 'est', 'avec', 'pas', 'qui', 'par', 'selon', 'après', 'contre'],
+  de: ['der', 'das', 'und', 'mit', 'für', 'nach', 'bei', 'auf', 'ist', 'nicht', 'ein', 'eine', 'im', 'zum', 'zur', 'vom', 'über', 'wird', 'sich', 'gegen'],
+  it: ['il', 'gli', 'della', 'delle', 'del', 'di', 'che', 'per', 'con', 'una', 'è', 'sono', 'dopo', 'nel', 'nella', 'alla', 'dei', 'tra'],
+  nl: ['het', 'een', 'van', 'en', 'op', 'met', 'voor', 'niet', 'naar', 'bij', 'zijn', 'wordt', 'ook'],
+  id: ['yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'dengan', 'ini', 'itu', 'pada', 'akan', 'tidak', 'oleh', 'dalam', 'jadi', 'bisa', 'soal'],
+  so: ['oo', 'iyo', 'ku', 'ka', 'ee', 'uu', 'ay', 'waxa', 'kala', 'kaga', 'gudaha', 'dowladda', 'kana', 'lagu', 'ugu', 'uga', 'ayaa', 'kaddib', 'markii'],
+  sw: ['kwa', 'katika', 'kwamba', 'hiyo', 'huo', 'wa', 'ya', 'za', 'na', 'cha', 'vya', 'baada'],
+  rw: ['muri', 'kandi', 'cyangwa', 'ubwo', 'hamwe', 'yerekeje', 'mu', 'ku', 'bya', 'cya'],
+  tr: ['ve', 'bir', 'için', 'ile', 'bu', 'olarak', 'sonra', 'daha', 'değil', 'gibi'],
+};
+const ENGLISH_WORDS = new Set(
+  'the of to for on and with from by at is are was were be been has have had after over says said amid into its his her their will not but before against under than this that who what why how new as an in a'.split(' '),
+);
+
+/**
+ * A guess at the language of a title, as a BCP-47 code. Null for English, and for a title too short to tell.
+ * Scripts decide first (Arabic, Cyrillic, CJK, ...); Latin titles go by their function words.
+ */
+export function guessLang(title: string): string | null {
+  if (/[぀-ヿ]/.test(title)) return 'ja';
+  if (/[가-힯]/.test(title)) return 'ko';
+  if (/[㐀-鿿]/.test(title)) return 'zh';
+  if (/[؀-ۿ]/.test(title)) return /[پچژگ]/.test(title) ? 'fa' : 'ar';
+  if (/[֐-׿]/.test(title)) return 'he';
+  if (/[Ѐ-ӿ]/.test(title)) return /[іїєґІЇЄҐ]/.test(title) ? 'uk' : 'ru';
+  if (/[Ͱ-Ͽ]/.test(title)) return 'el';
+  if (/[ऀ-ॿ]/.test(title)) return 'hi';
+  if (/[ঀ-৿]/.test(title)) return 'bn';
+  if (/[฀-๿]/.test(title)) return 'th';
+  const words = title.toLowerCase().split(/[^\p{L}']+/u).filter(Boolean);
+  const english = words.filter((w) => ENGLISH_WORDS.has(w)).length;
+  let best: string | null = null;
+  let bestHits = 0;
+  for (const [lang, list] of Object.entries(FUNCTION_WORDS)) {
+    const hits = words.filter((w) => list.includes(w)).length;
+    if (hits > bestHits) {
+      best = lang;
+      bestHits = hits;
+    }
+  }
+  // One function word can be a name ("Las Tablas"): it takes 2.
+  return bestHits >= 2 && bestHits > english ? best : null;
+}

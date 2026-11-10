@@ -1,9 +1,9 @@
 // Google News RSS. No key. The feed terms allow personal, non-commercial use (see README "Data sources and terms").
-import { publisherHost } from '../domain.js';
+import { isPlatform, publisherHost } from '../domain.js';
 import type { Edition } from '../editions.js';
 import { getTextAt } from '../fetch.js';
 import { parseRssItems } from '../rss.js';
-import { cleanText, safeUrl, toIso } from '../text.js';
+import { cleanText, guessLang, safeUrl, tidySource, tidyTitle, toIso } from '../text.js';
 import { UpstreamError, type Candidate, type Feed } from './types.js';
 
 const BASE = 'https://news.google.com/rss';
@@ -29,29 +29,37 @@ export function splitTitle(rawTitle: string, rawSource: string): { title: string
   }
   // "ABC News - Breaking News, Latest News and Videos" becomes "ABC News".
   if (source.includes(' - ')) source = source.slice(0, source.indexOf(' - ')).trim();
-  return { title: cleanText(title, 300), source: cleanText(source, 80) };
+  source = tidySource(source);
+  return { title: tidyTitle(cleanText(title, 300), source), source: cleanText(source, 80) };
 }
 
-/** Parses a Google News feed into candidates. Keeps the feed order as the rank. */
+/**
+ * Parses a Google News feed into candidates. Keeps the feed order as the rank.
+ * `lang` is the language of the edition; for an English feed, each title gets a language guess,
+ * so that a Somali or Spanish title in the English search carries its language tag.
+ * Posts from social and aggregator platforms (Facebook, NewsBreak, ...) are dropped.
+ */
 export function toCandidates(xml: string, feed: Feed, lang: string | null): Candidate[] {
   const out: Candidate[] = [];
   for (const item of parseRssItems(xml, 100)) {
     const url = safeUrl(item.link);
     const { title, source } = splitTitle(item.title, item.source);
     if (!url || !title) continue;
-    const outlets = item.outlets.map((o) => cleanText(o, 80)).filter(Boolean);
+    // The link is a news.google.com redirect. The <source url> attribute names the publisher.
+    const domain = publisherHost(item.sourceUrl, url);
+    if (isPlatform(domain, source)) continue;
+    const outlets = item.outlets.map((o) => tidySource(cleanText(o, 80))).filter(Boolean);
     out.push({
       title,
       url,
       source: source || 'Google News',
-      // The link is a news.google.com redirect. The <source url> attribute names the publisher.
-      domain: publisherHost(item.sourceUrl, url),
+      domain,
       publishedAt: toIso(item.pubDate),
       imageUrl: null,
       feed,
       rank: feed === 'search' ? null : item.rank,
       outlets: outlets.length > 0 ? outlets : source ? [source] : [],
-      lang,
+      lang: lang ?? guessLang(title),
     });
   }
   return out;
@@ -95,9 +103,12 @@ export async function top(edition: Edition, signal: AbortSignal, timeoutMs: numb
   return toCandidates(res.text, 'top', langOf(edition));
 }
 
-/** English search for the country name in the last `days` days (US edition). Up to 100 items. */
-export async function search(name: string, days: number, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
-  const q = encodeURIComponent(`"${name}"`);
+/**
+ * English search in the last `days` days (US edition). Up to 100 items. `query` is the whole search
+ * expression, for example `"Germany"` or `"Georgia" (Tbilisi OR Georgian)`.
+ */
+export async function search(query: string, days: number, signal: AbortSignal, timeoutMs: number): Promise<Candidate[]> {
+  const q = encodeURIComponent(query);
   const res = await getTextAt(`${BASE}/search?q=${q}+when:${days}d&hl=en-US&gl=US&ceid=US:en`, signal, timeoutMs);
   checkRss(res.text);
   return toCandidates(res.text, 'search', null);
