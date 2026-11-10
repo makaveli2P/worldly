@@ -105,8 +105,8 @@ How it works:
    - `critical`: tier 3, 4 or more outlets, 2 leads or 2 editions, and 6 or more outlets or support from ITN, GDACS or USGS.
    - GDACS and USGS never start an alert. A red level can raise a deadly disaster story to critical. An orange or red level lets 2 outlets confirm a disaster.
    - Wars on the ITN "Ongoing" list give at most `major`, and only for a large escalation.
-6. An alert ends 24 hours after its first evidence. A critical alert drops to major when no headline is newer than 6 hours. A story that ITN reported more than 36 hours ago is a follow-up and gives no alert.
-7. The `key` is the country, the kind and the UTC day of the first evidence (`BGR-accident-20261110`). New outlets do not change it.
+6. An alert ends 24 hours after its first evidence. A critical alert drops to major when no headline is newer than 6 hours. A story whose first evidence comes more than 36 hours after the start of the day of a matching ITN blurb is a follow-up and gives no alert. A matching blurb names the same country and kind, and shares a place, the death toll or 2 distinctive words.
+7. The `key` is the country, the kind and the UTC day of the first evidence (`BGR-accident-20261110`). New outlets do not change it. The key can change in one case: the first headline of a story is from before 00:00 UTC, and it leaves its feed while all other headlines are from after 00:00. Then the key moves to the next day. A client must also treat an alert with the same country and kind, whose `since` is less than 24 hours after the `since` of a known alert, as the same story.
 
 Limits:
 
@@ -118,7 +118,7 @@ Limits:
 
 Tools:
 
-- `npx tsx test/breaking/snapshot.ts`: a live run that prints the flagged headlines, the candidates and the response. `--save <name>` saves the flagged headlines to `test/breaking/fixtures/<name>.json` (5 to 10 KB). `--replay <file>` runs the detector on a saved file.
+- `npx tsx test/breaking/snapshot.ts`: a live run that prints the flagged headlines, the candidates and the response. `--save <name>` saves the flagged headlines to `test/breaking/fixtures/<name>.json` (5 to 10 KB). Add `--wide` to also save every headline that names a country, with no link (about 50 KB), so that a later rule change can be checked against headlines that the rules did not flag. `--replay <file>` runs the detector on a saved file.
 - `node scripts/build-aliases.mjs`: builds `api/_lib/breaking/aliases.json` from `public/data/countries.json`. Run it after `npm run data`, and commit the JSON.
 - Optional env: `BREAKING_CONTACT` (a contact address or URL that the server adds to its Wikipedia User-Agent, as the Wikimedia policy asks) and `BREAKING_USER_AGENT`.
 
