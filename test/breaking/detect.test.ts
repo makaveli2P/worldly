@@ -408,3 +408,79 @@ describe('response shape', () => {
     expect(a.source).toBe('DW');
   });
 });
+
+describe('second review', () => {
+  /** Six outlets that lead with `title` (small changes per outlet), `h` hours ago. */
+  const six = (title: string, h = 2): Row[] => [
+    ['bbc_top', 'front', null, 1, 'BBC News', title, h],
+    ['aljazeera', 'front', null, 1, 'Al Jazeera', `${title} today`, h],
+    ['guardian_world', 'front', null, 2, 'The Guardian', `${title}, officials`, h],
+    ['gn_world', 'gn', 'WORLD', 1, 'Reuters', `${title} - live`, h],
+    ['gn_top_us', 'gn', 'US', 1, 'CNN', `Breaking: ${title}`, h],
+    ['gn_top_gb', 'gn', 'GB', 1, 'Sky News', `${title} (report)`, h],
+  ];
+
+  it('a relative of a leader gives no alert', () => {
+    expect(alerts(six('Eric Trump arrested by FBI agents'))).toEqual([]);
+  });
+
+  it('an attacker demonym does not take the alert from the scene', () => {
+    expect(summary(six('Iran supreme leader Khamenei killed in Israeli strike'))).toEqual(['IRN:critical']);
+    expect(summary(six('30 killed in Israeli strikes on Lebanon'))).toEqual(['LBN:major']);
+  });
+
+  const TEXAS: Row[] = [
+    ['bbc_top', 'front', null, 1, 'BBC News', 'Texas school shooting: gunman kills 10 at high school in Houston'],
+    ['sky_world', 'front', null, 1, 'Sky News', 'Ten killed in Texas school shooting'],
+    ['gn_top_us', 'gn', 'US', 1, 'CNN', 'School shooting in Houston, Texas leaves 10 dead'],
+    ['npr_top', 'front', null, 1, 'NPR', 'Gunman kills 10 at Houston high school'],
+  ];
+
+  it('an old ITN blurb that shares one word does not hide a new event', () => {
+    const itn: Itn = {
+      blurbs: [{ text: 'A gunman kills four people in a school shooting in Oregon, United States.', date: '2026-11-06T00:00:00.000Z' }],
+      ongoing: ITN.ongoing,
+    };
+    expect(summary(TEXAS, { itn })).toEqual(['USA:major']);
+  });
+
+  it('an ITN blurb of the same day does not end an event late in the UTC day', () => {
+    // The event is at 22:00 on 10 Nov; ITN dates it "Nov 10" (00:00). The poll is at 13:00 on 11 Nov.
+    const now = Date.parse('2026-11-11T13:00:00Z');
+    const rows: [string, 'front' | 'gn', string | null, number, string, string, number][] = [
+      ['sky_world', 'front', null, 1, 'Sky News', 'Train crash in Egypt kills 30', 10],
+      ['dw_world', 'front', null, 1, 'DW', 'Egypt train collision leaves 30 dead', 3],
+      ['gn_top_gb', 'gn', 'GB', 2, 'BBC News', 'Egypt: 30 killed as trains collide', 2],
+      ['bbc_world', 'front', null, 1, 'BBC News', 'Egypt train crash: 30 dead near Cairo', 15],
+    ];
+    const hl: Headline[] = rows.map(([feed, kind, edition, position, publisher, title, h], i) => ({
+      feed, kind, edition, position, publisher, title, url: `https://example.org/e/${i}`, publishedAt: new Date(now - h * HOUR).toISOString(),
+    }));
+    const itn: Itn = { blurbs: [{ text: 'A train collision in Egypt kills 30 people.', date: '2026-11-10T00:00:00.000Z' }], ongoing: ITN.ongoing };
+    const r = detect({ headlines: hl, itn, hazards: [], now, sources: null });
+    expect(r.response.alerts.map((a) => `${a.country}:${a.level}`)).toEqual(['EGY:major']);
+    // Three days later the same blurb marks a new wave of headlines as a follow-up.
+    const later = now + 60 * HOUR;
+    const old = hl.map((h) => ({ ...h, publishedAt: new Date(Date.parse(h.publishedAt!) + 60 * HOUR).toISOString() }));
+    expect(detect({ headlines: old, itn, hazards: [], now: later, sources: null }).response.alerts).toEqual([]);
+  });
+
+  it('keeps the key across 00:00 UTC while the first headline is in the feeds', () => {
+    // The first headline is from 23:40 on 10 Nov; the poll is at 02:00 on 11 Nov. Outlets that join
+    // after midnight do not change the key. See README "Breaking news" for the case where the
+    // 23:40 headline leaves its feed.
+    const now = Date.parse('2026-11-11T02:00:00Z');
+    const rows: [string, 'front' | 'gn', string | null, number, string, string, number][] = [
+      ['gn_top_in', 'gn', 'IN', 3, 'NDTV', 'Egypt train crash kills 30', 2.33],
+      ['sky_world', 'front', null, 1, 'Sky News', 'Train crash in Egypt kills 30', 1.5],
+      ['dw_world', 'front', null, 1, 'DW', 'Egypt train collision leaves 30 dead', 1.0],
+      ['gn_top_gb', 'gn', 'GB', 2, 'BBC News', 'Egypt: 30 killed as trains collide', 0.5],
+    ];
+    const hl = (n: number): Headline[] => rows.slice(0, n).map(([feed, kind, edition, position, publisher, title, h], i) => ({
+      feed, kind, edition, position, publisher, title, url: `https://example.org/m/${i}`, publishedAt: new Date(now - h * HOUR).toISOString(),
+    }));
+    const keys = (n: number) => detect({ headlines: hl(n), itn: ITN, hazards: [], now, sources: null }).response.alerts.map((a) => a.key);
+    expect(keys(3)).toEqual(['EGY-accident-20261110']);
+    expect(keys(4)).toEqual(['EGY-accident-20261110']);
+  });
+});

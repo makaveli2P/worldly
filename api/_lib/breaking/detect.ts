@@ -14,7 +14,7 @@ export const CONFIG = {
   lookbackHours: 48, // older headlines of the same story still set its start time
   maxAgeHours: 24, // an alert ends this long after its first evidence
   fullHours: 6, // a critical alert with no headline newer than this drops to major
-  itnFollowUpHours: 36, // an ITN blurb older than this marks the story as a follow-up
+  itnFollowUpHours: 36, // a story that starts this long after the day of a matching ITN blurb is a follow-up
   itnSupportHours: 36, // an ITN blurb this new supports the story
   maxSpanHoursNoItn: 12, // with no ITN: a story that spans more hours than this is a follow-up
   maxAlerts: 3,
@@ -148,11 +148,16 @@ function splitStories(id: string, family: Family, items: Item[]): Story[] {
     for (let j = i + 1; j < n; j++) {
       const a = items[i];
       const b = items[j];
-      const samePlace = [...a.places].some((p) => b.places.has(p));
-      // A death toll or two critical-class headlines join a story only when they are close in time
-      // ("Russia invades Estonia" and "Russian forces cross into Estonia").
-      const close = a.time === null || b.time === null || Math.abs(a.time - b.time) <= CONFIG.windowHours * HOUR;
-      const sameDeaths = a.c.deaths > 0 && a.c.deaths === b.c.deaths && close;
+      // A place, a death toll or two critical-class headlines join a story only when they are close in
+      // time ("Russia invades Estonia" and "Russian forces cross into Estonia"). A 30 h old attack in
+      // Mogadishu does not join a new one there.
+      const gap = a.time === null || b.time === null ? 0 : Math.abs(a.time - b.time);
+      const close = gap <= CONFIG.windowHours * HOUR;
+      // Up to 24 h apart, the same place joins only with the same toll or 2 shared words.
+      const sameToll = a.c.deaths > 0 && a.c.deaths === b.c.deaths;
+      const samePlace = [...a.places].some((p) => b.places.has(p)) &&
+        (close || (gap <= CONFIG.maxAgeHours * HOUR && (sameToll || similar(a.tokens, b.tokens, 2))));
+      const sameDeaths = sameToll && close;
       const bothCritical = a.c.tier === 3 && b.c.tier === 3 && close;
       // Headlines far apart in time need 2 shared words: "church" alone does not join two shootings a day apart.
       if (samePlace || sameDeaths || bothCritical || similar(a.tokens, b.tokens, close ? 1 : 2)) parent[find(i)] = find(j);
@@ -233,12 +238,15 @@ function itnEntries(inputs: BreakingInputs): ItnEntry[] {
   return out;
 }
 
-/** True when an ITN blurb tells the same story: same country and family, and a shared place, toll or words. */
-function itnMatches(e: ItnEntry, story: Story): boolean {
+/**
+ * True when an ITN blurb tells the same story: same country and family, and a shared place, toll or
+ * words. `strict` needs 2 shared words: one word ("school") does not make an old blurb the same story.
+ */
+function itnMatches(e: ItnEntry, story: Story, strict: boolean): boolean {
   if (e.family !== story.family || !e.ids.includes(story.id)) return false;
   const places = e.places.get(story.id) ?? new Set();
   return story.items.some(
-    (i) => [...i.places].some((p) => places.has(p)) || (e.deaths > 0 && i.c.deaths === e.deaths) || similar(e.tokens, i.tokens),
+    (i) => [...i.places].some((p) => places.has(p)) || (e.deaths > 0 && i.c.deaths === e.deaths) || similar(e.tokens, i.tokens, strict ? 2 : 1),
   );
 }
 
@@ -337,7 +345,7 @@ export function detect(inputs: BreakingInputs): DetectResult {
 
     const hazards = matchingHazards(story, inputs.hazards, now);
     const red = hazards.some((z) => z.level === 'red');
-    const itnSupport = itn.some((e) => now - e.time <= CONFIG.itnSupportHours * HOUR && itnMatches(e, story));
+    const itnSupport = itn.some((e) => now - e.time <= CONFIG.itnSupportHours * HOUR && itnMatches(e, story, false));
     // A red GDACS or PAGER level raises a deadly disaster story to critical-class.
     if (red && tierEff >= 2) tierEff = 3;
     const position = editions >= 1 || lead >= 1;
@@ -375,7 +383,9 @@ export function detect(inputs: BreakingInputs): DetectResult {
       level = null;
       reason = 'older than 24 h';
     }
-    if (level && itn.some((e) => now - e.time > CONFIG.itnFollowUpHours * HOUR && itnMatches(e, story))) {
+    // An ITN date is the UTC day of the event, with no time. The story is a follow-up only when its
+    // first evidence comes more than 36 h after the start of that day (12 h after its end).
+    if (level && itn.some((e) => since - e.time > CONFIG.itnFollowUpHours * HOUR && itnMatches(e, story, true))) {
       level = null;
       reason = 'ITN follow-up';
     }
