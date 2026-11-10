@@ -1,0 +1,884 @@
+{
+ "source": "State Media Monitor Global Dataset 2026",
+ "citation": "Dragomir, M. (2026). State Media Monitor Global Dataset 2026 (Version 2026.1) [Data set]. Media and Journalism Research Center (MJRC). https://doi.org/10.5281/zenodo.23863495, CC BY 4.0. Worldly added domain names.",
+ "licence": "CC BY 4.0",
+ "generatedAt": "2026-11-10T15:19:54.297Z",
+ "hosts": {
+  "1news.co.nz": [
+   "ISM",
+   "SMM-0645",
+   "Television New Zealand (TVNZ)",
+   "NZL"
+  ],
+  "1tv.com": [
+   "CaPu",
+   "SMM-0125",
+   "Channel One Russia",
+   "RUS"
+  ],
+  "1tv.ru": [
+   "CaPu",
+   "SMM-0125",
+   "Channel One Russia",
+   "RUS"
+  ],
+  "aa.com.tr": [
+   "SC",
+   "SMM-0112",
+   "Anadolu Agency",
+   "TUR"
+  ],
+  "aawsat.com": [
+   "CaPu",
+   "SMM-0245",
+   "Saudi Research and Media Group (SRMG)",
+   "SAU"
+  ],
+  "abc.net.au": [
+   "ISF",
+   "SMM-0640",
+   "Australian Broadcasting Corporation (ABC)",
+   "AUS"
+  ],
+  "agenciabrasil.ebc.com.br": [
+   "SC",
+   "SMM-0621",
+   "Empresa Brasil de Comunicação (EBC)",
+   "BRA"
+  ],
+  "ahram.org.eg": [
+   "SC",
+   "SMM-0273",
+   "National Press Authority (NPA)",
+   "EGY"
+  ],
+  "alarabiya.net": [
+   "CaPu",
+   "SMM-0242",
+   "Middle East Broadcasting Center (MBC)",
+   "SAU"
+  ],
+  "aljazeera.com": [
+   "SC",
+   "SMM-0236",
+   "Al Jazeera Media Network (AJMN)",
+   "QAT"
+  ],
+  "aljazeera.net": [
+   "SC",
+   "SMM-0236",
+   "Al Jazeera Media Network (AJMN)",
+   "QAT"
+  ],
+  "andina.pe": [
+   "SC",
+   "SMM-0628",
+   "Empresa Peruana de Servicios Editoriales (Editora Perú)",
+   "PER"
+  ],
+  "antaranews.com": [
+   "CaPu",
+   "SMM-0498",
+   "Antara",
+   "IDN"
+  ],
+  "app.com.pk": [
+   "SC",
+   "SMM-0553",
+   "Associated Press of Pakistan (APP)",
+   "PAK"
+  ],
+  "arabnews.com": [
+   "CaPu",
+   "SMM-0245",
+   "Saudi Research and Media Group (SRMG)",
+   "SAU"
+  ],
+  "ard.de": [
+   "IP",
+   "SMM-0013",
+   "ARD",
+   "DEU"
+  ],
+  "bbc.co.uk": [
+   "IP",
+   "SMM-0028",
+   "British Broadcasting Corporation (BBC)",
+   "GBR"
+  ],
+  "bbc.com": [
+   "IP",
+   "SMM-0028",
+   "British Broadcasting Corporation (BBC)",
+   "GBR"
+  ],
+  "belta.by": [
+   "SC",
+   "SMM-0187",
+   "BelTA",
+   "BLR"
+  ],
+  "bernama.com": [
+   "CaPu",
+   "SMM-0507",
+   "BERNAMA",
+   "MYS"
+  ],
+  "cbc.ca": [
+   "ISF",
+   "SMM-0636",
+   "Canadian Broadcasting Corporation (CBC)",
+   "CAN"
+  ],
+  "cctv.com": [
+   "SC",
+   "SMM-0438",
+   "China Media Group",
+   "CHN"
+  ],
+  "cgtn.com": [
+   "SC",
+   "SMM-0438",
+   "China Media Group",
+   "CHN"
+  ],
+  "channelnewsasia.com": [
+   "CaPu",
+   "SMM-0519",
+   "Mediacorp",
+   "SGP"
+  ],
+  "chinadaily.com.cn": [
+   "SC",
+   "SMM-0436",
+   "China Daily Group",
+   "CHN"
+  ],
+  "chronicle.co.zw": [
+   "CaPu",
+   "SMM-0347",
+   "Zimpapers",
+   "ZWE"
+  ],
+  "cna.com.tw": [
+   "ISFM",
+   "SMM-0480",
+   "Central News Agency (CNA)",
+   "TWN"
+  ],
+  "dailynews.co.tz": [
+   "CaPu",
+   "SMM-0336",
+   "Tanzania Standard Newspapers",
+   "TZA"
+  ],
+  "dailysabah.com": [
+   "CaPr",
+   "SMM-0120",
+   "Turkuvaz Media Group",
+   "TUR"
+  ],
+  "daserste.de": [
+   "IP",
+   "SMM-0013",
+   "ARD",
+   "DEU"
+  ],
+  "ddnews.gov.in": [
+   "SC",
+   "SMM-0548",
+   "Prasar Bharati",
+   "IND"
+  ],
+  "deutschlandfunk.de": [
+   "IP",
+   "SMM-0015",
+   "Deutschlandradio",
+   "DEU"
+  ],
+  "dr.dk": [
+   "ISFM",
+   "SMM-0005",
+   "Danish Broadcasting Corporation (DR)",
+   "DNK"
+  ],
+  "dw.com": [
+   "ISF",
+   "SMM-0014",
+   "Deutsche Welle (DW)",
+   "DEU"
+  ],
+  "ebc.com.br": [
+   "SC",
+   "SMM-0621",
+   "Empresa Brasil de Comunicação (EBC)",
+   "BRA"
+  ],
+  "efe.com": [
+   "ISFM",
+   "SMM-0049",
+   "EFE",
+   "ESP"
+  ],
+  "elperuano.pe": [
+   "SC",
+   "SMM-0628",
+   "Empresa Peruana de Servicios Editoriales (Editora Perú)",
+   "PER"
+  ],
+  "en.antaranews.com": [
+   "CaPu",
+   "SMM-0498",
+   "Antara",
+   "IDN"
+  ],
+  "en.irna.ir": [
+   "SC",
+   "SMM-0201",
+   "Islamic Republic News Agency (IRNA)",
+   "IRN"
+  ],
+  "en.people.cn": [
+   "CaPu",
+   "SMM-0445",
+   "People's Daily",
+   "CHN"
+  ],
+  "en.yna.co.kr": [
+   "IP",
+   "SMM-0479",
+   "Yonhap News Agency",
+   "KOR"
+  ],
+  "ena.et": [
+   "SC",
+   "SMM-0304",
+   "Ethiopian News Agency (ENA)",
+   "ETH"
+  ],
+  "eng.belta.by": [
+   "SC",
+   "SMM-0187",
+   "BelTA",
+   "BLR"
+  ],
+  "english.ahram.org.eg": [
+   "SC",
+   "SMM-0273",
+   "National Press Authority (NPA)",
+   "EGY"
+  ],
+  "english.alarabiya.net": [
+   "CaPu",
+   "SMM-0242",
+   "Middle East Broadcasting Center (MBC)",
+   "SAU"
+  ],
+  "english.news.cn": [
+   "CaPu",
+   "SMM-0451",
+   "Xinhua (New China News Agency)",
+   "CHN"
+  ],
+  "ert.gr": [
+   "CaPu",
+   "SMM-0037",
+   "Hellenic Broadcasting Corporation (ERT)",
+   "GRC"
+  ],
+  "ertnews.gr": [
+   "CaPu",
+   "SMM-0037",
+   "Hellenic Broadcasting Corporation (ERT)",
+   "GRC"
+  ],
+  "focustaiwan.tw": [
+   "ISFM",
+   "SMM-0480",
+   "Central News Agency (CNA)",
+   "TWN"
+  ],
+  "france.tv": [
+   "ISFM",
+   "SMM-0010",
+   "France Télévisions",
+   "FRA"
+  ],
+  "france24.com": [
+   "ISFM",
+   "SMM-0009",
+   "France Médias Monde",
+   "FRA"
+  ],
+  "francetvinfo.fr": [
+   "ISFM",
+   "SMM-0010",
+   "France Télévisions",
+   "FRA"
+  ],
+  "gbcghanaonline.com": [
+   "SC",
+   "SMM-0387",
+   "Ghana Broadcasting Corporation (GBC)",
+   "GHA"
+  ],
+  "globaltimes.cn": [
+   "CaPu",
+   "SMM-0445",
+   "People's Daily",
+   "CHN"
+  ],
+  "gna.org.gh": [
+   "SC",
+   "SMM-0388",
+   "Ghana News Agency (GNA)",
+   "GHA"
+  ],
+  "granma.cu": [
+   "SC",
+   "SMM-0565",
+   "Granma",
+   "CUB"
+  ],
+  "herald.co.zw": [
+   "CaPu",
+   "SMM-0347",
+   "Zimpapers",
+   "ZWE"
+  ],
+  "iol.co.za": [
+   "CaPu",
+   "SMM-0376",
+   "Independent Media",
+   "ZAF"
+  ],
+  "iribnews.ir": [
+   "SC",
+   "SMM-0202",
+   "Islamic Republic of Iran Broadcasting (IRIB)",
+   "IRN"
+  ],
+  "irna.ir": [
+   "SC",
+   "SMM-0201",
+   "Islamic Republic News Agency (IRNA)",
+   "IRN"
+  ],
+  "kan.org.il": [
+   "ISFM",
+   "SMM-0214",
+   "Israeli Public Broadcasting Corporation (IPBC)",
+   "ISR"
+  ],
+  "kbc.co.ke": [
+   "SC",
+   "SMM-0310",
+   "Kenya Broadcasting Corporatoon (KBC)",
+   "KEN"
+  ],
+  "kbs.co.kr": [
+   "IP",
+   "SMM-0477",
+   "Korean Broadcasting System (KBS)",
+   "KOR"
+  ],
+  "kuna.net.kw": [
+   "SC",
+   "SMM-0222",
+   "Kuwait News Agency (KUNA)",
+   "KWT"
+  ],
+  "lusa.pt": [
+   "ISFM",
+   "SMM-0040",
+   "Lusa News Agency",
+   "PRT"
+  ],
+  "mapnews.ma": [
+   "SC",
+   "SMM-0276",
+   "Agence Maghreb Arabe Presse (MAP)",
+   "MAR"
+  ],
+  "mediacorp.sg": [
+   "CaPu",
+   "SMM-0519",
+   "Mediacorp",
+   "SGP"
+  ],
+  "mehrnews.com": [
+   "SC",
+   "SMM-0211",
+   "The Islamic Ideology Dissemination Organization (IIDO)",
+   "IRN"
+  ],
+  "nannews.ng": [
+   "SC",
+   "SMM-0413",
+   "News Agency of Nigeria (NAN)",
+   "NGA"
+  ],
+  "news.cn": [
+   "CaPu",
+   "SMM-0451",
+   "Xinhua (New China News Agency)",
+   "CHN"
+  ],
+  "newsonair.gov.in": [
+   "SC",
+   "SMM-0548",
+   "Prasar Bharati",
+   "IND"
+  ],
+  "nhk.jp": [
+   "ISM",
+   "SMM-0456",
+   "Japan Broadcasting Corporation (NHK)",
+   "JPN"
+  ],
+  "nhk.or.jp": [
+   "ISM",
+   "SMM-0456",
+   "Japan Broadcasting Corporation (NHK)",
+   "JPN"
+  ],
+  "nos.nl": [
+   "ISF",
+   "SMM-0022",
+   "Nederlandse Publieke Omroep (NPO)",
+   "NLD"
+  ],
+  "npo.nl": [
+   "ISF",
+   "SMM-0022",
+   "Nederlandse Publieke Omroep (NPO)",
+   "NLD"
+  ],
+  "npr.org": [
+   "IP",
+   "SMM-0637",
+   "National Public Radio (NPR)",
+   "USA"
+  ],
+  "nrk.no": [
+   "ISFM",
+   "SMM-0024",
+   "Norwegian Broadcasting Corporation (NRK)",
+   "NOR"
+  ],
+  "nta.ng": [
+   "SC",
+   "SMM-0414",
+   "Nigerian Television Authority (NTA)",
+   "NGA"
+  ],
+  "orf.at": [
+   "IP",
+   "SMM-0001",
+   "Österreichischer Rundfunk (ORF)",
+   "AUT"
+  ],
+  "pap.pl": [
+   "ISM",
+   "SMM-0087",
+   "Polish Press Agency (PAP)",
+   "POL"
+  ],
+  "pbs.org": [
+   "IP",
+   "SMM-0638",
+   "Public Broadcasting Service (PBS)",
+   "USA"
+  ],
+  "people.com.cn": [
+   "CaPu",
+   "SMM-0445",
+   "People's Daily",
+   "CHN"
+  ],
+  "plenglish.com": [
+   "SC",
+   "SMM-0567",
+   "Prensa Latina",
+   "CUB"
+  ],
+  "pna.gov.ph": [
+   "SC",
+   "SMM-0516",
+   "Philippines News Agency (PNA)",
+   "PHL"
+  ],
+  "prasarbharati.gov.in": [
+   "SC",
+   "SMM-0548",
+   "Prasar Bharati",
+   "IND"
+  ],
+  "prensa-latina.cu": [
+   "SC",
+   "SMM-0567",
+   "Prensa Latina",
+   "CUB"
+  ],
+  "presstv.ir": [
+   "SC",
+   "SMM-0202",
+   "Islamic Republic of Iran Broadcasting (IRIB)",
+   "IRN"
+  ],
+  "ptv.com.pk": [
+   "SC",
+   "SMM-0555",
+   "Pakistan Television Corporation (PTV)",
+   "PAK"
+  ],
+  "ptvnews.ph": [
+   "SC",
+   "SMM-0514",
+   "People's Television Network (PTV)",
+   "PHL"
+  ],
+  "qna.org.qa": [
+   "SC",
+   "SMM-0241",
+   "Qatar News Agency (QNA)",
+   "QAT"
+  ],
+  "radio-canada.ca": [
+   "ISF",
+   "SMM-0636",
+   "Canadian Broadcasting Corporation (CBC)",
+   "CAN"
+  ],
+  "radiofrance.fr": [
+   "ISFM",
+   "SMM-0011",
+   "Radio France",
+   "FRA"
+  ],
+  "rai.it": [
+   "CaPu",
+   "SMM-0038",
+   "Radiotelevisione italiana (RAI)",
+   "ITA"
+  ],
+  "rainews.it": [
+   "CaPu",
+   "SMM-0038",
+   "Radiotelevisione italiana (RAI)",
+   "ITA"
+  ],
+  "rfa.org": [
+   "SC",
+   "SMM-0639",
+   "U.S. Agency for Global Media (USAGM)",
+   "USA"
+  ],
+  "rferl.org": [
+   "SC",
+   "SMM-0639",
+   "U.S. Agency for Global Media (USAGM)",
+   "USA"
+  ],
+  "rfi.fr": [
+   "ISFM",
+   "SMM-0009",
+   "France Médias Monde",
+   "FRA"
+  ],
+  "rg.ru": [
+   "SC",
+   "SMM-0134",
+   "Rossiyskaya Gazeta",
+   "RUS"
+  ],
+  "ria.ru": [
+   "SC",
+   "SMM-0133",
+   "Rossiya Segodnya",
+   "RUS"
+  ],
+  "rnz.co.nz": [
+   "ISFM",
+   "SMM-0644",
+   "Radio New Zealand (RNZ)",
+   "NZL"
+  ],
+  "rt.com": [
+   "SC",
+   "SMM-0135",
+   "RT",
+   "RUS"
+  ],
+  "rtbf.be": [
+   "ISFM",
+   "SMM-0003",
+   "Radio-télévision belge de la Communauté française (RTBF)",
+   "BEL"
+  ],
+  "rte.ie": [
+   "ISFM",
+   "SMM-0018",
+   "Raidió Teilifís Éireann (RTE)",
+   "IRL"
+  ],
+  "rtp.pt": [
+   "IP",
+   "SMM-0041",
+   "Rádio e Televisão de Portugal (RTP)",
+   "PRT"
+  ],
+  "rts.ch": [
+   "IP",
+   "SMM-0027",
+   "Swiss Broadcasting Corporation (SRG SSR)",
+   "CHE"
+  ],
+  "rtve.es": [
+   "ISFM",
+   "SMM-0046",
+   "Corporación de Radio y Televisión Española (RTVE)",
+   "ESP"
+  ],
+  "sabah.com.tr": [
+   "CaPr",
+   "SMM-0120",
+   "Turkuvaz Media Group",
+   "TUR"
+  ],
+  "sabcnews.com": [
+   "CaPu",
+   "SMM-0377",
+   "South African Broadcasting Corporation (SABC)",
+   "ZAF"
+  ],
+  "sana.sy": [
+   "SC",
+   "SMM-0248",
+   "Syrian Arab News Agency (SANA)",
+   "SYR"
+  ],
+  "sbs.com.au": [
+   "ISF",
+   "SMM-0641",
+   "Special Broadcasting Service (SBS)",
+   "AUS"
+  ],
+  "smotrim.ru": [
+   "SC",
+   "SMM-0123",
+   "All-Russia State Television and Radio Broadcasting Company (VGTRK)",
+   "RUS"
+  ],
+  "spa.gov.sa": [
+   "SC",
+   "SMM-0244",
+   "Saudi Press Agency (SPA)",
+   "SAU"
+  ],
+  "sputnikglobe.com": [
+   "SC",
+   "SMM-0133",
+   "Rossiya Segodnya",
+   "RUS"
+  ],
+  "sputniknews.com": [
+   "SC",
+   "SMM-0133",
+   "Rossiya Segodnya",
+   "RUS"
+  ],
+  "srf.ch": [
+   "IP",
+   "SMM-0027",
+   "Swiss Broadcasting Corporation (SRG SSR)",
+   "CHE"
+  ],
+  "suspilne.media": [
+   "ISFM",
+   "SMM-0194",
+   "Public Broadcasting Company of Ukraine (Suspilne)",
+   "UKR"
+  ],
+  "svt.se": [
+   "IP",
+   "SMM-0026",
+   "Sveriges Television (SVT)",
+   "SWE"
+  ],
+  "swissinfo.ch": [
+   "IP",
+   "SMM-0027",
+   "Swiss Broadcasting Corporation (SRG SSR)",
+   "CHE"
+  ],
+  "tagesschau.de": [
+   "IP",
+   "SMM-0013",
+   "ARD",
+   "DEU"
+  ],
+  "tasnimnews.com": [
+   "CaPr",
+   "SMM-0209",
+   "Revolutionary Guards Media: Tasnim News Agency",
+   "IRN"
+  ],
+  "tass.com": [
+   "SC",
+   "SMM-0137",
+   "TASS",
+   "RUS"
+  ],
+  "tass.ru": [
+   "SC",
+   "SMM-0137",
+   "TASS",
+   "RUS"
+  ],
+  "tehrantimes.com": [
+   "SC",
+   "SMM-0211",
+   "The Islamic Ideology Dissemination Organization (IIDO)",
+   "IRN"
+  ],
+  "thenationalnews.com": [
+   "CaPu",
+   "SMM-0254",
+   "International Media Investments (IMI)",
+   "ARE"
+  ],
+  "trt.net.tr": [
+   "SC",
+   "SMM-0119",
+   "Türkiye Radyo ve Televizyon Kurumu (TRT)",
+   "TUR"
+  ],
+  "trthaber.com": [
+   "SC",
+   "SMM-0119",
+   "Türkiye Radyo ve Televizyon Kurumu (TRT)",
+   "TUR"
+  ],
+  "trtworld.com": [
+   "SC",
+   "SMM-0119",
+   "Türkiye Radyo ve Televizyon Kurumu (TRT)",
+   "TUR"
+  ],
+  "tvnz.co.nz": [
+   "ISM",
+   "SMM-0645",
+   "Television New Zealand (TVNZ)",
+   "NZL"
+  ],
+  "tvp.info": [
+   "ISFM",
+   "SMM-0089",
+   "Polish Television (TVP)",
+   "POL"
+  ],
+  "tvp.pl": [
+   "ISFM",
+   "SMM-0089",
+   "Polish Television (TVP)",
+   "POL"
+  ],
+  "ukrinform.net": [
+   "SC",
+   "SMM-0196",
+   "Ukrinform",
+   "UKR"
+  ],
+  "ukrinform.ua": [
+   "SC",
+   "SMM-0196",
+   "Ukrinform",
+   "UKR"
+  ],
+  "vesti.ru": [
+   "SC",
+   "SMM-0123",
+   "All-Russia State Television and Radio Broadcasting Company (VGTRK)",
+   "RUS"
+  ],
+  "vietnamplus.vn": [
+   "CaPu",
+   "SMM-0532",
+   "Vietnam News Agency (VNA)",
+   "VNM"
+  ],
+  "vnanet.vn": [
+   "CaPu",
+   "SMM-0532",
+   "Vietnam News Agency (VNA)",
+   "VNM"
+  ],
+  "voanews.com": [
+   "SC",
+   "SMM-0639",
+   "U.S. Agency for Global Media (USAGM)",
+   "USA"
+  ],
+  "von.gov.ng": [
+   "SC",
+   "SMM-0422",
+   "Voice of Nigeria (VON)",
+   "NGA"
+  ],
+  "vrt.be": [
+   "ISFM",
+   "SMM-0004",
+   "Vlaamse Radio- en Televisieomroeporganisatie (VRT)",
+   "BEL"
+  ],
+  "wam.ae": [
+   "SC",
+   "SMM-0253",
+   "Emirates News Agency (WAM)",
+   "ARE"
+  ],
+  "web.nhk": [
+   "ISM",
+   "SMM-0456",
+   "Japan Broadcasting Corporation (NHK)",
+   "JPN"
+  ],
+  "www3.nhk.or.jp": [
+   "ISM",
+   "SMM-0456",
+   "Japan Broadcasting Corporation (NHK)",
+   "JPN"
+  ],
+  "xinhuanet.com": [
+   "CaPu",
+   "SMM-0451",
+   "Xinhua (New China News Agency)",
+   "CHN"
+  ],
+  "yle.fi": [
+   "ISM",
+   "SMM-0007",
+   "Yleisradio Oy (YLE)",
+   "FIN"
+  ],
+  "yna.co.kr": [
+   "IP",
+   "SMM-0479",
+   "Yonhap News Agency",
+   "KOR"
+  ],
+  "zdf.de": [
+   "IP",
+   "SMM-0016",
+   "Zweites Deutsches Fernsehen (ZDF)",
+   "DEU"
+  ],
+  "zdfheute.de": [
+   "IP",
+   "SMM-0016",
+   "Zweites Deutsches Fernsehen (ZDF)",
+   "DEU"
+  ]
+ }
+}
