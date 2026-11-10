@@ -53,7 +53,7 @@ const GENERIC = new Set([
   // Event words of one family: "jet crash" and "bus crash" in one country are two stories.
   'crash', 'crashes', 'collision', 'fire', 'blaze', 'explosion', 'blast', 'flood', 'floods', 'flooding', 'storm',
   'bombing', 'missile', 'missiles', 'drone', 'drones', 'airstrike', 'airstrikes', 'wounded', 'injures', 'victims',
-  'mass', 'deadly',
+  'mass', 'deadly', 'gunman', 'gunmen', 'shooter', 'attacker', 'attackers',
 ]);
 
 /** "invades", "invaded", "invade" -> "invad". A crude stem, enough for headline words. */
@@ -73,12 +73,15 @@ function storyTokens(title: string): Set<string> {
   );
 }
 
-/** Two token sets tell one story: 3 shared words, or half of the shorter set (also for short titles). */
-function similar(a: Set<string>, b: Set<string>): boolean {
+/**
+ * Two token sets tell one story: 3 shared words, or half of the shorter set (also for short titles).
+ * `minShared` sets how many words the second test needs.
+ */
+function similar(a: Set<string>, b: Set<string>, minShared = 1): boolean {
   let shared = 0;
   for (const w of a) if (b.has(w)) shared += 1;
   const min = Math.min(a.size, b.size);
-  return shared >= 3 || (min >= 1 && shared >= 1 && shared / min >= 0.5);
+  return shared >= 3 || (min >= 1 && shared >= minShared && shared / min >= 0.5);
 }
 
 /** "The Hindu", "thehindu.com" and "THE HINDU" give one key. */
@@ -151,7 +154,8 @@ function splitStories(id: string, family: Family, items: Item[]): Story[] {
       const close = a.time === null || b.time === null || Math.abs(a.time - b.time) <= CONFIG.windowHours * HOUR;
       const sameDeaths = a.c.deaths > 0 && a.c.deaths === b.c.deaths && close;
       const bothCritical = a.c.tier === 3 && b.c.tier === 3 && close;
-      if (samePlace || sameDeaths || bothCritical || similar(a.tokens, b.tokens)) parent[find(i)] = find(j);
+      // Headlines far apart in time need 2 shared words: "church" alone does not join two shootings a day apart.
+      if (samePlace || sameDeaths || bothCritical || similar(a.tokens, b.tokens, close ? 1 : 2)) parent[find(i)] = find(j);
     }
   }
   const groups = new Map<number, Item[]>();

@@ -222,6 +222,21 @@ describe('thresholds', () => {
     ])).toEqual([]);
   });
 
+  it('an older story in the same country does not hide a new one', () => {
+    const old: Row[] = [
+      ['bbc_world', 'front', null, 30, 'BBC News', 'Gunman kills 5 at Michigan church', 30],
+      ['gn_top_us', 'gn', 'US', 30, 'CNN', 'Michigan church shooting leaves 5 dead', 30],
+    ];
+    const fresh: Row[] = [
+      ['bbc_world', 'front', null, 1, 'BBC News', 'Gunman kills 8 at Texas church'],
+      ['gn_top_us', 'gn', 'US', 1, 'CNN', 'Texas church shooting: 8 dead'],
+      ['gn_world', 'gn', 'WORLD', 2, 'Reuters', 'Shooter kills eight at church in Texas'],
+    ];
+    const a = alerts([...old, ...fresh]);
+    expect(a.map((x) => `${x.country}:${x.level}`)).toEqual(['USA:major']);
+    expect(Date.parse(a[0].since)).toBeGreaterThan(NOW - 3 * HOUR);
+  });
+
   it('a GDACS or USGS record alone never alerts', () => {
     expect(alerts([], { hazards: [RED_QUAKE] })).toEqual([]);
   });
