@@ -1,6 +1,8 @@
 // Right plate (desktop) / "News" tab (mobile): top stories for one country, numbered 01-05.
+// When the country has a live breaking alert, one BREAKING row sits above the stories (setBreaking).
 
-import type { NewsArticle, NewsProvider, NewsResponse } from '../types';
+import type { BreakingAlert, NewsArticle, NewsProvider, NewsResponse } from '../types';
+import { ageWords, sameView } from './alerts-model';
 import { h } from './dom';
 import { age, utcTime } from './format';
 import { getLayout, type PanelLayout } from './layout';
@@ -13,6 +15,7 @@ const PROVIDER_LABEL: Record<NewsProvider, string> = {
 };
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
+const AGE_TICK_MS = 60_000;
 
 export class NewsPanel {
   private readonly layout: PanelLayout;
@@ -22,11 +25,87 @@ export class NewsPanel {
   private readonly heading = h('h2', { tabindex: -1 }, 'Top stories', this.country);
   private readonly count = h('span', { class: 'news-count mono', 'aria-hidden': 'true' });
   private readonly content = h('div', { class: 'news-content' });
+  // The BREAKING row. It stays in place across the loading, list and error states of the stories.
+  private readonly breaking = h('div', { class: 'news-brk-slot' });
+  private alert: BreakingAlert | null = null;
+  private ageTimer = 0;
 
   constructor(root: HTMLElement, opts: { onClose: () => void }) {
     this.layout = getLayout(root);
     this.body = this.layout.register('news', 'News', opts.onClose);
-    this.body.append(h('header', { class: 'news-h' }, this.heading, this.count), this.content);
+    this.body.append(h('header', { class: 'news-h' }, this.heading, this.count), this.breaking, this.content);
+  }
+
+  /**
+   * The live alert of the shown country, or null. The row shows the BREAKING tag, the headline as a link
+   * to the story (new tab), the source and the age. The same alert again changes no DOM, so focus stays.
+   */
+  setBreaking(alert: BreakingAlert | null): void {
+    const prev = this.alert;
+    if (!prev && !alert) return;
+    if (prev && alert && sameView([prev], [alert])) {
+      this.tickAge();
+      return;
+    }
+    this.alert = alert;
+    clearInterval(this.ageTimer);
+    this.ageTimer = 0;
+    if (!alert) {
+      this.breaking.replaceChildren();
+      return;
+    }
+    // Keep keyboard focus on the link when a new poll changes the alert.
+    const hadFocus = this.breaking.contains(document.activeElement);
+    const now = Date.now();
+    const link = h(
+      'a',
+      {
+        class: 'news-brk-link',
+        href: alert.url,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        'aria-label': this.breakingLabel(alert, now),
+      },
+      h(
+        'span',
+        { class: 'news-brk-top' },
+        h(
+          'span',
+          { class: 'brk-tag', 'data-level': alert.level, 'aria-hidden': 'true' },
+          h('i', { class: 'brk-dot' }),
+          h('span', { class: 'brk-tag-text' }, 'BREAKING'),
+        ),
+        h(
+          'span',
+          { class: 'meta', 'aria-hidden': 'true' },
+          alert.source && h('span', { class: 'src' }, alert.source),
+          h('time', { class: 't mono', datetime: alert.since }, age(alert.since, now) ?? ''),
+        ),
+      ),
+      h('span', { class: 'news-brk-head', 'aria-hidden': 'true' }, alert.headline),
+    );
+    this.breaking.replaceChildren(h('section', { class: 'news-brk', 'data-level': alert.level, 'aria-label': 'Breaking news' }, link));
+    if (hadFocus) link.focus({ preventScroll: true });
+    this.ageTimer = window.setInterval(() => this.tickAge(), AGE_TICK_MS);
+  }
+
+  /** Updates the age text in place. The focused link keeps its name until it loses focus. */
+  private tickAge(): void {
+    const a = this.alert;
+    if (!a) return;
+    const now = Date.now();
+    const time = this.breaking.querySelector('time');
+    const text = age(a.since, now) ?? '';
+    if (time && time.textContent !== text) time.textContent = text;
+    const link = this.breaking.querySelector('a');
+    const label = this.breakingLabel(a, now);
+    if (link && link !== document.activeElement && link.getAttribute('aria-label') !== label) link.setAttribute('aria-label', label);
+  }
+
+  private breakingLabel(a: BreakingAlert, now: number): string {
+    const when = ageWords(a.since, now);
+    const tail = [a.source, when].filter(Boolean).join(', ');
+    return `Breaking news, ${a.level}: ${a.headline}${tail ? `. ${tail}` : ''}. Opens in a new tab.`;
   }
 
   showLoading(countryName: string): void {
@@ -111,6 +190,7 @@ export class NewsPanel {
   }
 
   hide(): void {
+    this.setBreaking(null);
     this.layout.setOpen('news', false);
   }
 

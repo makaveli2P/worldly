@@ -6,7 +6,7 @@ import { Overlay } from './overlay';
 import { unpackLabelSites, usePrecomputedLabelSites, type LabelsFile } from './overlay/labelPoints';
 import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, RESET_EVENT, Tooltip, mountShell } from './ui';
 import { BreakingBar, startBreakingFeed, type BreakingFeedOptions } from './ui/alerts';
-import type { CountryId, CountryInfo, NewsResponse } from './types';
+import type { BreakingAlert, CountryId, CountryInfo, NewsResponse } from './types';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const shell = mountShell(app);
@@ -159,6 +159,13 @@ async function start(): Promise<void> {
   const NEWS_CACHE_MS = 10 * 60 * 1000;
   const newsCache = new Map<CountryId, { data: NewsResponse; at: number }>();
   let newsRequest: AbortController | null = null;
+  // The breaking alerts on screen (BreakingBar.visible()), most severe first. The feed starts at the end of start().
+  let liveAlerts: readonly BreakingAlert[] = [];
+
+  /** The news plate (the News tab on mobile) shows the live alert of the selected country in a BREAKING row. */
+  function syncNewsBreaking(): void {
+    news.setBreaking((selected && liveAlerts.find((a) => a.country === selected)) || null);
+  }
 
   async function loadNews(id: CountryId, name: string): Promise<void> {
     newsRequest?.abort();
@@ -210,6 +217,7 @@ async function start(): Promise<void> {
     const name = nameOf(id) ?? id;
     if (info) details.show(info);
     else details.hide();
+    syncNewsBreaking();
     void loadNews(id, name);
     document.title = `${name} · Worldly`;
     if (decodeURIComponent(location.hash.slice(1)) !== id) history.replaceState(null, '', `#${id}`);
@@ -376,6 +384,8 @@ async function start(): Promise<void> {
     },
     onPreview: (a) => overlay.pulseAlert(a.country),
     onChange: (alerts, fresh) => {
+      liveAlerts = alerts;
+      syncNewsBreaking();
       overlay.setAlerts(alerts.map((a) => ({ id: a.country, key: a.key, level: a.level, fresh: fresh.has(a.key) })));
       // On mobile the header gains or loses a row: the globe and the labels follow its height.
       if (alerts.length > 0 !== hadAlerts) {
@@ -392,7 +402,16 @@ async function start(): Promise<void> {
     if (mock?.startsWith('mock')) source = () => import('./dev/breaking-mock').then((m) => m.mockBreaking(mock));
   }
   // After the first globe frame, and off the critical path. Safari has no requestIdleCallback.
-  const beginFeed = () => startBreakingFeed({ onAlerts: (alerts) => breaking.set(alerts), source });
+  const beginFeed = () =>
+    startBreakingFeed({
+      onAlerts: (alerts) => {
+        breaking.set(alerts);
+        // onChange runs only when the keys or levels change. A new headline or link for the same alert comes here.
+        liveAlerts = breaking.visible();
+        syncNewsBreaking();
+      },
+      source,
+    });
   if ('requestIdleCallback' in window) requestIdleCallback(beginFeed, { timeout: 4000 });
   else setTimeout(beginFeed, 2000);
 }
