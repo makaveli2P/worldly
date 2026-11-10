@@ -137,6 +137,40 @@ The key stays on the server.
 
 `npm run audit:news -- --base http://localhost:5173 --out after.json` loads the news of 15 countries and scores each list against Google's own national ranking (age, outlets, duplicates, sport and soft items, latency). `--from after.json --ref before.json` scores a saved run again on the reference of another run, with no network.
 
+## Breaking news
+
+`GET /api/breaking` returns a `BreakingResponse` (see `src/types.ts`): at most 3 alerts, most severe first. On a quiet day the list is empty. An alert is `critical` or `major`, and its `key` stays the same while the story lasts.
+
+How it works:
+
+1. The server reads 24 feeds in parallel: 16 front-page feeds of 12 outlets (BBC News, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India, The New York Times, Euronews) and 8 Google News editions (World, US, GB, IN, AU, CA, ZA, SG). It also reads Wikipedia "In the news" (ITN), GDACS and USGS. NHK has no English feed that works (its English JSON stopped on 5 September 2026), so the server does not read NHK.
+2. A classifier gives each headline a kind (`conflict`, `attack`, `disaster`, `accident`, `politics`) and a tier. Tier 3 is a coup, the death or removal of a current head of state, the start of an invasion, or 50 or more dead. Tier 2 is a deadly strike, a mass shooting, or a deadly earthquake or crash.
+3. A word-boundary matcher finds the country where the event happens. It uses an alias table of names, demonyms, places and leaders, so "Woman" does not match Oman and "Paris, Texas" is the US.
+4. The detector groups headlines into stories. A story counts the independent outlets. Outlets that carry one wire story word for word count as one. Two outlets must agree on the tier.
+5. Levels:
+   - `major`: tier 2 or more, 3 or more outlets, and the story leads a front page (top 3) or a Google News edition (top 12).
+   - `critical`: tier 3, 4 or more outlets, 2 leads or 2 editions, and 6 or more outlets or support from ITN, GDACS or USGS.
+   - GDACS and USGS never start an alert. A red level can raise a deadly disaster story to critical. An orange or red level lets 2 outlets confirm a disaster.
+   - Wars on the ITN "Ongoing" list give at most `major`, and only for a large escalation.
+6. An alert ends 24 hours after its first evidence. A critical alert drops to major when no headline is newer than 6 hours. A story whose first evidence comes more than 36 hours after the start of the day of a matching ITN blurb is a follow-up and gives no alert. A matching blurb names the same country and kind, and shares a place, the death toll or 2 distinctive words.
+7. The `key` is the country, the kind and the UTC day of the first evidence (`BGR-accident-20261110`). New outlets do not change it. The key can change in one case: the first headline of a story is from before 00:00 UTC, and it leaves its feed while all other headlines are from after 00:00. Then the key moves to the next day. A client must also treat an alert with the same country and kind, whose `since` is less than 24 hours after the `since` of a known alert, as the same story.
+
+Limits:
+
+- Precision comes first: the detector prefers a miss to a false alarm. It reads English headlines only, so an event that only local or non-English media report can come late or not at all.
+- The server keeps no state. A Vercel CDN region caches the answer for 5 minutes (`s-maxage=300`). When fewer than half of the sources answer, the cache is 60 seconds.
+- A story near the threshold (3 outlets) can come and go between polls, when one headline leaves a feed or one feed is slow.
+- The rules are regular expressions. When a false alarm happens, save the inputs and add a test (see below).
+- The leader names come from `public/data/countries.json`. A new leader is unknown until the next `npm run data`.
+
+Tools:
+
+- `npx tsx test/breaking/snapshot.ts`: a live run that prints the flagged headlines, the candidates and the response. `--save <name>` saves the flagged headlines to `test/breaking/fixtures/<name>.json` (5 to 10 KB). Add `--wide` to also save every headline that names a country, with no link (about 50 KB), so that a later rule change can be checked against headlines that the rules did not flag. `--replay <file>` runs the detector on a saved file.
+- `node scripts/build-aliases.mjs`: builds `api/_lib/breaking/aliases.json` from `public/data/countries.json`. Run it after `npm run data`, and commit the JSON.
+- Optional env: `BREAKING_CONTACT` (a contact address or URL that the server adds to its Wikipedia User-Agent, as the Wikimedia policy asks) and `BREAKING_USER_AGENT`.
+
+Terms: the feed terms of Google News, The Times of India, Al Jazeera and The Guardian allow personal use only, and the terms of other feeds were not all checked. The owner accepts this risk for this non-commercial site. Show BBC stories as "BBC News", with no BBC logo.
+
 ## Refresh the country data
 
 ```sh
