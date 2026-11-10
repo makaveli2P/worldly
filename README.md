@@ -47,6 +47,8 @@ The design is "Swiss / instrument". The reference mockup is in `mockups/swiss/`.
 | hover | `#F4F4F1` | `#202020` | Row hover (`styles.css` only) |
 | accent | `#E5361B` | `#F24B2F` | The selection: fills and markers |
 | accent-text | `#D12F15` | `#F24B2F` | Small red text (`styles.css` only) |
+| lean-left | `#1F5BD6` | `#5C8DF6` | Left steps of the lean scale (`styles.css` only) |
+| lean-right | `#C8102E` | `#F0505A` | Right steps of the lean scale (`styles.css` only) |
 | on-ink | `#FFFFFF` | `#0E0E0E` | Text on an ink fill (`styles.css` only) |
 | alert | `#FFB800` | `#FFB800` | Breaking news |
 | on-alert | `#111111` | `#111111` | Text and keyline on the alert yellow (`styles.css` only) |
@@ -229,7 +231,7 @@ Each story row shows the number of outlets that cover the story, when there are 
 
 Under each headline, a small row can show two ratings of the publisher. They are never ratings of the story.
 
-- **Lean** (Media Bias/Fact Check, MBFC): a 5-step mark from "Left" to "Right", and "MBFC" as a link to the MBFC page of the outlet. MBFC rates on a US scale.
+- **Lean** (Media Bias/Fact Check, MBFC): a 5-step mark from "Left" to "Right" (left steps blue, right steps red, the centre ink), and "MBFC" as a link to the MBFC page of the outlet. MBFC rates on a US scale.
 - **Other class** (MBFC): MBFC puts some outlets outside the left-right scale (Questionable, Conspiracy-Pseudoscience, Satire, Pro-Science). The row then shows "Other class" and the "MBFC" link. So Fox News and Breitbart do not look unrated. The MBFC page names the class.
 - **State media tag** (State Media Monitor): "STATE-CONTROLLED", "CAPTURED" or "PUBLIC".
 

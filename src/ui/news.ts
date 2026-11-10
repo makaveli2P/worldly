@@ -278,7 +278,7 @@ function ratingRow(a: NewsArticle): HTMLElement | null {
         h(
           'span',
           { class: 'lean-scale', 'aria-hidden': 'true' },
-          LEAN_STEPS.map((step) => h('span', { class: step === b.lean ? 'lean-cell lean-cell--on' : 'lean-cell' })),
+          LEAN_STEPS.map((step) => h('span', { class: step === b.lean ? 'lean-cell lean-cell--on' : 'lean-cell', 'data-step': String(step) })),
         ),
         h('span', { class: 'lean-label', 'aria-hidden': 'true' }, b.leanLabel!),
       )

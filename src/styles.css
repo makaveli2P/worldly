@@ -44,6 +44,8 @@
   --rule: #dcdcd7;
   --accent: #e5361b; /* fills: brand square, markers */
   --accent-text: #d12f15; /* small red text: 5.1:1 on white */
+  --lean-left: #1f5bd6; /* publisher lean scale: 6.0:1 on the panel */
+  --lean-right: #c8102e; /* 5.9:1 on the panel */
   --on-ink: #ffffff; /* text on an ink fill */
   --hover: #f4f4f1;
   --flag-edge: rgb(17 17 17 / 0.12);
@@ -59,6 +61,8 @@
   --rule: #333333;
   --accent: #f24b2f;
   --accent-text: #f24b2f; /* 4.8:1 on the panel */
+  --lean-left: #5c8df6; /* 5.5:1 on the panel */
+  --lean-right: #f0505a; /* 5.0:1 on the panel */
   --on-ink: #0e0e0e;
   --hover: #202020;
   --flag-edge: rgb(242 242 238 / 0.16);
@@ -76,6 +80,8 @@
     --rule: #333333;
     --accent: #f24b2f;
     --accent-text: #f24b2f;
+    --lean-left: #5c8df6;
+    --lean-right: #f0505a;
     --on-ink: #0e0e0e;
     --hover: #202020;
     --flag-edge: rgb(242 242 238 / 0.16);
@@ -1480,15 +1486,41 @@ a {
   gap: 2px;
 }
 
+/* Left steps are blue, right steps are red, the centre is ink (as on Ground News).
+   The other cells are a light tint of their side. The cell of the rating is full colour and taller. */
 .lean-cell {
+  --lean-c: var(--ink);
   width: 8px;
   height: 4px;
-  background: color-mix(in srgb, var(--ink) 22%, var(--panel));
+  background: color-mix(in srgb, var(--lean-c) 28%, var(--panel));
 }
 
-.lean-cell--on {
+.lean-cell[data-step='-2'],
+.lean-cell[data-step='-1'] {
+  --lean-c: var(--lean-left);
+}
+
+.lean-cell[data-step='1'],
+.lean-cell[data-step='2'] {
+  --lean-c: var(--lean-right);
+}
+
+.lean-cell[data-step='-1'],
+.lean-cell[data-step='1'] {
+  background: color-mix(in srgb, var(--lean-c) 18%, var(--panel));
+}
+
+.lean-cell--on,
+.lean-cell--on[data-step] {
   height: 8px;
-  background: var(--ink);
+  background: var(--lean-c);
+}
+
+@media (forced-colors: active) {
+  .lean-cell--on,
+  .lean-cell--on[data-step] {
+    background: CanvasText;
+  }
 }
 
 .lean-rater {
