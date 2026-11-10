@@ -2,3 +2,9 @@ node_modules
 _shots
 .env
 .env.local
+.claude
+.agents
+screenshots
+dist
+skills-lock.json
+.DS_Store
