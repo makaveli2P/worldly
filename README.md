@@ -22,16 +22,28 @@ The design is "Swiss / instrument". The reference mockup is in `mockups/swiss/`.
 
 - Type: Inter Tight (400/500/600) for text, JetBrains Mono for all figures. The fonts are local files in `src/assets/fonts/`.
 - Grid: 8px.
-- Colours: one accent, Swiss red. The tokens are CSS custom properties on `:root[data-theme=light|dark]` in `src/styles.css`. The globe colours come from `src/theme.ts`. Keep the two files in step.
+- Colours: one accent, Swiss red, for the selection. Signal yellow is only for breaking news. The tokens are CSS custom properties on `:root[data-theme=light|dark]` in `src/styles.css`. The globe colours come from `src/theme.ts`. Keep the two files in step. `test/ui/contrast.test.ts` checks that the two files agree and that each text pair meets WCAG AA (4.5:1).
+- Surfaces: the canvas uses paper. The header, the plates, the search list and the mobile sheet use panel. A 1px ink frame (2px at the top of a plate) separates a plate from the canvas and the globe. There is no shadow, radius or blur. The `theme-color` meta matches the header (panel) colour.
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| paper | `#F4F4F1` | `#0E0E0E` |
-| panel | `#FFFFFF` | `#161616` |
+| paper | `#E6E6E1` | `#0A0A0A` |
+| panel | `#FFFFFF` | `#1A1A1A` |
 | ink | `#111111` | `#F2F2EE` |
-| rule | `#DCDCD7` | `#2A2A2A` |
+| rule | `#DCDCD7` | `#333333` |
 | muted | `#5C5C58` | `#9A9A94` |
+| faint | `#6B6B67` | `#8A8A84` |
+| hover | `#F4F4F1` | `#202020` |
 | accent | `#E5361B` | `#F24B2F` |
+| alert | `#FFB800` | `#FFB800` |
+| on-alert | `#111111` | `#111111` |
+
+- Breaking news: an alert uses the alert yellow with an ink keyline, so one of the two colours is at least 3:1 on every background. Red stays the colour of the selection.
+  - Globe: a yellow dot with open rings at the label point of the country, and the country name in bold. A critical alert has a larger dot, a heavier ring and a second outer ring. On the selected country, the red anchor replaces the dot and the outer ring is off at rest, so the capital name has room. When the country is on the far side or off screen, a still yellow arrow with the name points to it from the globe edge.
+  - Pulse: an alert key that is new in the browser session pulses 3 times in 4.8 s (0.625 Hz), then the rings stay still (WCAG 2.2.2 and 2.3.1). A reload does not pulse it again. With `prefers-reduced-motion`, nothing pulses. The markers are DOM nodes over the canvas, so the globe does not render more frames for them.
+  - Header chip: `BREAKING`, the country, the headline, the age, a link to the story, `+N` for more alerts and a dismiss button. The chip is in the header between the search and the map style at 1000 px and wider (the headline goes away below 1100 px). From 768 to 999 px it is in a second header row, and on mobile in a third header row. A long country name gets an ellipsis. A click selects the country. A dismissed alert stays away for the browser session (`sessionStorage`: `worldly:breaking-dismissed`, `worldly:breaking-announced`). A polite live region announces each new alert once. The age changes in place every minute, so a screen reader does not read the chip again.
+  - Poll: every 5 minutes while the page is visible, and every 15 minutes while it is hidden. While the tab is hidden, the title shows the count of new alerts, for example `(1) Worldly`. The message and the pulse wait until the tab is visible again. The client drops an alert with no evidence in the last 24 hours.
+  - To see the UI with no server data, open `http://localhost:5173/?alerts=mock` in `npm run dev` (also `mock-critical`, `mock-major` and `mock-none`). The production build does not contain the mock.
 
 ## Preferences
 

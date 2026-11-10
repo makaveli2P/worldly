@@ -5,6 +5,7 @@ import { Globe } from './globe/Globe';
 import { Overlay } from './overlay';
 import { unpackLabelSites, usePrecomputedLabelSites, type LabelsFile } from './overlay/labelPoints';
 import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, RESET_EVENT, Tooltip, mountShell } from './ui';
+import { BreakingBar, startBreakingFeed, type BreakingFeedOptions } from './ui/alerts';
 import type { CountryId, CountryInfo, NewsResponse } from './types';
 
 const app = document.querySelector<HTMLElement>('#app')!;
@@ -358,6 +359,42 @@ async function start(): Promise<void> {
   // so a #hash selection waits for this request and does not start a second one.
   void loadFacts(full.catch(() => getJson<Record<CountryId, CountryInfo>>('/data/countries.json')));
   if (location.hash) fromHash();
+
+  // ---- breaking news: the header chip, the map markers and the 5-minute poll ----
+
+  let hadAlerts = false;
+  const breaking = new BreakingBar(shell.breakingSlot, shell.ui, {
+    nameOf,
+    resolve: resolveId,
+    onSelect: (a) => {
+      // select() does nothing for the selected country: turn the globe back to it.
+      const ll = countries[a.country]?.latlng;
+      if (a.country === selected) {
+        if (ll) globe.focus(ll);
+      } else select(a.country);
+      overlay.pulseAlert(a.country);
+    },
+    onPreview: (a) => overlay.pulseAlert(a.country),
+    onChange: (alerts, fresh) => {
+      overlay.setAlerts(alerts.map((a) => ({ id: a.country, key: a.key, level: a.level, fresh: fresh.has(a.key) })));
+      // On mobile the header gains or loses a row: the globe and the labels follow its height.
+      if (alerts.length > 0 !== hadAlerts) {
+        hadAlerts = alerts.length > 0;
+        syncInsets();
+      }
+    },
+    focusFallback: () => globe.focusCanvas(),
+  });
+  let source: BreakingFeedOptions['source'];
+  if (import.meta.env.DEV) {
+    // ?alerts=mock (or mock-critical, mock-major, mock-none): fake alerts. Not in the production build.
+    const mock = new URLSearchParams(location.search).get('alerts');
+    if (mock?.startsWith('mock')) source = () => import('./dev/breaking-mock').then((m) => m.mockBreaking(mock));
+  }
+  // After the first globe frame, and off the critical path. Safari has no requestIdleCallback.
+  const beginFeed = () => startBreakingFeed({ onAlerts: (alerts) => breaking.set(alerts), source });
+  if ('requestIdleCallback' in window) requestIdleCallback(beginFeed, { timeout: 4000 });
+  else setTimeout(beginFeed, 2000);
 }
 
 start().catch((err) => {

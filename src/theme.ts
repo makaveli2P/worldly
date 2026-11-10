@@ -12,6 +12,8 @@ export interface UiTokens {
   rule: string; // hairlines
   muted: string;
   accent: string;
+  /** Breaking-news signal yellow. The same in both themes, always with an ink keyline. */
+  alert: string;
 }
 
 /** Globe colours for one theme and one map style. Alpha values are 0..1. */
@@ -38,18 +40,19 @@ export interface GlobePalette {
 }
 
 const RED_LIGHT = '#E5361B';
-const RED_DARK = '#F24B2F'; // 5.3:1 on #0E0E0E
+const RED_DARK = '#F24B2F'; // 5.5:1 on #0A0A0A
+const ALERT = '#FFB800';
 
 export const ui: Record<ThemeName, UiTokens> = {
-  light: { paper: '#F4F4F1', panel: '#FFFFFF', ink: '#111111', rule: '#DCDCD7', muted: '#5C5C58', accent: RED_LIGHT },
-  dark: { paper: '#0E0E0E', panel: '#161616', ink: '#F2F2EE', rule: '#2A2A2A', muted: '#9A9A94', accent: RED_DARK },
+  light: { paper: '#E6E6E1', panel: '#FFFFFF', ink: '#111111', rule: '#DCDCD7', muted: '#5C5C58', accent: RED_LIGHT, alert: ALERT },
+  dark: { paper: '#0A0A0A', panel: '#1A1A1A', ink: '#F2F2EE', rule: '#333333', muted: '#9A9A94', accent: RED_DARK, alert: ALERT },
 };
 
 export const globePalettes: Record<ThemeName, Record<MapStyle, GlobePalette>> = {
   light: {
     atlas: {
       paper: ui.light.paper,
-      ocean: '#FFFFFF',
+      ocean: '#FFFFFF', // the same as the panel: the ink frame of a plate separates the two
       land: '#D9D9D4',
       border: '#FFFFFF',
       borderAlpha: 1,
@@ -91,7 +94,7 @@ export const globePalettes: Record<ThemeName, Record<MapStyle, GlobePalette>> = 
   dark: {
     atlas: {
       paper: ui.dark.paper,
-      ocean: '#161616',
+      ocean: '#161616', // a step below the panel (#1A1A1A): the ink frame of a plate separates the two
       land: '#2A2A2A',
       border: '#4A4A47',
       borderAlpha: 1,
@@ -118,7 +121,7 @@ export const globePalettes: Record<ThemeName, Record<MapStyle, GlobePalette>> = 
       graticule: '#FFFFFF',
       graticuleAlpha: 0.08,
       limb: '#F2F2EE',
-      limbAlpha: 0.18,
+      limbAlpha: 0.24, // 2.0:1 on #0A0A0A
       hoverCap: '#FFFFFF',
       hoverWall: '#BDBDB8',
       hoverLine: '#FFFFFF',

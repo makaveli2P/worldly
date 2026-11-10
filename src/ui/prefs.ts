@@ -8,7 +8,8 @@ export type { MapStyle, ThemeName };
 const STYLE_KEY = 'worldly:style';
 const THEME_KEY = 'worldly:theme';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
-const META_COLOR: Record<ThemeName, string> = { light: '#F4F4F1', dark: '#0E0E0E' };
+// The browser bar matches the header, which uses the panel colour. index.html has the same values.
+const META_COLOR: Record<ThemeName, string> = { light: '#FFFFFF', dark: '#1A1A1A' };
 
 function read(key: string): string | null {
   try {
