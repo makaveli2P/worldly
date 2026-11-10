@@ -6,6 +6,8 @@ import {
   BufferGeometry,
   Color,
   Group,
+  ImageBitmapLoader,
+  ImageLoader,
   LinearMipmapLinearFilter,
   LinearSRGBColorSpace,
   LineSegments,
@@ -23,14 +25,13 @@ import {
   ShaderMaterial,
   Sphere,
   SphereGeometry,
-  TextureLoader,
+  Texture,
   Vector2,
   Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
   DoubleSide,
   type IUniform,
-  type Texture,
 } from 'three';
 import { geoArea, geoCentroid } from 'd3-geo';
 import type { Polygon } from 'geojson';
@@ -39,6 +40,8 @@ import type { CountryFeature, CountryId } from '../types';
 import { TrackballControls } from './controls';
 import { buildGlobeGeometry, lonLatToVec, type BoundingCap, type Range } from './geometry';
 import { CountryPicker } from './picker';
+import { TEXTURES, type TextureFile } from './textureManifest';
+import { chooseTextureTiers, neededTextureWidth, nextTextureLevel } from './textureTiers';
 import {
   SLOTS,
   blurFragment,
@@ -65,6 +68,8 @@ export interface GlobeOptions {
   onReset?: () => void; // double-click or double-tap on the canvas. Globe already called resetView(); deselect here.
   mapStyle?: MapStyle; // default 'satellite'
   theme?: ThemeName; // default: prefers-color-scheme
+  /** Ids of features with a reversed ring winding, from the build (/data/labels.json). Without it, the picker computes them. */
+  inverted?: ReadonlySet<CountryId>;
 }
 
 export interface ProjectedPoint {
@@ -81,10 +86,9 @@ export interface GlobeView {
   distance: number; // camera distance from the globe centre, in earth radii
 }
 
-const TEXTURE_URL = '/textures/earth-4k.jpg';
 const EARTH_KM = 6371;
 const FOV = 30;
-const MIN_DIST = 1.3; // ~1900 km: closer than this the 4k texture turns to mush
+const MIN_DIST = 1.3; // ~1900 km: closer than this even the 8192 texture turns to mush
 const MAX_DIST = 6;
 const BASE_RADIUS = 1.002;
 const LIFT = 0.033;
@@ -119,6 +123,11 @@ function rgb(hex: string): Vector3 {
 }
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/** Frees the CPU copy of an ImageBitmap. An <img> needs nothing. */
+function closeImage(image: unknown): void {
+  if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) image.close();
+}
 
 interface Slot {
   index: number;
@@ -219,6 +228,14 @@ export class Globe {
   private texture: Texture | null = null;
   private textureState: 'none' | 'loading' | 'ready' = 'none';
   private texMix = 0; // 0..1 fade-in of the satellite texture
+  private texTiers: TextureFile[] = []; // usable tiers for this device, smallest first (src/globe/textureTiers.ts)
+  private texLevel = -1; // tier on screen
+  private texBusy = false; // a tier is loading
+  private texShownAt = 0; // when the first tier showed
+  private texViaImg = typeof createImageBitmap !== 'function'; // <img> decode instead of createImageBitmap
+  private zoomedOrSelected = false; // the largest tier waits for the first zoom or selection
+  // Phones and tablets: fewer pixels for the same look (about 44% fewer than DPR 2).
+  private readonly maxDpr = window.matchMedia('(pointer: coarse)').matches ? 1.5 : 2;
 
   // Geometry and materials (kept for dispose).
   private readonly landGeometry: BufferGeometry;
@@ -308,8 +325,15 @@ export class Globe {
 
     this.renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = LinearSRGBColorSpace; // shaders write sRGB values as they are
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxDpr));
     this.renderer.autoClear = false;
+    const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
+    this.texTiers = chooseTextureTiers(TEXTURES, {
+      maxTextureSize: this.renderer.capabilities.maxTextureSize,
+      finePointer: window.matchMedia('(pointer: fine)').matches,
+      saveData: nav.connection?.saveData === true,
+      deviceMemory: nav.deviceMemory,
+    });
     this.canvas = this.renderer.domElement;
     Object.assign(this.canvas.style, {
       display: 'block',
@@ -344,11 +368,13 @@ export class Globe {
       g.setAttribute('countryIndex', countryIndex);
       g.setAttribute('kind', kind);
       g.setIndex(index);
+      // Known bounds (unit directions, raised in the shader): the renderer does not walk 245k vertices for each geometry.
+      g.boundingSphere = new Sphere(new Vector3(), BASE_RADIUS + LIFT + LINE_OFFSET);
       return g;
     };
     this.landGeometry = makeGeometry(triIndex);
     this.lineGeometry = makeGeometry(lineIndex);
-    this.picker = new CountryPicker(opts.features, data.caps);
+    this.picker = new CountryPicker(opts.features, data.caps, opts.inverted);
     this.caps = data.caps;
     // geometry.ts pads each cap by 0.001 in cosine; remove the pad for the true size.
     this.capRadius = data.caps.map((c) => (c.cosRadius > 1 ? 0 : Math.acos(Math.min(1, c.cosRadius + 0.001))));
@@ -511,6 +537,7 @@ export class Globe {
           this.focusRadius = null;
         }
         this.zoomRatio = Math.min(this.maxDistance(fit) / fit, Math.max(MIN_DIST / fit, this.zoomRatio * f));
+        this.zoomedOrSelected = true;
         this.needsRender = true;
       },
       tap: (x, y) => {
@@ -562,6 +589,7 @@ export class Globe {
     if (index === this.selectedIndex && index < 0) return;
     this.selectedIndex = index;
     if (this.selectedIndex < 0) this.focusRadius = null;
+    else this.zoomedOrSelected = true;
     this.lastActivity = performance.now();
     this.needsRender = true;
   }
@@ -764,6 +792,7 @@ export class Globe {
       m.dispose();
     for (const rt of [this.rtScene, this.rtA, this.rtB]) rt.dispose();
     this.texture?.dispose();
+    closeImage(this.texture?.image);
     this.renderer.dispose();
     this.canvas.remove();
   }
@@ -776,7 +805,7 @@ export class Globe {
     const p = globePalettes[this.themeName][this.mapStyle];
     this.palette = p;
     const sat = this.mapStyle === 'satellite';
-    if (sat && this.textureState === 'none') this.loadTexture();
+    if (sat && this.textureState === 'none') this.loadLevel(0);
     const s = this.styleUniforms;
     s.uSatellite.value = sat ? 1 : 0;
     s.uLand.value.copy(rgb(p.land));
@@ -808,34 +837,92 @@ export class Globe {
     this.styleUniforms.uTex.value = t;
   }
 
-  private loadTexture(): void {
-    this.textureState = 'loading';
-    new TextureLoader().load(
-      TEXTURE_URL,
-      (tex) => {
-        if (this.disposed) {
-          tex.dispose();
-          return;
-        }
-        tex.colorSpace = NoColorSpace; // raw sRGB values, like every other colour here
-        tex.wrapS = RepeatWrapping;
-        tex.minFilter = LinearMipmapLinearFilter;
-        tex.generateMipmaps = true;
-        tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
-        this.renderer.initTexture(tex);
-        this.texture = tex;
-        this.styleUniforms.tMap.value = tex;
-        this.textureState = 'ready';
-        if (this.reducedMotion.matches) this.texMix = 1;
-        this.updateTextureUniforms();
-        this.needsRender = true;
-      },
-      undefined,
-      (err) => {
-        console.warn('[worldly] satellite texture failed', err);
-        this.textureState = 'none';
-      },
-    );
+  /**
+   * Loads one texture tier. Tier 0 fades in; a larger tier replaces the texture on screen with no fade.
+   * createImageBitmap decodes off the main thread. index.html preloads tier 0 with a matching fetch.
+   * Every path uploads with flipY = false (ImageBitmap uploads ignore flipY); the shader flips v instead.
+   */
+  private loadLevel(level: number, url = this.texTiers[level]?.url, viaImg = this.texViaImg): void {
+    if (!url || this.disposed) return;
+    this.texBusy = true;
+    if (level === 0) this.textureState = 'loading';
+    const done = (image: ImageBitmap | HTMLImageElement) => this.useImage(level, image);
+    const fail = (err: unknown) => this.textureFailed(level, url, viaImg, err);
+    if (viaImg) new ImageLoader().setCrossOrigin('anonymous').load(url, done, undefined, fail);
+    else new ImageBitmapLoader().load(url, done, undefined, fail);
+  }
+
+  private useImage(level: number, image: ImageBitmap | HTMLImageElement): void {
+    this.texBusy = false;
+    if (this.disposed) {
+      closeImage(image);
+      return;
+    }
+    const tex = new Texture(image);
+    tex.flipY = false;
+    tex.colorSpace = NoColorSpace; // raw sRGB values, like every other colour here
+    tex.wrapS = RepeatWrapping;
+    tex.minFilter = LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    tex.needsUpdate = true;
+    this.renderer.initTexture(tex);
+    const old = this.texture;
+    this.texture = tex;
+    this.texLevel = level;
+    this.styleUniforms.tMap.value = tex; // the ocean material shares this uniform
+    if (old) {
+      old.dispose();
+      closeImage(old.image);
+    }
+    if (this.textureState !== 'ready') {
+      this.textureState = 'ready';
+      this.texShownAt = performance.now();
+      if (this.reducedMotion.matches) this.texMix = 1;
+      this.updateTextureUniforms();
+    }
+    this.needsRender = true;
+  }
+
+  private textureFailed(level: number, url: string, viaImg: boolean, err: unknown): void {
+    this.texBusy = false;
+    if (this.disposed) return;
+    if (!viaImg) {
+      // createImageBitmap failed (an old browser, or options it does not know): use <img> from now on.
+      this.texViaImg = true;
+      this.loadLevel(level, url, true);
+      return;
+    }
+    console.warn('[worldly] satellite texture failed', url, err);
+    if (level === 0 && url !== TEXTURES.fallback.url) {
+      // No WebP: the JPEG fallback takes the place of all tiers.
+      this.texTiers = [TEXTURES.fallback];
+      this.loadLevel(0, TEXTURES.fallback.url, true);
+    } else if (level === 0) {
+      this.textureState = 'none';
+    } else {
+      // A larger tier failed: keep the texture on screen and stop the upgrades.
+      this.texTiers = this.texTiers.slice(0, level);
+    }
+  }
+
+  /** Loads the next tier when the view needs more texels and the globe is at rest (see textureTiers.ts). */
+  private maybeUpgradeTexture(now: number): void {
+    if (this.texBusy || this.textureState !== 'ready' || this.texLevel + 1 >= this.texTiers.length) return;
+    if (this.mapStyle !== 'satellite') return;
+    const next = nextTextureLevel({
+      tiers: this.texTiers.length,
+      level: this.texLevel,
+      busy: this.texBusy,
+      shownForMs: now - this.texShownAt,
+      idleMs: now - this.lastActivity,
+      moving: this.focusAnim !== null || this.controls.isDragging,
+      zoomedOrSelected: this.zoomedOrSelected,
+      // The target distance: a selection starts the download while the camera still moves in.
+      needWidth: neededTextureWidth(this.height, this.renderer.getPixelRatio(), Math.min(this.distance, this.targetDistance()), FOV),
+      widths: this.texTiers.map((t) => t.width),
+    });
+    if (next > 0) this.loadLevel(next);
   }
 
   // ---- frame loop ----
@@ -860,6 +947,7 @@ export class Globe {
       this.updateTextureUniforms();
       this.needsRender = true;
     }
+    this.maybeUpgradeTexture(now);
 
     if (this.focusAnim) {
       const t = Math.min(1, (now - this.focusAnim.start) / FOCUS_MS);
@@ -1082,7 +1170,7 @@ export class Globe {
     this.width = w;
     this.height = h;
     this.dpr = window.devicePixelRatio || 1;
-    const dpr = Math.min(this.dpr, 2);
+    const dpr = Math.min(this.dpr, this.maxDpr);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.rtScene.setSize(Math.round(w * dpr), Math.round(h * dpr));

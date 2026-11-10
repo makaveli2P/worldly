@@ -1,7 +1,7 @@
 // Finds the country at a lon/lat point: bounding-cap prefilter, then d3-geo geoContains.
 
 import { geoArea, geoContains } from 'd3-geo';
-import type { CountryFeature } from '../types';
+import type { CountryFeature, CountryId } from '../types';
 import { lonLatToVec, type BoundingCap } from './geometry';
 
 interface Candidate {
@@ -14,13 +14,14 @@ interface Candidate {
 export class CountryPicker {
   private readonly candidates: Candidate[];
 
-  constructor(features: CountryFeature[], caps: BoundingCap[]) {
+  /** inverted: ids with a reversed winding, from the build. Without it, a geoArea per feature finds them. */
+  constructor(features: CountryFeature[], caps: BoundingCap[], inverted?: ReadonlySet<CountryId>) {
     this.candidates = features
       .map((feature, index) => ({
         index,
         cap: caps[index],
         feature,
-        inverted: geoArea(feature.geometry) > 2 * Math.PI,
+        inverted: inverted ? inverted.has(feature.id) : geoArea(feature.geometry) > 2 * Math.PI,
       }))
       // Small countries first, so a tiny state wins over a big neighbour on a shared edge.
       .sort((a, b) => b.cap.cosRadius - a.cap.cosRadius);
