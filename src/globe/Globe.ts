@@ -70,6 +70,8 @@ export interface GlobeOptions {
   theme?: ThemeName; // default: prefers-color-scheme
   /** Ids of features with a reversed ring winding, from the build (/data/labels.json). Without it, the picker computes them. */
   inverted?: ReadonlySet<CountryId>;
+  /** The first texture tier that index.html started to download (a null Blob: it did not start). */
+  firstTexture?: { url: string; blob: Promise<Blob | null> };
 }
 
 export interface ProjectedPoint {
@@ -234,6 +236,7 @@ export class Globe {
   private texShownAt = 0; // when the first tier showed
   private texViaImg = typeof createImageBitmap !== 'function'; // <img> decode instead of createImageBitmap
   private zoomedOrSelected = false; // the largest tier waits for the first zoom or selection
+  private firstTexture: GlobeOptions['firstTexture'] | null = null; // from index.html, used one time
   // Phones and tablets: fewer pixels for the same look (about 44% fewer than DPR 2).
   private readonly maxDpr = window.matchMedia('(pointer: coarse)').matches ? 1.5 : 2;
 
@@ -375,6 +378,7 @@ export class Globe {
     this.landGeometry = makeGeometry(triIndex);
     this.lineGeometry = makeGeometry(lineIndex);
     this.picker = new CountryPicker(opts.features, data.caps, opts.inverted);
+    this.firstTexture = opts.firstTexture ?? null;
     this.caps = data.caps;
     // geometry.ts pads each cap by 0.001 in cosine; remove the pad for the true size.
     this.capRadius = data.caps.map((c) => (c.cosRadius > 1 ? 0 : Math.acos(Math.min(1, c.cosRadius + 0.001))));
@@ -839,7 +843,7 @@ export class Globe {
 
   /**
    * Loads one texture tier. Tier 0 fades in; a larger tier replaces the texture on screen with no fade.
-   * createImageBitmap decodes off the main thread. index.html preloads tier 0 with a matching fetch.
+   * createImageBitmap decodes off the main thread. index.html starts the download of tier 0 (opts.firstTexture).
    * Every path uploads with flipY = false (ImageBitmap uploads ignore flipY); the shader flips v instead.
    */
   private loadLevel(level: number, url = this.texTiers[level]?.url, viaImg = this.texViaImg): void {
@@ -848,6 +852,18 @@ export class Globe {
     if (level === 0) this.textureState = 'loading';
     const done = (image: ImageBitmap | HTMLImageElement) => this.useImage(level, image);
     const fail = (err: unknown) => this.textureFailed(level, url, viaImg, err);
+    const first = this.firstTexture;
+    this.firstTexture = null;
+    if (first && first.url === url && !viaImg) {
+      // The same decode as ImageBitmapLoader. With no Blob, or on an error, load the file again as usual.
+      first.blob
+        .then((blob) => {
+          if (!blob) throw new Error('no preloaded texture');
+          return createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+        })
+        .then(done, () => this.loadLevel(level, url, viaImg));
+      return;
+    }
     if (viaImg) new ImageLoader().setCrossOrigin('anonymous').load(url, done, undefined, fail);
     else new ImageBitmapLoader().load(url, done, undefined, fail);
   }

@@ -21,15 +21,86 @@
         document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'dark' ? '#0E0E0E' : '#F4F4F1');
       })();
     </script>
-    <link rel="preload" href="/src/assets/fonts/inter-tight-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/src/assets/fonts/inter-tight-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/src/assets/fonts/inter-tight-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/src/assets/fonts/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <script>
+      // Start the data with the HTML, before the module loads. src/main.ts reuses these promises.
+      (function () {
+        var json = function (url) {
+          return fetch(url).then(function (r) {
+            if (!r.ok) throw new Error(url + ': ' + r.status);
+            return r.json();
+          });
+        };
+        var later, laterTexture;
+        var boot = (window.__worldlyBoot = {
+          world: json('/data/world.json'),
+          lite: json('/data/countries-lite.json'),
+          labels: json('/data/labels.json').catch(function () {
+            return null;
+          }),
+          countries: new Promise(function (resolve) {
+            later = resolve;
+          }),
+          // The first satellite texture tier as a Blob, or null. The build puts its hashed name here (vite.config.ts).
+          texture: {
+            url: '%WORLDLY_TEXTURE_FIRST%',
+            blob: new Promise(function (resolve) {
+              laterTexture = resolve;
+            }),
+          },
+        });
+        // src/main.ts handles a failure; this keeps the console free of "unhandled rejection" until then.
+        boot.world.catch(function () {});
+        boot.lite.catch(function () {});
+        boot.countries.catch(function () {});
+        boot.texture.blob.catch(function () {});
+        // The full countries.json (for the panels) and the first texture tier start when the first files
+        // are in, so that they do not take bandwidth from them on a slow link. src/globe/Globe.ts decodes
+        // the Blob with createImageBitmap. A fetch() and not a <link rel=preload>: WebKit does not give a
+        // preloaded file to the later fetch() of ImageBitmapLoader, and loads the file two times.
+        var next = function () {
+          later(json('/data/countries.json'));
+          if (document.documentElement.dataset.style !== 'satellite') return laterTexture(null);
+          laterTexture(
+            fetch(boot.texture.url).then(function (r) {
+              if (!r.ok) throw new Error(boot.texture.url + ': ' + r.status);
+              return r.blob();
+            }),
+          );
+        };
+        Promise.all([boot.world, boot.lite]).then(next, next);
+      })();
+    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Worldly</title>
+    <style>
+      /* The first paint, before the CSS and the module load. It copies .loader in src/styles.css. */
+      html {
+        background: var(--paper, #f4f4f1);
+      }
+      :root[data-theme='dark'] {
+        background: var(--paper, #0e0e0e);
+      }
+      #boot {
+        position: fixed;
+        top: 50%;
+        left: 0;
+        right: 0;
+        margin: 0;
+        text-align: center;
+        /* A system face: the web fonts would take bandwidth from the data. */
+        font: 400 11px/16px ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted, #5c5c58);
+      }
+      :root[data-theme='dark'] #boot {
+        color: var(--muted, #9a9a94);
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
+    <p id="boot" class="loader">Loading the map</p>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

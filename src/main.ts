@@ -1,19 +1,17 @@
 // App wiring: loads the data, builds the globe and panels, and keeps the selection in sync.
 
-import { feature } from 'topojson-client';
-import type { GeometryCollection, Topology } from 'topojson-specification';
-import type { MultiPolygon, Polygon } from 'geojson';
+import { worldFeatures, type LiteCountryInfo, type WorldTopology } from './data/precompute';
 import { Globe } from './globe/Globe';
 import { Overlay } from './overlay';
+import { unpackLabelSites, usePrecomputedLabelSites, type LabelsFile } from './overlay/labelPoints';
 import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, RESET_EVENT, Tooltip, mountShell } from './ui';
-import type { CountryFeature, CountryId, CountryInfo, NewsResponse } from './types';
-
-type WorldTopology = Topology<{ countries: GeometryCollection<{ id: CountryId; name: string }> }>;
+import type { CountryId, CountryInfo, NewsResponse } from './types';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const shell = mountShell(app);
 
-const loader = document.createElement('p');
+// index.html paints this text before the module runs (#boot). Make it only if it is missing.
+const loader = document.querySelector<HTMLElement>('#boot') ?? document.createElement('p');
 loader.className = 'loader';
 loader.textContent = 'Loading the map';
 shell.ui.append(loader);
@@ -24,25 +22,45 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-function toFeatures(topo: WorldTopology): CountryFeature[] {
-  const fc = feature(topo, topo.objects.countries);
-  const out: CountryFeature[] = [];
-  for (const f of fc.features) {
-    const g = f.geometry;
-    if (!g || (g.type !== 'Polygon' && g.type !== 'MultiPolygon')) continue;
-    out.push({ id: f.properties.id, name: f.properties.name, geometry: g as Polygon | MultiPolygon });
+/** Label sites and picker flags from the build (vite.config.ts). Null if the file does not load. */
+async function getLabels(): Promise<LabelsFile | null> {
+  try {
+    return await getJson<LabelsFile>('/data/labels.json');
+  } catch {
+    return null;
   }
-  return out;
+}
+
+/** The data requests that index.html starts with the HTML. Absent if that script did not run. */
+interface BootData {
+  world: Promise<WorldTopology>;
+  lite: Promise<Record<CountryId, LiteCountryInfo>>;
+  labels: Promise<LabelsFile | null>;
+  /** The full countries.json. index.html asks for it after the files above, so it does not slow them. */
+  countries: Promise<Record<CountryId, CountryInfo>>;
+  /** The first satellite texture tier, asked for at the same time as the full countries.json. */
+  texture?: { url: string; blob: Promise<Blob | null> };
 }
 
 async function start(): Promise<void> {
-  const [topo, countries] = await Promise.all([
-    getJson<WorldTopology>('/data/world.json'),
-    getJson<Record<CountryId, CountryInfo>>('/data/countries.json'),
-    // The label measurements need the real font metrics.
-    document.fonts?.ready.catch(() => undefined),
+  // The start does not wait for the fonts: the overlay measures the labels again when they load.
+  const boot = (window as Window & { __worldlyBoot?: BootData }).__worldlyBoot;
+  const full = boot?.countries ?? getJson<Record<CountryId, CountryInfo>>('/data/countries.json');
+  full.catch(() => undefined); // handled at the await below
+  const [topo, lite, labels] = await Promise.all([
+    boot?.world ?? getJson<WorldTopology>('/data/world.json'),
+    (boot?.lite ?? getJson<Record<CountryId, LiteCountryInfo>>('/data/countries-lite.json')).catch(() => full),
+    boot?.labels ?? getLabels(),
   ]);
-  const features = toFeatures(topo);
+  // Until the full file arrives (see the end of start()), the records hold only the lite fields.
+  const countries = lite as Record<CountryId, CountryInfo>;
+  // The panels need every field. Until the full file is in, select() keeps the last request here.
+  let factsReady = false;
+  let pendingSelect: CountryId | null = null;
+  const features = worldFeatures(topo);
+  // Use the build's label sites only when they come from this world.json (the same arc count).
+  const built = labels?.v === 1 && labels.arcs === topo.arcs.length ? labels : null;
+  if (built) usePrecomputedLabelSites(unpackLabelSites(built.sites));
   const names = new Map(features.map((f) => [f.id, f.name]));
   const nameOf = (id: CountryId): string | null => countries[id]?.name ?? names.get(id) ?? null;
 
@@ -63,6 +81,8 @@ async function start(): Promise<void> {
     features,
     mapStyle: shell.mapStyle(),
     theme: shell.theme(),
+    inverted: built ? new Set(built.inverted) : undefined,
+    firstTexture: boot?.texture,
     onHover: (id, screen) => {
       // The selected country already has its name in the panels.
       const name = id && id !== selected ? nameOf(id) : null;
@@ -164,6 +184,10 @@ async function start(): Promise<void> {
   // ---- selection ----
 
   function select(raw: CountryId): void {
+    if (!factsReady) {
+      pendingSelect = raw;
+      return;
+    }
     const id = resolveId(raw);
     if (!id) return;
     const info = countries[id];
@@ -285,6 +309,17 @@ async function start(): Promise<void> {
   loader.setAttribute('data-hidden', '');
   setTimeout(() => loader.remove(), 600);
   if (location.hash) fromHash();
+
+  // The full countries.json usually arrives while the globe builds. On a slow link it can come
+  // a little after the first frame: the globe turns, and a selection waits for the file.
+  try {
+    Object.assign(countries, await full.catch(() => getJson<Record<CountryId, CountryInfo>>('/data/countries.json')));
+  } catch (err) {
+    console.error('[worldly] country facts failed', err);
+    return;
+  }
+  factsReady = true;
+  if (pendingSelect) select(pendingSelect);
 }
 
 start().catch((err) => {
