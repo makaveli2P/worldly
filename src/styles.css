@@ -1035,14 +1035,22 @@ a {
   gap: 16px;
 }
 
+/* A flag keeps its own shape: a fixed height and its natural width, never cropped
+   (Switzerland 1:1, Japan 3:2, Qatar 28:11). The edge line shows a white flag on a white plate. */
 .flag {
   display: block;
   flex: none;
-  width: 48px;
+  width: auto;
   height: 32px;
-  object-fit: cover;
+  max-width: 96px;
+  object-fit: contain;
   outline: 1px solid var(--flag-edge);
   outline-offset: -1px;
+}
+
+/* A flag that is not a rectangle (Nepal): no edge line, so the plate shows round its shape. */
+.flag--shaped {
+  outline: none;
 }
 
 .id-code {
@@ -1996,7 +2004,8 @@ a {
 
   .id--compact {
     display: grid;
-    grid-template-columns: 48px 1fr;
+    /* The flag column takes the flag's own width (26px for Nepal, 81px for Qatar). */
+    grid-template-columns: auto 1fr;
     column-gap: 16px;
     align-items: center;
     padding: 8px 48px 16px 16px;
