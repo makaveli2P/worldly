@@ -1,3 +1,7 @@
+# Server functions
+
+The technical reference for the two Vercel functions in `api/`. `README.md` at the repo root is the overview: the features, the owner setup (keys), the scripts and the data sources and terms. This file does not repeat them.
+
 ## News API
 
 `GET /api/news?country=<CountryId>` returns a `NewsResponse` (see `src/types.ts`) with up to 5 stories, in score order (not in date order).
@@ -113,12 +117,9 @@ The best score first. Pass 1 takes 1 cluster per publisher. Pass 2 allows a seco
 - Failure: `public, s-maxage=60`.
 - Client (`src/main.ts`): a list stays for at most 10 minutes.
 
-### API keys
+### Keys and logs
 
-- `NEWSDATA_API_KEY` (optional): local in `.env` (git ignores it); on Vercel under Project Settings > Environment Variables.
-- `RAPIDAPI_KEY` (optional): used only by `npm run bias` at build time. On Vercel, set it for Production only.
-
-The handler never writes a key or an upstream error body to responses or logs. `NEWS_DEBUG=1` logs the score of each picked cluster.
+The keys (`NEWSDATA_API_KEY`, `RAPIDAPI_KEY`) are in "Owner setup" in `README.md`. The handler never writes a key or an upstream error body to responses or logs. `NEWS_DEBUG=1` logs the score of each picked cluster.
 
 ## Breaking news API
 
@@ -130,7 +131,7 @@ The handler never writes a key or an upstream error body to responses or logs. `
 - `breaking/match.ts`: the country matcher. One case-sensitive regex over `aliases.json`, longest alias first, with Unicode word boundaries. Block phrases ("Gulf of Guinea", "Indian Ocean", "New York Times") hide the country inside them. Trap rules: Georgia needs Caucasus context and no US context; Turkey the food; given names ("Jordan Davis"); a demonym before "nationals" or "tourists"; "US" in an upper-case title; plain "Congo" is DR Congo; "Paris, Texas" is the US.
 - `breaking/classify.ts`: the family, the tier and the death count of one headline.
 - `breaking/detect.ts`: stories, levels, follow-ups, the key and the response.
-- `breaking/aliases.json`: made by `scripts/build-aliases.mjs`. Do not edit it by hand.
+- `breaking/aliases.json`: made by `scripts/build-aliases.mjs` (`npm run aliases:breaking`). Do not edit it by hand.
 
 ### Scene of the event
 
@@ -169,10 +170,18 @@ A story joins headlines of one country and kind. Two headlines join when they sh
 - USGS: the significant earthquakes of the week. The PAGER level is the level, and the place text gives the country.
 - ITN: the blurb date comes from the `<!--Nov 7-->` comment. It is the UTC day of the event, at 00:00, so the follow-up rule compares it with the first evidence of the story and allows 36 hours. For the follow-up rule a blurb must share a place, the toll or 2 distinctive words with the story; for support of the critical gate, 1 word is enough. The "Ongoing" list gives the chronic wars. When ITN fails, the chronic list is UKR, RUS, PSE, SDN, IRN and YEM, and two more follow-up rules apply: a story that spans more than 12 hours, or aftermath words in 2 or more outlets.
 - The server logs one line with the ids of the failed sources. It never logs a URL or a body.
+- User-Agent: `BREAKING_USER_AGENT` replaces the default for all requests. `BREAKING_CONTACT` is added to the Wikipedia request only (see "Owner setup" in `README.md`).
 
 ### Caching
 
 - Success: `Cache-Control: public, s-maxage=300, stale-while-revalidate=900, stale-if-error=3600`.
 - Fewer than half of the sources answered, or an unexpected failure: `public, s-maxage=60`.
 - The server keeps a result in memory for 5 minutes (60 seconds when degraded). Parallel requests share one upstream run.
-- The research review asked for `stale-if-error=900`. The shared contract of the app sets 3600, so the header keeps 3600. The handler answers 200 also when the sources fail, so `stale-if-error` applies only when the function itself fails. Then the CDN can show an old answer for at most 1 hour.
+- The research review asked for `stale-if-error=900`. The shared contract of the app sets 3600, so the header keeps 3600. The handler answers 200 also when the sources fail, so `stale-if-error` applies only when the function itself fails. Then the CDN can show an old answer for at most 1 hour. The client drops an alert with no evidence in the last 24 hours, so an old answer cannot show a stale alert for long.
+
+### Key and client
+
+The `key` is `<country>-<kind>-<YYYYMMDD of since>`. It stays the same when outlets join and when the level changes. In one rare case it moves to the next day at 00:00 UTC (step 7 of "Breaking news" in `README.md`). The client (`src/ui/alerts-model.ts`) handles this and the flapping near the threshold:
+
+- `sameStory()`: the same key, or the same country and kind with `since` values less than 24 hours apart. The dismiss and announce sets (`StorySet`) use this rule, and they add the new key, so a second move is also known.
+- `holdDropped()`: an alert that is not in a good poll stays on screen for one more poll. A failed poll changes nothing.

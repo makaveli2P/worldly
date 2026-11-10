@@ -12,6 +12,7 @@
     "data": "node scripts/build-data.mjs",
     "bias": "node scripts/build-bias.mjs",
     "aliases": "node scripts/build-news-aliases.mjs",
+    "aliases:breaking": "node scripts/build-aliases.mjs",
     "audit:news": "node scripts/audit-news.mjs",
     "texture": "node scripts/build-texture.mjs",
     "test": "vitest run"
