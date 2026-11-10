@@ -70,6 +70,12 @@ describe('colour tokens', () => {
     expect(o).toEqual([light.paper, dark.paper]);
   });
 
+  it('use the canvas and muted colours as the first-paint fallbacks in index.html', () => {
+    const fallbacks = (name: string) => [...html.matchAll(new RegExp(`var\\(--${name}, (#[0-9a-f]{6})\\)`, 'gi'))].map((m) => m[1].toLowerCase());
+    expect(fallbacks('paper')).toEqual([ui.light.paper.toLowerCase(), ui.dark.paper.toLowerCase()]);
+    expect(fallbacks('muted')).toEqual([ui.light.muted.toLowerCase(), ui.dark.muted.toLowerCase()]);
+  });
+
   it('set theme-color to the header (panel) colour in all three places', () => {
     expect(html).toContain(`name="theme-color" content="${ui.light.panel}"`);
     expect(html).toContain(`t === 'dark' ? '${ui.dark.panel}' : '${ui.light.panel}'`);
