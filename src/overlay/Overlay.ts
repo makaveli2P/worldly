@@ -37,6 +37,8 @@ export interface OverlayAlert {
   id: CountryId;
   key: string;
   level: 'critical' | 'major';
+  /** False when the key is not new in this session (for example after a reload): no pulse. Default true. */
+  fresh?: boolean;
 }
 
 export interface OverlayOptions {
@@ -66,6 +68,8 @@ const MAX_ALERTS = 5;
 const PULSE_MS = 3 * 1600 + 200;
 /** Outer radius of a marker at rest, px (critical: the second ring at scale 1.45). The label sits outside it. */
 const ALERT_R = { critical: 22, major: 12 } as const;
+/** The same for the selected country: the critical outer ring is off at rest, so the capital has room. */
+const ALERT_R_SEL = { critical: 17, major: 12 } as const;
 
 /** Short forms for names that are too long to label on a globe. */
 const SHORT: Record<string, string> = {
@@ -332,7 +336,7 @@ export class Overlay {
       if (n.key !== a.key) n.key = a.key;
       if (!this.seenAlertKeys.has(a.key)) {
         this.seenAlertKeys.add(a.key);
-        n.pending = !this.reducedMotion.matches;
+        n.pending = a.fresh !== false && !this.reducedMotion.matches;
       }
     }
     // The most severe marker goes last in the DOM, so it draws on top where rings overlap.
@@ -681,14 +685,28 @@ export class Overlay {
           if (side === 2) return [x0, y0, x1, y1 - 9];
           return [x0, y0 + 9, x1, y1];
         };
-        // The first side that stays on screen and touches no label, line or dot; -1 = no room.
+        // A breaking-news ring around the selected country: the capital name keeps clear of it when it can.
+        const alert = this.alerts.get(sel.id);
+        let ring: { x: number; y: number; r: number } | null = null;
+        if (alert && capP) {
+          const q = g.project(alert.ll[0], alert.ll[1], g.liftOf?.(sel.id) ?? g.selectedLift?.() ?? 0);
+          if (q.visible) ring = { x: q.x, y: q.y, r: ALERT_R_SEL[alert.level] + 2 };
+        }
+        const overRing = (x0: number, y0: number, x1: number, y1: number): boolean => {
+          if (!ring) return false;
+          const nx = clamp(ring.x, x0, x1) - ring.x;
+          const ny = clamp(ring.y, y0, y1) - ring.y;
+          return nx * nx + ny * ny < ring.r * ring.r;
+        };
+        // The first side that stays on screen and touches no label, line, dot or (withRing) alert ring; -1 = no room.
         // With skipLines, a 1px leader line may cross the name: its halo keeps it legible.
-        const capSide = (lx: number, ly: number, skipLines: boolean): number => {
+        const capSide = (lx: number, ly: number, skipLines: boolean, withRing: boolean): number => {
           if (!cap || !capP) return -1;
           for (let sd = 0; sd < 4; sd++) {
             const [x0, y0, x1, y1] = nameBox(sd);
             if (x0 < 4 || x1 > this.width - 4 || y0 < this.topInset + 4 || y1 > this.height - 4) continue;
             const overLabel = x0 < lx + w + 2 && x1 > lx - 2 && y0 < ly + SEL_H + 2 && y1 > ly - 2;
+            if (withRing && overRing(x0, y0, x1, y1)) continue;
             if (!overLabel && !this.hits(x0, y0, x1, y1, 2, skipLines)) return sd;
           }
           return -1;
@@ -702,10 +720,12 @@ export class Overlay {
         let pick = spots[0];
         let side = -1;
         if (capP) {
-          search: for (const skipLines of [false, true]) {
+          // First try to keep the name off the alert ring; with no room, accept the ring under the name.
+          const passes = ring ? [[true, false], [true, true], [false, false], [false, true]] : [[false, false], [false, true]];
+          search: for (const [withRing, skipLines] of passes) {
             for (let k = 0; k < spots.length; k++) {
               if (!spotOk(k)) continue;
-              const sd = capSide(spots[k][0], spots[k][1], skipLines);
+              const sd = capSide(spots[k][0], spots[k][1], skipLines, withRing);
               if (sd >= 0) {
                 pick = spots[k];
                 side = sd;
@@ -918,7 +938,7 @@ export class Overlay {
       const limb = p.visible ? clamp((p.facing - 0.05) / 0.15, 0, 1) : 0;
       const onScreen = p.x >= 0 && p.x <= this.width && p.y >= this.topInset && p.y <= this.height;
       const op = onScreen ? Math.round(limb * 20) / 20 : 0;
-      const r = ALERT_R[n.level];
+      const r = (isSel ? ALERT_R_SEL : ALERT_R)[n.level];
 
       // Marker.
       if (op <= 0) {

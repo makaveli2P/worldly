@@ -13,6 +13,7 @@ import {
   SessionSet,
   ageWords,
   announcement,
+  sameView,
   sessionStore,
   stripBadge,
   visibleAlerts,
@@ -36,8 +37,11 @@ export interface BreakingBarOptions {
   onSelect: (alert: BreakingAlert) => void;
   /** Hover or focus on an alert: the map marker may pulse again. */
   onPreview: (alert: BreakingAlert) => void;
-  /** The alerts on screen changed (a poll or a dismiss). Most severe first. */
-  onChange: (alerts: readonly BreakingAlert[]) => void;
+  /**
+   * The alerts on screen changed (a poll or a dismiss). Most severe first. `fresh` holds the keys
+   * that are new in this session: only these pulse on the map.
+   */
+  onChange: (alerts: readonly BreakingAlert[], fresh: ReadonlySet<string>) => void;
   /** Focus target when the last alert is dismissed (not the search field: on mobile it opens the keyboard). */
   focusFallback: () => void;
 }
@@ -55,6 +59,8 @@ export class BreakingBar {
   private liveTimer = 0;
   private pulseTimer = 0;
   private pulseKey: string | null = null;
+  /** A new top alert that came while the page was hidden: its dot blinks when the page is visible. */
+  private heldPulse: string | null = null;
   private queued = '';
   private unseen = 0;
   private previewKey: string | null = null;
@@ -78,15 +84,25 @@ export class BreakingBar {
     // One preview per hover or focus of an alert, not one per pointer move.
     slot.addEventListener('pointerleave', () => (this.previewKey = null));
     slot.addEventListener('focusout', (e) => {
+      // A control that a re-render removed is not a real focus change.
+      if (!(e.target as Node).isConnected) return;
       if (!slot.contains(e.relatedTarget as Node | null)) this.previewKey = null;
     });
-    slot.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || !this.listOpen) return;
-      // Esc closes the list only; without stopPropagation, main would also close the selection.
-      e.stopPropagation();
-      this.setListOpen(false);
-      slot.querySelector<HTMLElement>('.brk-more')?.focus();
-    });
+    // Esc closes the list only. The listener is on window in the capture phase: Safari does not focus a
+    // button on a click, so after a click on +N the key goes to <body>, and main would close the selection.
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== 'Escape' || !this.listOpen) return;
+        const active = document.activeElement;
+        if (active && active !== document.body && !slot.contains(active)) return;
+        e.stopPropagation();
+        e.preventDefault();
+        this.setListOpen(false);
+        slot.querySelector<HTMLElement>('.brk-more')?.focus();
+      },
+      { capture: true },
+    );
     document.addEventListener('pointerdown', (e) => {
       if (this.listOpen && !slot.contains(e.target as Node)) this.setListOpen(false);
     });
@@ -100,6 +116,11 @@ export class BreakingBar {
         const msg = this.queued;
         this.queued = '';
         this.say(msg);
+      }
+      if (this.heldPulse) {
+        const key = this.heldPulse;
+        this.heldPulse = null;
+        if (this.shown[0]?.key === key) this.pulse(key);
       }
     });
   }
@@ -123,29 +144,54 @@ export class BreakingBar {
     this.shown = list;
     const fresh = fromFeed ? list.filter((a) => !this.announced.has(a.key)) : [];
     if (list.length < 2) this.listOpen = false;
-    this.render();
+    // A poll with the same list changes nothing in the DOM: a focused control stays, and a screen
+    // reader does not read it again.
+    if (sameView(prev, list)) this.tickAges();
+    else this.render();
 
     if (fresh.length > 0) {
       this.announced.add(...fresh.map((a) => a.key));
       const msg = announcement(fresh, this.opts.nameOf);
-      if (document.visibilityState === 'hidden') {
+      const hidden = document.visibilityState === 'hidden';
+      if (hidden) {
         this.queued = msg;
         this.unseen += fresh.length;
         document.title = withBadge(document.title, this.unseen);
       } else {
         this.say(msg);
       }
-      // The chip dot blinks when its alert is new.
-      if (list[0] && fresh.some((a) => a.key === list[0].key)) this.pulse(list[0].key);
+      // The chip dot blinks when its alert is new, and only on a visible page.
+      if (list[0] && fresh.some((a) => a.key === list[0].key)) {
+        if (hidden) this.heldPulse = list[0].key;
+        else this.pulse(list[0].key);
+      }
     }
 
     const same =
       prev.length === list.length &&
       prev.every((a, i) => a.key === list[i].key && a.level === list[i].level && a.country === list[i].country);
-    if (!same) this.opts.onChange(list);
+    if (!same) this.opts.onChange(list, new Set(fresh.map((a) => a.key)));
 
     clearInterval(this.ageTimer);
-    this.ageTimer = list.length > 0 ? window.setInterval(() => this.render(), AGE_TICK_MS) : 0;
+    this.ageTimer = list.length > 0 ? window.setInterval(() => this.tickAges(), AGE_TICK_MS) : 0;
+  }
+
+  /**
+   * Updates the age text and the accessible names in place, with no new DOM. The focused control keeps
+   * its name until it loses focus (a name change on the focused control makes a screen reader read it again).
+   */
+  private tickAges(): void {
+    const now = Date.now();
+    const active = document.activeElement;
+    for (const a of this.shown) {
+      const btn = this.slot.querySelector<HTMLElement>(`[data-focus="main:${CSS.escape(a.key)}"]`);
+      if (!btn) continue;
+      const time = btn.querySelector('time.brk-age');
+      const text = age(a.since, now) ?? '';
+      if (time && time.textContent !== text) time.textContent = text;
+      const label = this.label(a, now);
+      if (btn !== active && btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+    }
   }
 
   private dismiss(key: string): void {
@@ -166,7 +212,7 @@ export class BreakingBar {
   }
 
   private pulse(key: string): void {
-    if (this.reduced.matches) return;
+    if (this.reduced.matches || document.visibilityState !== 'visible') return;
     this.pulseKey = key;
     clearTimeout(this.pulseTimer);
     this.slot.querySelector('.brk')?.setAttribute('data-pulse', '');
@@ -224,6 +270,7 @@ export class BreakingBar {
     if (list.length === 0) {
       this.slot.replaceChildren();
       this.bar?.removeAttribute('data-breaking');
+      document.documentElement.removeAttribute('data-breaking');
       return;
     }
     // Keep keyboard focus on the same control across a re-render.
@@ -349,6 +396,8 @@ export class BreakingBar {
     }
     this.slot.replaceChildren(...nodes);
     this.bar?.setAttribute('data-breaking', '');
+    // On a tablet the header grows by a row: the plates (top: var(--top)) move down with it.
+    document.documentElement.setAttribute('data-breaking', '');
     if (focusId) this.slot.querySelector<HTMLElement>(`[data-focus="${CSS.escape(focusId)}"]`)?.focus();
   }
 

@@ -302,8 +302,8 @@ async function start(): Promise<void> {
       overlay.pulseAlert(a.country);
     },
     onPreview: (a) => overlay.pulseAlert(a.country),
-    onChange: (alerts) => {
-      overlay.setAlerts(alerts.map((a) => ({ id: a.country, key: a.key, level: a.level })));
+    onChange: (alerts, fresh) => {
+      overlay.setAlerts(alerts.map((a) => ({ id: a.country, key: a.key, level: a.level, fresh: fresh.has(a.key) })));
       // On mobile the header gains or loses a row: the globe and the labels follow its height.
       if (alerts.length > 0 !== hadAlerts) {
         hadAlerts = alerts.length > 0;
