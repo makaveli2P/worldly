@@ -984,20 +984,23 @@ export class Overlay {
           dx /= d;
           dy /= d;
         }
-        // Keep the arrow in the free area: below the header, between the plates, above the mobile sheet.
-        let x0 = 16;
-        let x1 = this.width - 16;
-        let y1 = this.height - 16;
+        // Keep the arrow and its name in the free area: below the header, between the plates, above the
+        // mobile sheet. The limits clear the blocked margin (8px) of each plate and the hit pad (2px).
         const { details, news } = this.panels;
+        let left = 4;
+        let right = this.width - 4;
+        let bottom = this.height - 4;
         if (this.mobile) {
-          if (details) y1 = Math.min(y1, details.top - 16);
+          if (details) bottom = Math.min(bottom, details.top - 10);
         } else {
-          if (details && details.width > 0) x0 = Math.max(x0, details.right + 16);
-          if (news && news.width > 0) x1 = Math.min(x1, news.left - 16);
+          if (details && details.width > 0) left = Math.max(left, details.right + 10);
+          if (news && news.width > 0) right = Math.min(right, news.left - 10);
         }
+        // The arrow box is 16px square: its centre stays 8px (+ a margin) inside the limits.
+        const x0 = left + 10;
+        const x1 = Math.max(x0, right - 10);
         const y0 = this.topInset + 16;
-        x1 = Math.max(x0, x1);
-        y1 = Math.max(y0, y1);
+        const y1 = Math.max(y0, bottom - 10);
         const w = it.w + 4;
         // Offsets apply after the first clamp: far off screen, a small step must still move the arrow.
         const bx = clamp(cx + dx * (discR + 12), x0, x1);
@@ -1006,10 +1009,7 @@ export class Overlay {
         // The name goes on the outer side of the arrow (on the canvas) when it fits, else on the inner side.
         let [ex, ey] = at(0);
         const outer = dx > 0 ? 'r' : 'l';
-        const fits =
-          outer === 'r'
-            ? ex + 12 + w <= Math.min(this.width - 4, x1 + 16)
-            : ex - 12 - w >= Math.max(4, x0 - 16);
+        const fits = outer === 'r' ? ex + 12 + w <= right : ex - 12 - w >= left;
         const side = fits ? outer : outer === 'r' ? 'l' : 'r';
         // The arrow and its name as one box. Two arrows can meet (a corner, or close countries):
         // then step along the edge, then up and down, until the box is free.
