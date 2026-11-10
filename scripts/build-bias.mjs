@@ -352,9 +352,11 @@ async function tableAgeDays(path) {
   return at ? (Date.now() - at) / 86_400_000 : null;
 }
 
-async function saveMbfc(table) {
+/** Writes the table. Only a table from RapidAPI goes into the build cache, never one from --input. */
+async function saveMbfc(table, cache) {
   const text = `${JSON.stringify(table)}\n`;
   await writeAtomic(OUT_MBFC, text);
+  if (!cache) return;
   try {
     await writeAtomic(CACHE_MBFC, text);
   } catch {
@@ -382,7 +384,7 @@ async function buildMbfc(records, source) {
   const { table, stats, unknown } = buildMbfcTable(records, rules);
   for (const [value, n] of unknown) warn(`MBFC: unknown bias value "${value}" (${n} records): no lean`);
   if (stats.hosts < MIN_RECORDS) throw new Error(`only ${stats.hosts} hosts`);
-  await saveMbfc(table);
+  await saveMbfc(table, source === 'RapidAPI');
   console.log(
     `[bias] MBFC (${source}): ${stats.records} records -> ${stats.hosts} hosts, ${stats.withLean} with a lean, ${stats.droppedPath} path records dropped`,
   );

@@ -31,7 +31,8 @@
     "sg.news.yahoo.com": "news.yahoo.com",
     "au.news.yahoo.com": "news.yahoo.com",
     "ca.news.yahoo.com": "news.yahoo.com",
-    "in.news.yahoo.com": "news.yahoo.com"
+    "in.news.yahoo.com": "news.yahoo.com",
+    "web.nhk": "nhk.or.jp"
   },
   "stopParents": ["indiatimes.com", "yahoo.com", "co.uk", "com.au", "blogspot.com", "wordpress.com"],
   "pathRecords": {

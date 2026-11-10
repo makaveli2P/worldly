@@ -126,24 +126,26 @@ export function createBiasLookup(mbfc: MbfcTable | null, state: StateTable, r: B
   };
 }
 
-/** Reads the MBFC table, when one exists. Tries next to this module, then from the project root. */
-function loadMbfc(): MbfcTable | null {
-  const paths: (string | URL)[] = [];
+/** Parses a table file. Null when the file is missing or not a table. */
+function readTable(read: () => string): MbfcTable | null {
   try {
-    paths.push(new URL('./generated/mbfc.json', import.meta.url));
+    return asMbfcTable(JSON.parse(read()));
   } catch {
-    // import.meta.url is not a file URL here. The project-root path still applies.
+    // No table here. This is the normal state with no RAPIDAPI_KEY.
+    return null;
   }
-  paths.push(join(process.cwd(), 'api/_lib/generated/mbfc.json'));
-  for (const p of paths) {
-    try {
-      const table = asMbfcTable(JSON.parse(readFileSync(p, 'utf8')));
-      if (table) return table;
-    } catch {
-      // No table here. This is the normal state with no RAPIDAPI_KEY.
-    }
-  }
-  return null;
+}
+
+/**
+ * Reads the MBFC table, when one exists. Tries next to this module, then from the project root.
+ * Keep each path a literal in its call: the Vercel file trace (@vercel/nft) finds the file
+ * only in this form, and then puts it in the function bundle.
+ */
+function loadMbfc(): MbfcTable | null {
+  return (
+    readTable(() => readFileSync(new URL('./generated/mbfc.json', import.meta.url), 'utf8')) ??
+    readTable(() => readFileSync(join(process.cwd(), 'api/_lib/generated/mbfc.json'), 'utf8'))
+  );
 }
 
 let lookup: ReturnType<typeof createBiasLookup> | null = null;

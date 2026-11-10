@@ -2,7 +2,7 @@
  "source": "State Media Monitor Global Dataset 2026",
  "citation": "Dragomir, M. (2026). State Media Monitor Global Dataset 2026 (Version 2026.1) [Data set]. Media and Journalism Research Center (MJRC). https://doi.org/10.5281/zenodo.23863495, CC BY 4.0. Worldly added domain names.",
  "licence": "CC BY 4.0",
- "generatedAt": "2026-11-10T13:09:31.073Z",
+ "generatedAt": "2026-11-10T15:19:54.297Z",
  "hosts": {
   "1news.co.nz": [
    "ISM",
@@ -430,6 +430,12 @@
    "Prasar Bharati",
    "IND"
   ],
+  "nhk.jp": [
+   "ISM",
+   "SMM-0456",
+   "Japan Broadcasting Corporation (NHK)",
+   "JPN"
+  ],
   "nhk.or.jp": [
    "ISM",
    "SMM-0456",
@@ -831,6 +837,12 @@
    "SMM-0253",
    "Emirates News Agency (WAM)",
    "ARE"
+  ],
+  "web.nhk": [
+   "ISM",
+   "SMM-0456",
+   "Japan Broadcasting Corporation (NHK)",
+   "JPN"
   ],
   "www3.nhk.or.jp": [
    "ISM",
