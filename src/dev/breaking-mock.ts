@@ -6,7 +6,7 @@
 // 1 critical and 2 major alerts: Ukraine (large, near Europe), Japan (on the far side of the globe
 // from Europe and the Americas) and Lebanon (a small country).
 
-import type { BreakingResponse } from '../ui/alerts-types';
+import type { BreakingResponse } from '../types';
 
 const ago = (min: number, now: number) => new Date(now - min * 60_000).toISOString();
 

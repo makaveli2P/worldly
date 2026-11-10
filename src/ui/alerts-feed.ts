@@ -2,7 +2,7 @@
 // hidden (so that the title badge can show a new alert). A failed poll keeps the last good list and writes
 // nothing to the UI or the console. After 3 failures in a row it polls every 15 minutes.
 
-import type { BreakingAlert } from './alerts-types';
+import type { BreakingAlert } from '../types';
 import { REFRESH_ON_SHOW_MS, nextPollDelay, parseBreakingResponse } from './alerts-model';
 
 const TIMEOUT_MS = 8000;

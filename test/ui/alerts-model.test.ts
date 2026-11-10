@@ -18,7 +18,7 @@ import {
   visibleAlerts,
   withBadge,
 } from '../../src/ui/alerts-model';
-import type { BreakingAlert } from '../../src/ui/alerts-types';
+import type { BreakingAlert } from '../../src/types';
 
 const NOW = Date.parse('2026-11-10T12:00:00Z');
 const iso = (minAgo: number) => new Date(NOW - minAgo * 60_000).toISOString();

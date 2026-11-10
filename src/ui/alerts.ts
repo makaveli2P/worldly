@@ -3,8 +3,7 @@
 // "+N" opens a list of the other alerts. A click selects the country; × dismisses the alert for the session.
 // A polite live region announces each new alert key once. With no alert, the slot is empty.
 
-import type { CountryId } from '../types';
-import type { BreakingAlert } from './alerts-types';
+import type { BreakingAlert, CountryId } from '../types';
 import { closeIcon, h, svgIcon } from './dom';
 import { age } from './format';
 import {
@@ -20,7 +19,7 @@ import {
   withBadge,
 } from './alerts-model';
 
-export type { BreakingAlert, BreakingResponse, BreakingLevel, BreakingKind } from './alerts-types';
+export type { BreakingAlert, BreakingResponse, BreakingLevel, BreakingKind } from '../types';
 export { startBreakingFeed, type BreakingFeedOptions } from './alerts-feed';
 
 /** Three blinks of the chip dot, 1.6 s each, plus a margin. */

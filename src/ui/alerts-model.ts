@@ -1,8 +1,7 @@
 // Pure logic of the breaking-news UI: response checks, order, dismiss and announce sets,
 // the live-region message, the title badge and the poll delay. No DOM here, so tests run in Node.
 
-import type { CountryId } from '../types';
-import type { BreakingAlert, BreakingKind, BreakingLevel } from './alerts-types';
+import type { BreakingAlert, BreakingKind, BreakingLevel, CountryId } from '../types';
 
 /** Markers and chip rows the UI shows at most. The server sends at most 3. */
 export const MAX_ALERTS = 5;
