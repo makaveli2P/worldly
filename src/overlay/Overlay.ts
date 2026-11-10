@@ -1,6 +1,7 @@
-// Globe overlay: always-on country and capital labels, and the leader lines from the selected country to the panels.
-// The globe calls back after each frame; the overlay projects the label sites, places them greedily by priority,
-// and writes only transforms and opacity to a fixed pool of DOM nodes.
+// Globe overlay: always-on country and capital labels, the leader lines from the selected country to the panels,
+// and the breaking-news markers. The globe calls back after each frame; the overlay projects the label sites,
+// places them greedily by priority, and writes only transforms and opacity to a fixed pool of DOM nodes.
+// The marker pulse is a CSS animation, so it does not make the globe render.
 
 import './overlay.css';
 import type { CountryFeature, CountryId, CountryInfo } from '../types';
@@ -25,6 +26,17 @@ export interface OverlayGlobe {
   selectedAnchor(): [number, number] | null;
   /** Optional: raise of the selected country in earth radii, so the anchor dot sits on the raised cap. */
   selectedLift?(): number;
+  /** Optional: label point [lat, lng] of any country (the alert markers sit there). */
+  labelPoint?(id: CountryId): [number, number] | null;
+  /** Optional: raise of any country in earth radii (hover or selection). */
+  liftOf?(id: CountryId): number;
+}
+
+/** One breaking-news marker. A new key pulses once; the most severe level is "critical". */
+export interface OverlayAlert {
+  id: CountryId;
+  key: string;
+  level: 'critical' | 'major';
 }
 
 export interface OverlayOptions {
@@ -49,6 +61,11 @@ const CAP_SQ = 4;
 const CAP_GAP = 5;
 const RISE = 56; // vertical run of a leader line, px
 const BIG_KM2 = 2e6;
+const MAX_ALERTS = 5;
+/** Three ring cycles of 1.6 s, plus a margin. The pulse attribute goes away after this time. */
+const PULSE_MS = 3 * 1600 + 200;
+/** Outer radius of a marker at rest, px (critical: the second ring at scale 1.45). The label sits outside it. */
+const ALERT_R = { critical: 22, major: 12 } as const;
 
 /** Short forms for names that are too long to label on a globe. */
 const SHORT: Record<string, string> = {
@@ -113,6 +130,27 @@ interface CountryItem extends Node {
   cap: CapitalItem | null;
   extra: [number, number][];
   site: number; // -1 = the main site, else an index into extra
+  wAlert: number; // label width in the alert weight (600)
+}
+
+interface AlertNode {
+  id: CountryId;
+  key: string;
+  level: OverlayAlert['level'];
+  ll: [number, number];
+  el: HTMLElement; // marker: rings and core, at the label point
+  ring: HTMLElement; // the first ring; its animationend ends the pulse
+  edge: HTMLElement; // arrow and name at the globe edge while the country is on the far side
+  arrow: HTMLElement;
+  shown: boolean;
+  edgeShown: boolean;
+  xy: string;
+  op: number;
+  edgeXY: string;
+  edgeSide: string;
+  sel: boolean;
+  pending: boolean; // a new key: pulse when the marker is first in clear view
+  pulseTimer: number;
 }
 
 interface LineSide {
@@ -137,6 +175,7 @@ export class Overlay {
   private readonly globe: OverlayGlobe;
   private readonly el: HTMLDivElement;
   private readonly labelsEl: HTMLDivElement;
+  private readonly alertsEl: HTMLDivElement;
   private readonly svg: SVGSVGElement;
   private readonly discIn: SVGCircleElement;
   private readonly discOut: SVGCircleElement;
@@ -161,6 +200,8 @@ export class Overlay {
   private linesOp = -1;
   private dotXY = '';
   private drawPending = false;
+  private readonly alerts = new Map<CountryId, AlertNode>();
+  private readonly seenAlertKeys = new Set<string>();
 
   // Occupied screen boxes for this frame: [x0, y0, x1, y1] * n.
   private boxes = new Float64Array(4 * 256);
@@ -206,7 +247,10 @@ export class Overlay {
 
     this.labelsEl = document.createElement('div');
     this.labelsEl.className = 'wo-labels';
-    this.el.append(this.svg, this.labelsEl);
+    // Alert rings go under the leader lines and the red anchor dot; the labels go over everything.
+    this.alertsEl = document.createElement('div');
+    this.alertsEl.className = 'wo-alerts';
+    this.el.append(this.alertsEl, this.svg, this.labelsEl);
     root.appendChild(this.el);
 
     // Label items, computed once.
@@ -237,6 +281,7 @@ export class Overlay {
         cap,
         extra: site.extra,
         site: -1,
+        wAlert: 0,
       });
     }
     items.sort((a, b) => b.score - a.score);
@@ -249,8 +294,65 @@ export class Overlay {
     document.fonts?.addEventListener('loadingdone', this.remeasure);
 
     window.addEventListener('resize', this.onResize);
+    document.addEventListener('visibilitychange', this.onVisibility);
     this.unsubscribe = this.globe.onFrame(this.onFrame);
     this.kick();
+  }
+
+  /**
+   * Breaking-news markers, most severe first. A marker for a key the overlay has not seen pulses
+   * 3 times when it first comes into clear view (never with reduced motion). At most 5 markers.
+   */
+  setAlerts(list: readonly OverlayAlert[]): void {
+    const next = new Map<CountryId, OverlayAlert>();
+    for (const a of list) {
+      if (next.size >= MAX_ALERTS) break;
+      if (!next.has(a.id) && this.byId.has(a.id)) next.set(a.id, a);
+    }
+    for (const [id, n] of this.alerts) {
+      if (next.has(id)) continue;
+      clearTimeout(n.pulseTimer);
+      n.el.remove();
+      n.edge.remove();
+      this.alerts.delete(id);
+      this.byId.get(id)?.el?.classList.remove('wo-alerted');
+    }
+    for (const a of next.values()) {
+      let n = this.alerts.get(a.id);
+      if (!n) {
+        n = this.alertNode(a);
+        this.alerts.set(a.id, n);
+        this.byId.get(a.id)?.el?.classList.add('wo-alerted');
+      }
+      if (n.level !== a.level) {
+        n.level = a.level;
+        n.el.dataset.level = a.level;
+        n.edge.dataset.level = a.level;
+      }
+      if (n.key !== a.key) n.key = a.key;
+      if (!this.seenAlertKeys.has(a.key)) {
+        this.seenAlertKeys.add(a.key);
+        n.pending = !this.reducedMotion.matches;
+      }
+    }
+    // The most severe marker goes last in the DOM, so it draws on top where rings overlap.
+    for (const a of next.values()) {
+      const n = this.alerts.get(a.id)!;
+      this.alertsEl.prepend(n.el, n.edge);
+    }
+    this.kick();
+  }
+
+  /** Pulses the marker of `id` once more (the user hovers or focuses its alert). Not with reduced motion. */
+  pulseAlert(id: CountryId): void {
+    const n = this.alerts.get(id);
+    if (!n || this.reducedMotion.matches || n.el.hasAttribute('data-pulse')) return;
+    if (n.shown && n.op > 0.5) this.startPulse(n);
+    else {
+      // Not in clear view (the globe still turns there): pulse when it is.
+      n.pending = true;
+      this.kick();
+    }
   }
 
   setSelected(id: CountryId | null): void {
@@ -295,7 +397,10 @@ export class Overlay {
     this.unsubscribe();
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('visibilitychange', this.onVisibility);
     document.fonts?.removeEventListener('loadingdone', this.remeasure);
+    for (const n of this.alerts.values()) clearTimeout(n.pulseTimer);
+    this.alerts.clear();
     this.el.remove();
   }
 
@@ -310,6 +415,11 @@ export class Overlay {
     this.width = window.innerWidth;
     this.height = window.innerHeight;
     this.kick();
+  };
+
+  /** A marker waits for a visible page before it pulses. */
+  private readonly onVisibility = (): void => {
+    if (document.visibilityState === 'visible') this.kick();
   };
 
   private readonly remeasure = (): void => {
@@ -340,6 +450,7 @@ export class Overlay {
     for (const it of this.items) {
       it.w = it.big ? this.measure(it.text, 500, 11, 0.14) : this.measure(it.text, 500, 10, 0.12);
       it.wSel = this.measure(it.text, 600, 13, 0.16);
+      it.wAlert = it.big ? this.measure(it.text, 600, 11, 0.14) : this.measure(it.text, 600, 10, 0.12);
       if (it.cap) {
         it.cap.w = CAP_SQ + CAP_GAP + this.measure(it.cap.name, 400, 11, 0);
         it.cap.wSel = 6 + CAP_GAP + this.measure(it.cap.name, 500, 12, 0);
@@ -360,6 +471,7 @@ export class Overlay {
     if (!it.el) {
       const n = document.createElement('div');
       n.className = `wo-lbl wo-country${it.big ? ' wo-big' : ''}${it.id === this.selected ? ' wo-sel' : ''}`;
+      if (this.alerts.has(it.id)) n.classList.add('wo-alerted');
       n.textContent = it.text;
       this.labelsEl.appendChild(n);
       it.el = n;
@@ -618,6 +730,9 @@ export class Overlay {
       }
     }
 
+    // Breaking-news markers and their labels. They come before the other labels, so an alert always has its name.
+    if (this.alerts.size > 0) this.updateAlerts(sel ?? null, c0.x, c0.y, discR);
+
     // Other countries, by priority. Density follows the zoom: a country joins when it is large on screen.
     const topN = mobile ? 10 : 20;
     const minPx = mobile ? 56 : 44;
@@ -626,7 +741,7 @@ export class Overlay {
     let placed = 0;
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i];
-      if (it === sel) continue;
+      if (it === sel || it.placed) continue;
       const sizePx = Math.sqrt(it.areaKm2) * pxPerKm;
       const candidate = placed < maxPlaced && (i < topN || sizePx >= minPx);
       if (!candidate && it.fade <= 0) continue;
@@ -712,6 +827,230 @@ export class Overlay {
     this.perf.frames++;
     this.perf.totalMs += ms;
     this.perf.maxMs = Math.max(this.perf.maxMs, ms);
+  }
+
+  // ---------- breaking-news markers ----------
+
+  private alertNode(a: OverlayAlert): AlertNode {
+    const it = this.byId.get(a.id)!;
+    const el = document.createElement('div');
+    el.className = 'wo-alert';
+    el.dataset.level = a.level;
+    const ring = document.createElement('i');
+    ring.className = 'wo-alert-ring';
+    const ring2 = document.createElement('i');
+    ring2.className = 'wo-alert-ring';
+    const core = document.createElement('i');
+    core.className = 'wo-alert-core';
+    el.append(ring, ring2, core);
+    const edge = document.createElement('div');
+    edge.className = 'wo-alert-edge';
+    edge.dataset.level = a.level;
+    const arrow = document.createElement('i');
+    arrow.className = 'wo-alert-arrow';
+    const name = document.createElement('span');
+    name.className = 'wo-alert-edge-lbl';
+    name.textContent = it.text;
+    edge.append(arrow, name);
+    const n: AlertNode = {
+      id: a.id,
+      key: a.key,
+      level: a.level,
+      ll: this.globe.labelPoint?.(a.id) ?? [it.lat, it.lng],
+      el,
+      ring,
+      edge,
+      arrow,
+      shown: false,
+      edgeShown: false,
+      xy: '',
+      op: -1,
+      edgeXY: '',
+      edgeSide: '',
+      sel: false,
+      pending: false,
+      pulseTimer: 0,
+    };
+    // The first ring runs longest (3 cycles); its end is the end of the pulse.
+    ring.addEventListener('animationend', () => this.endPulse(n));
+    return n;
+  }
+
+  private startPulse(n: AlertNode): void {
+    clearTimeout(n.pulseTimer);
+    n.el.removeAttribute('data-pulse');
+    void n.el.offsetWidth; // restart the CSS animation
+    n.el.setAttribute('data-pulse', '');
+    // A hidden marker gets no animationend; the timer ends the pulse in any case.
+    n.pulseTimer = window.setTimeout(() => this.endPulse(n), PULSE_MS);
+  }
+
+  private endPulse(n: AlertNode): void {
+    clearTimeout(n.pulseTimer);
+    n.pulseTimer = 0;
+    n.el.removeAttribute('data-pulse');
+  }
+
+  /** True when the screen point is under an open plate, or below the top edge of the mobile sheet. */
+  private underPanel(x: number, y: number): boolean {
+    const { details, news } = this.panels;
+    if (this.mobile) return details !== null && y > details.top;
+    const inside = (r: DOMRect | null) => r !== null && r.width > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    return inside(details) || inside(news);
+  }
+
+  /**
+   * Projects each marker, places its label next to it (forced to the first spot when no spot is free),
+   * and shows an arrow on the globe edge for a country on the far side or off screen.
+   */
+  private updateAlerts(sel: CountryItem | null, cx: number, cy: number, discR: number): void {
+    const g = this.globe;
+    const visible = document.visibilityState === 'visible';
+    for (const n of this.alerts.values()) {
+      const it = this.byId.get(n.id)!;
+      const isSel = it === sel;
+      if (isSel !== n.sel) {
+        n.sel = isSel;
+        n.el.toggleAttribute('data-sel', isSel);
+      }
+      const lift = g.liftOf?.(n.id) ?? (isSel ? (g.selectedLift?.() ?? 0) : 0);
+      const p = g.project(n.ll[0], n.ll[1], lift);
+      const limb = p.visible ? clamp((p.facing - 0.05) / 0.15, 0, 1) : 0;
+      const onScreen = p.x >= 0 && p.x <= this.width && p.y >= this.topInset && p.y <= this.height;
+      const op = onScreen ? Math.round(limb * 20) / 20 : 0;
+      const r = ALERT_R[n.level];
+
+      // Marker.
+      if (op <= 0) {
+        if (n.shown) {
+          delete n.el.dataset.on;
+          n.shown = false;
+        }
+      } else {
+        if (!n.shown) {
+          n.el.dataset.on = '';
+          n.shown = true;
+        }
+        const xy = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
+        if (xy !== n.xy) {
+          n.el.style.transform = xy;
+          n.xy = xy;
+        }
+        if (op !== n.op) {
+          n.el.style.opacity = String(op);
+          n.op = op;
+        }
+        this.push(p.x - r, p.y - r, p.x + r, p.y + r);
+        if (!isSel) {
+          // The label: right, left, above, below. With no free spot, it takes the first one.
+          const w = it.wAlert;
+          const gap = r + 4;
+          const spots: [number, number][] = [
+            [p.x + gap, p.y - LABEL_H / 2],
+            [p.x - gap - w, p.y - LABEL_H / 2],
+            [p.x - w / 2, p.y - gap - LABEL_H],
+            [p.x - w / 2, p.y + gap],
+          ];
+          let pick = spots[0];
+          for (const [lx, ly] of spots) {
+            if (lx < 4 || lx + w > this.width - 4 || ly < this.topInset + 4 || ly + LABEL_H > this.height - 4) continue;
+            if (this.hits(lx, ly, lx + w, ly + LABEL_H, 2)) continue;
+            pick = [lx, ly];
+            break;
+          }
+          it.placed = true;
+          it.limb = limb;
+          it.px = pick[0];
+          it.py = pick[1];
+          this.push(pick[0], pick[1], pick[0] + w, pick[1] + LABEL_H);
+        }
+      }
+
+      // Edge arrow: the country is on the far side, or off screen when zoomed in.
+      const far = limb <= 0 || !onScreen;
+      if (!far) {
+        if (n.edgeShown) {
+          delete n.edge.dataset.on;
+          n.edgeShown = false;
+        }
+      } else {
+        let dx = p.x - cx;
+        let dy = p.y - cy;
+        const d = Math.hypot(dx, dy);
+        if (d < 1) {
+          dx = 0;
+          dy = -1;
+        } else {
+          dx /= d;
+          dy /= d;
+        }
+        // Keep the arrow in the free area: below the header, between the plates, above the mobile sheet.
+        let x0 = 16;
+        let x1 = this.width - 16;
+        let y1 = this.height - 16;
+        const { details, news } = this.panels;
+        if (this.mobile) {
+          if (details) y1 = Math.min(y1, details.top - 16);
+        } else {
+          if (details && details.width > 0) x0 = Math.max(x0, details.right + 16);
+          if (news && news.width > 0) x1 = Math.min(x1, news.left - 16);
+        }
+        const y0 = this.topInset + 16;
+        x1 = Math.max(x0, x1);
+        y1 = Math.max(y0, y1);
+        const w = it.w + 4;
+        // Offsets apply after the first clamp: far off screen, a small step must still move the arrow.
+        const bx = clamp(cx + dx * (discR + 12), x0, x1);
+        const by = clamp(cy + dy * (discR + 12), y0, y1);
+        const at = (k: number, sx = 0, sy = 0): [number, number] => [clamp(bx - dy * k + sx, x0, x1), clamp(by + dx * k + sy, y0, y1)];
+        // The name goes on the outer side of the arrow (on the canvas) when it fits, else on the inner side.
+        let [ex, ey] = at(0);
+        const outer = dx > 0 ? 'r' : 'l';
+        const fits =
+          outer === 'r'
+            ? ex + 12 + w <= Math.min(this.width - 4, x1 + 16)
+            : ex - 12 - w >= Math.max(4, x0 - 16);
+        const side = fits ? outer : outer === 'r' ? 'l' : 'r';
+        // The arrow and its name as one box. Two arrows can meet (a corner, or close countries):
+        // then step along the edge, then up and down, until the box is free.
+        const box = (x: number, y: number): [number, number, number, number] =>
+          side === 'l' ? [x - 12 - w, y - 8, x + 8, y + 8] : [x - 8, y - 8, x + 12 + w, y + 8];
+        const tries: [number, number, number][] = [];
+        for (const k of [0, 18, -18, 36, -36, 54, -54]) tries.push([k, 0, 0]);
+        for (const k of [18, 36, 54, 72, -18, -36, -54, -72]) tries.push([0, 0, k]);
+        for (const [k, sx, sy] of tries) {
+          const [qx, qy] = at(k, sx, sy);
+          const [b0, b1, b2, b3] = box(qx, qy);
+          if (this.hits(b0, b1, b2, b3, 2)) continue;
+          ex = qx;
+          ey = qy;
+          break;
+        }
+        if (!n.edgeShown) {
+          n.edge.dataset.on = '';
+          n.edgeShown = true;
+        }
+        const exy = `translate3d(${ex.toFixed(1)}px,${ey.toFixed(1)}px,0)`;
+        if (exy !== n.edgeXY) {
+          n.edge.style.transform = exy;
+          n.arrow.style.transform = `rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;
+          n.edgeXY = exy;
+        }
+        // data-side: the name is to the left (l) or to the right (r) of the arrow.
+        if (side !== n.edgeSide) {
+          n.edge.dataset.side = side;
+          n.edgeSide = side;
+        }
+        const [b0, b1, b2, b3] = box(ex, ey);
+        this.push(b0, b1, b2, b3);
+      }
+
+      // A new key pulses once, when its marker is first in clear view on a visible page.
+      if (n.pending && visible && op > 0.5 && !this.underPanel(p.x, p.y)) {
+        n.pending = false;
+        this.startPulse(n);
+      }
+    }
   }
 
   /** Projects one site of a country label and places it when the box is free. */
