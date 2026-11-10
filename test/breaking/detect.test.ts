@@ -163,6 +163,38 @@ describe('big events from the review do alert', () => {
   });
 });
 
+// Real titles from the Google News corpora of the research (5 and 7 Nov 2026), placed on the
+// front pages and editions where such a story would sit. They test the production thresholds.
+describe('real headlines in production positions', () => {
+  it('the Paraguay president who resigns and is impeached is critical', () => {
+    const a = alerts([
+      ['bbc_world', 'front', null, 1, 'BBC News', 'Paraguay President Santiago Peña resigns after bank collapse'],
+      ['npr_world', 'front', null, 1, 'NPR', "Paraguay's president is impeached minutes after resigning following a bank collapse"],
+      ['guardian_world', 'front', null, 2, 'The Guardian', 'Paraguay’s president quits after millions of people’s savings frozen in bank crisis'],
+      ['dw_world', 'front', null, 3, 'DW', "Paraguay's President Pena resigns as bank collapse sparks protests and impeachment push"],
+      ['france24', 'front', null, 4, 'France 24', "Impeachment trial of Paraguay's President Peña begins after bank scandal resignation"],
+      ['gn_world', 'gn', 'WORLD', 1, 'Reuters', "Paraguay's Peña resigns as bank collapse triggers political crisis"],
+      ['gn_top_us', 'gn', 'US', 3, 'CNN', 'Paraguay president impeached and under house arrest following bank collapse scandal'],
+      ['gn_top_us', 'gn', 'US', 8, 'NBC News', 'Paraguay President Peña resigns under mounting pressure from bank collapse'],
+      ['nyt_world', 'front', null, 2, 'The New York Times', 'Paraguay’s Leader Resigns After Bank Failure Leaves Millions Without Savings'],
+    ]);
+    expect(a.map((x) => `${x.country}:${x.level}:${x.kind}`)).toEqual(['PRY:critical:politics']);
+    expect(a[0].outlets).toBe(8);
+  });
+
+  it('the Kraków mass shooting (6 dead) is major, not critical', () => {
+    expect(summary([
+      ['bbc_world', 'front', null, 1, 'BBC News', 'Six killed in mass shooting in Kraków main square'],
+      ['nyt_world', 'front', null, 1, 'The New York Times', 'Gunman Opens Fire in Krakow, Killing at Least 6, Polish Police Say'],
+      ['aljazeera', 'front', null, 3, 'Al Jazeera', 'At least six people killed in shooting in Poland’s Krakow main square'],
+      ['gn_world', 'gn', 'WORLD', 1, 'Reuters', 'Poland in shock after six die in Krakow mass shooting'],
+      ['gn_top_us', 'gn', 'US', 2, 'NBC News', 'Gunman kills 6 in ‘terror attack’ in Kraków, Poland, officials say; 3 others found dead in his home'],
+      ['gn_top_us', 'gn', 'US', 6, 'CNN', 'Poland stunned as suspect with far-right views kills 6 in Kraków mass shooting'],
+      ['gn_top_gb', 'gn', 'GB', 4, 'WSJ', 'Six Dead in Shooting at Market Square in Poland'],
+    ])).toEqual(['POL:major']);
+  });
+});
+
 describe('thresholds', () => {
   it('one outlet never starts an alert, even with 68 dead', () => {
     expect(alerts([
@@ -179,6 +211,15 @@ describe('thresholds', () => {
     ];
     expect(alerts(deep)).toEqual([]);
     expect(summary([...deep.slice(0, 2), ['gn_world', 'gn', 'WORLD', 4, 'Reuters', 'Bus crash in Peru kills 20']])).toEqual(['PER:major']);
+  });
+
+  it('two unrelated crashes in one country do not add up', () => {
+    expect(alerts([
+      ['bbc_world', 'front', null, 2, 'BBC News', 'Jet crash in Florida kills 9'],
+      ['gn_top_us', 'gn', 'US', 3, 'CNN', 'Florida jet crash kills 9 people'],
+      ['aljazeera', 'front', null, 3, 'Al Jazeera', 'Bus crash in Texas kills 7'],
+      ['gn_world', 'gn', 'WORLD', 5, 'Reuters', 'Texas bus crash leaves 7 dead'],
+    ])).toEqual([]);
   });
 
   it('a GDACS or USGS record alone never alerts', () => {
@@ -245,6 +286,17 @@ describe('time', () => {
       ['gn_top_in', 'gn', 'IN', 2, 'NDTV', 'Estonia invaded: Russian tanks reach Tallinn', 0.2],
     ];
     const k2 = alerts(later).map((a) => a.key);
+    expect(k1).toHaveLength(1);
+    expect(k2).toEqual(k1);
+    expect(k1[0]).toBe('EST-conflict-20261110');
+  });
+
+  it('keeps the same key when the first headline leaves its feed', () => {
+    // NOW is 12:00 UTC. The first headline is from 10:36, the others from 11:00 to 12:00.
+    const first: Row = ['dw_world', 'front', null, 2, 'DW', 'Russia invades Estonia at dawn', 1.4];
+    const rest = ESTONIA.map((r, i): Row => [r[0], r[1], r[2], r[3], r[4], r[5], 0.9 - i * 0.15]);
+    const k1 = alerts([first, ...rest]).map((a) => a.key);
+    const k2 = alerts(rest).map((a) => a.key);
     expect(k1).toHaveLength(1);
     expect(k2).toEqual(k1);
   });

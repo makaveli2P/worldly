@@ -49,7 +49,11 @@ const GENERIC = new Set([
   'police', 'shooting', 'attack', 'attacks', 'earthquake', 'quake', 'strikes', 'strike', 'city', 'man', 'woman',
   'officials', 'say', 'reports', 'report', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
   'more', 'near', 'during', 'country', 'state', 'news', 'live', 'updates', 'latest', 'breaking', 'video', 'watch',
-  'dozens', 'hundreds', 'thousands', 'least', 'over', 'nearly', 'some', 'many', 'others', 'least', 'were', 'been',
+  'dozens', 'hundreds', 'thousands', 'nearly', 'some', 'many', 'others', 'been',
+  // Event words of one family: "jet crash" and "bus crash" in one country are two stories.
+  'crash', 'crashes', 'collision', 'fire', 'blaze', 'explosion', 'blast', 'flood', 'floods', 'flooding', 'storm',
+  'bombing', 'missile', 'missiles', 'drone', 'drones', 'airstrike', 'airstrikes', 'wounded', 'injures', 'victims',
+  'mass', 'deadly',
 ]);
 
 /** "invades", "invaded", "invade" -> "invad". A crude stem, enough for headline words. */
@@ -142,10 +146,10 @@ function splitStories(id: string, family: Family, items: Item[]): Story[] {
       const a = items[i];
       const b = items[j];
       const samePlace = [...a.places].some((p) => b.places.has(p));
-      const sameDeaths = a.c.deaths > 0 && a.c.deaths === b.c.deaths;
-      // Two critical-class headlines of one country and family, close in time, tell one story
+      // A death toll or two critical-class headlines join a story only when they are close in time
       // ("Russia invades Estonia" and "Russian forces cross into Estonia").
       const close = a.time === null || b.time === null || Math.abs(a.time - b.time) <= CONFIG.windowHours * HOUR;
+      const sameDeaths = a.c.deaths > 0 && a.c.deaths === b.c.deaths && close;
       const bothCritical = a.c.tier === 3 && b.c.tier === 3 && close;
       if (samePlace || sameDeaths || bothCritical || similar(a.tokens, b.tokens)) parent[find(i)] = find(j);
     }
@@ -428,12 +432,13 @@ export function detect(inputs: BreakingInputs): DetectResult {
 }
 
 /**
- * A stable id: country, kind and the 6-hour bucket of the first evidence. New outlets join a story
- * with later times, so the first evidence and the key stay the same while the story lasts.
+ * A stable id: country, kind and the UTC day of the first evidence. New outlets join a story with
+ * later times, so they do not change the key. The first evidence can move by some hours when its
+ * headline leaves a short feed; a day bucket keeps the key through such a move, and an alert lasts
+ * at most 24 h, so one key rarely holds two stories.
  */
 export function alertKey(country: string, family: Family, since: number): string {
-  const bucket = new Date(Math.floor(since / (6 * HOUR)) * 6 * HOUR).toISOString().slice(0, 13).replace(/[-:]/g, '');
-  return `${country}-${family}-${bucket}`;
+  return `${country}-${family}-${new Date(since).toISOString().slice(0, 10).replace(/-/g, '')}`;
 }
 
 function clip(text: string, max: number): string {
