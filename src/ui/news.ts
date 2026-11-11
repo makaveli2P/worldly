@@ -23,7 +23,6 @@ export class NewsPanel {
   // The header stays in place across renders, so focus on it survives a reload of the list.
   private readonly country = h('span', { class: 'sr-only' });
   private readonly heading = h('h2', { tabindex: -1 }, 'Top stories', this.country);
-  private readonly count = h('span', { class: 'news-count mono', 'aria-hidden': 'true' });
   private readonly content = h('div', { class: 'news-content' });
   // The BREAKING row. It stays in place across the loading, list and error states of the stories.
   private readonly breaking = h('div', { class: 'news-brk-slot' });
@@ -35,7 +34,7 @@ export class NewsPanel {
   constructor(root: HTMLElement, opts: { onClose: () => void }) {
     this.layout = getLayout(root);
     this.body = this.layout.register('news', 'News', opts.onClose);
-    this.body.append(h('header', { class: 'news-h' }, this.heading, this.count), this.breaking, this.content);
+    this.body.append(h('header', { class: 'news-h' }, this.heading), this.breaking, this.content);
   }
 
   /**
@@ -141,14 +140,14 @@ export class NewsPanel {
         h('span', { class: 'story-main' }, h('span', { class: 'sk sk--meta' }), h('span', { class: 'sk' }), h('span', { class: 'sk sk--short' })),
       ),
     );
-    this.render(countryName, '', h('ol', { class: 'stories', 'aria-busy': 'true', 'aria-label': 'Loading stories' }, rows), null);
+    this.render(countryName, h('ol', { class: 'stories', 'aria-busy': 'true', 'aria-label': 'Loading stories' }, rows), null);
   }
 
   show(res: NewsResponse, countryName: string): void {
     this.shown = { res, countryName };
     const articles = this.visible(res.articles, this.alert);
     if (articles.length === 0) {
-      this.render(countryName, '00', h('p', { class: 'note' }, 'No recent coverage.'), this.footer(res));
+      this.render(countryName, h('p', { class: 'note' }, 'No recent coverage.'), this.footer(res));
       return;
     }
     const now = Date.now();
@@ -198,7 +197,7 @@ export class NewsPanel {
         rating,
       );
     });
-    this.render(countryName, pad2(articles.length), h('ol', { class: 'stories' }, items), this.credits(articles), this.footer(res));
+    this.render(countryName, h('ol', { class: 'stories' }, items), this.credits(articles), this.footer(res));
   }
 
   /** Attribution for the ratings and the translations, only for the data that the list shows. */
@@ -226,7 +225,7 @@ export class NewsPanel {
       // The button goes away on the next render. Keep the keyboard user in the panel.
       this.heading.focus({ preventScroll: true });
     });
-    this.render(countryName, '', h('p', { class: 'note' }, 'Could not load the news. ', btn), null);
+    this.render(countryName, h('p', { class: 'note' }, 'Could not load the news. ', btn), null);
   }
 
   hide(): void {
@@ -247,9 +246,8 @@ export class NewsPanel {
     );
   }
 
-  private render(countryName: string, count: string, content: HTMLElement, ...foot: (HTMLElement | null)[]): void {
+  private render(countryName: string, content: HTMLElement, ...foot: (HTMLElement | null)[]): void {
     this.country.textContent = `, ${countryName}`;
-    this.count.textContent = count;
     this.content.replaceChildren(content, ...foot.filter((x): x is HTMLElement => x !== null));
     this.layout.setOpen('news', true);
   }
