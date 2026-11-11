@@ -16,6 +16,7 @@
     "aliases:breaking": "node scripts/build-aliases.mjs",
     "audit:news": "node scripts/audit-news.mjs",
     "texture": "node scripts/build-texture.mjs",
+    "icons": "node scripts/build-icons.mjs",
     "test": "vitest run"
   },
   "dependencies": {

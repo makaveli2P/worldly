@@ -1,5 +1,5 @@
-import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { defineConfig, loadEnv, runnerImport, type Plugin } from 'vite';
 
 // Runs api/*.ts handlers (Web-standard `export async function GET(request: Request)`)
@@ -103,11 +103,93 @@ function worldlyData(): Plugin {
   };
 }
 
+type Seo = typeof import('./src/data/seo');
+
+// Search and social files, from src/data/seo.ts (loaded with runnerImport, as above).
+//
+// - index.html: the head tags (title, description, canonical link, Open Graph, Twitter, JSON-LD) and a
+//   short summary for crawlers that do not run JavaScript. The dev server and the build both add them.
+// - The build only: /country/<slug>/index.html for each country, made from the final index.html (with the
+//   hashed asset names), and /sitemap.xml and /robots.txt. The dev server makes the last two on request.
+function worldlySeo(): Plugin {
+  let root = '';
+  let publicDir = '';
+  let outDir = '';
+  let module: Promise<Seo> | null = null;
+  const load = () => {
+    module ??= runnerImport<Seo>(join(root, 'src/data/seo.ts'), { root, logLevel: 'error' }).then((r) => r.module);
+    return module;
+  };
+  const countries = () => JSON.parse(readFileSync(join(publicDir, 'data', 'countries.json'), 'utf8'));
+  const textFiles = async (): Promise<Record<string, { type: string; body: string }>> => {
+    const seo = await load();
+    return {
+      'sitemap.xml': {
+        type: 'application/xml; charset=utf-8',
+        body: seo.buildSitemap(seo.sitePaths(countries()), seo.isoDate(new Date())),
+      },
+      'robots.txt': { type: 'text/plain; charset=utf-8', body: seo.buildRobots() },
+    };
+  };
+  return {
+    name: 'worldly-seo',
+    configResolved(config) {
+      root = config.root;
+      publicDir = config.publicDir;
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    configurePreviewServer(server) {
+      // Vercel serves /country/japan from country/japan/index.html. vite preview does that only for
+      // /country/japan/ (with the slash), so this middleware adds the file name.
+      server.middlewares.use((req, _res, next) => {
+        const [path, query] = (req.url ?? '').split(/(?=\?)/);
+        if (/^\/country\/[^/]+$/.test(path) && existsSync(join(outDir, path, 'index.html'))) {
+          req.url = `${path}/index.html${query ?? ''}`;
+        }
+        next();
+      });
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = req.url?.split('?')[0].slice(1) ?? '';
+        if (path !== 'sitemap.xml' && path !== 'robots.txt') return next();
+        textFiles().then(
+          (files) => {
+            res.setHeader('Content-Type', files[path].type);
+            res.end(files[path].body);
+          },
+          (err: unknown) => next(err),
+        );
+      });
+    },
+    transformIndexHtml: {
+      // After the transforms of Vite, so that Vite does not touch the JSON-LD script.
+      order: 'post',
+      handler: async (html) => (await load()).renderHomePage(html, countries()),
+    },
+    generateBundle: {
+      // After vite:build-html writes index.html with the hashed asset names.
+      order: 'post',
+      async handler(_options, bundle) {
+        const index = bundle['index.html'];
+        if (!index || index.type !== 'asset') return this.error('worldly-seo: the bundle has no index.html');
+        const template = typeof index.source === 'string' ? index.source : new TextDecoder().decode(index.source);
+        const seo = await load();
+        const all = countries();
+        for (const [fileName, source] of seo.countryPages(template, all)) this.emitFile({ type: 'asset', fileName, source });
+        for (const [fileName, file] of Object.entries(await textFiles())) {
+          this.emitFile({ type: 'asset', fileName, source: file.body });
+        }
+      },
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // Expose server-only env (NEWSDATA_API_KEY) to api handlers in dev.
   Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
   return {
-    plugins: [apiDev(), worldlyData()],
+    plugins: [apiDev(), worldlyData(), worldlySeo()],
     // Scan only the app, not the design mockups in mockups/.
     optimizeDeps: { entries: ['index.html'] },
     build: { chunkSizeWarningLimit: 700 },

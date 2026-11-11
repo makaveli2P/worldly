@@ -1,6 +1,8 @@
 // App wiring: loads the data, builds the globe and panels, and keeps the selection in sync.
 
 import { worldFeatures, type LiteCountryInfo, type WorldTopology } from './data/precompute';
+import { HOME_TITLE, countryTitle } from './data/site';
+import { COUNTRY_PATH_PREFIX, countrySlug, slugFromPath } from './data/slug';
 import { Globe } from './globe/Globe';
 import { Overlay } from './overlay';
 import { unpackLabelSites, usePrecomputedLabelSites, type LabelsFile } from './overlay/labelPoints';
@@ -16,6 +18,9 @@ const loader = document.querySelector<HTMLElement>('#boot') ?? document.createEl
 loader.className = 'loader';
 loader.textContent = 'Loading the map';
 shell.ui.append(loader);
+// The crawler summary under the loader (src/data/seo.ts). It stays on screen with the loader, then goes.
+const summary = document.querySelector<HTMLElement>('#seo');
+if (summary) shell.ui.append(summary);
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -65,6 +70,9 @@ async function start(): Promise<void> {
   if (built) usePrecomputedLabelSites(unpackLabelSites(built.sites));
   const names = new Map(features.map((f) => [f.id, f.name]));
   const nameOf = (id: CountryId): string | null => countries[id]?.name ?? names.get(id) ?? null;
+  // The URL of a selected country is /country/<slug> (src/data/slug.ts). The build makes a page for each slug.
+  const slugOf = new Map(features.map((f) => [f.id, countrySlug(nameOf(f.id) ?? f.name)]));
+  const idOfSlug = new Map([...slugOf].map(([id, slug]) => [slug, id]));
 
   let selected: CountryId | null = null;
   let preview: CountryId | null = null;
@@ -107,7 +115,7 @@ async function start(): Promise<void> {
         setPreview(id);
       }
     },
-    // Double-click or double-tap: the globe already turned home. Close the panels and clear the hash.
+    // Double-click or double-tap: the globe already turned home. Close the panels and set the URL to /.
     onReset: () => {
       tooltip.hide();
       deselect();
@@ -207,7 +215,8 @@ async function start(): Promise<void> {
     const info = facts[id];
     setPreview(null);
     tooltip.hide();
-    if (id === selected) return;
+    // The same country: only make the URL clean again (an unknown #hash on a country path).
+    if (id === selected) return setUrl(id);
     selected = id;
     window.dispatchEvent(new Event(INTERACTED_EVENT));
     globe.setSelected(id);
@@ -219,8 +228,8 @@ async function start(): Promise<void> {
     else details.hide();
     syncNewsBreaking();
     void loadNews(id, name);
-    document.title = `${name} · Worldly`;
-    if (decodeURIComponent(location.hash.slice(1)) !== id) history.replaceState(null, '', `#${id}`);
+    document.title = countryTitle(name);
+    setUrl(id);
     syncInsets();
   }
 
@@ -228,7 +237,7 @@ async function start(): Promise<void> {
     if (pendingSelect) {
       // The user's last action wins over a selection that waits for the facts.
       pendingSelect = null;
-      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+      setUrl(null);
     }
     setPreview(null);
     if (!selected) return;
@@ -244,8 +253,8 @@ async function start(): Promise<void> {
     shell.readout.update(globe.getView(), null);
     details.hide();
     news.hide();
-    document.title = 'Worldly';
-    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    document.title = HOME_TITLE;
+    setUrl(null);
     syncInsets();
     if (focusInPanels) globe.focusCanvas();
   }
@@ -257,10 +266,27 @@ async function start(): Promise<void> {
     return null;
   }
 
-  function fromHash(): void {
-    const raw = decodeURIComponent(location.hash.slice(1));
-    if (raw && resolveId(raw)) select(raw);
-    else deselect();
+  /** Writes /country/<slug> for a country, or / for none. It keeps the query and drops a hash. */
+  function setUrl(id: CountryId | null): void {
+    const slug = id ? slugOf.get(id) : null;
+    const path = slug ? COUNTRY_PATH_PREFIX + slug : '/';
+    if (location.pathname !== path || location.hash) history.replaceState(null, '', path + location.search);
+  }
+
+  /** The country in the URL: an old #JPN link first, then the /country/<slug> path. */
+  function fromUrl(): void {
+    let hash = '';
+    try {
+      hash = decodeURIComponent(location.hash.slice(1));
+    } catch {
+      // A bad % escape: no country.
+    }
+    const slug = slugFromPath(location.pathname);
+    const id = (hash && resolveId(hash)) || (slug && idOfSlug.get(slug)) || null;
+    if (id) return select(id);
+    // An unknown country: show the plain globe at /.
+    deselect();
+    setUrl(null);
   }
 
   // ---- layout and input ----
@@ -286,10 +312,13 @@ async function start(): Promise<void> {
 
   window.addEventListener(PANELS_CHANGE_EVENT, syncInsets);
   window.addEventListener('resize', syncInsets);
-  window.addEventListener('hashchange', fromHash);
+  // A typed #JPN fires hashchange. Back and Forward between two entries with no hash fire popstate only.
+  // fromUrl() is safe to run twice, so both events call it.
+  window.addEventListener('hashchange', fromUrl);
+  window.addEventListener('popstate', fromUrl);
   window.addEventListener(RESET_EVENT, resetAll);
 
-  // The wordmark and Home: back to the first-load state (view, selection, hash, search).
+  // The wordmark and Home: back to the first-load state (view, selection, URL, search).
   function resetAll(): void {
     globe.resetView();
     tooltip.hide();
@@ -340,7 +369,9 @@ async function start(): Promise<void> {
       (err: unknown) => {
         factsLoad = null;
         console.error('[worldly] country facts failed', err);
+        // This cancels the removal of the loader and the summary. Show the loader again; remove the summary now.
         clearTimeout(loaderTimer);
+        summary?.remove();
         loader.textContent = 'Country details could not load. Reload the page to try again.';
         loader.setAttribute('data-error', '');
         loader.setAttribute('role', 'alert');
@@ -357,16 +388,20 @@ async function start(): Promise<void> {
   function hideLoader(): void {
     loaderShown = false;
     loader.setAttribute('data-hidden', '');
+    summary?.setAttribute('data-hidden', '');
     clearTimeout(loaderTimer);
-    loaderTimer = window.setTimeout(() => loader.remove(), 600);
+    loaderTimer = window.setTimeout(() => {
+      loader.remove();
+      summary?.remove();
+    }, 600);
   }
 
   syncInsets();
   hideLoader();
-  // One retry at once, then a retry with each selection (select()). Start it before fromHash(),
-  // so a #hash selection waits for this request and does not start a second one.
+  // One retry at once, then a retry with each selection (select()). Start it before fromUrl(),
+  // so a selection from the URL waits for this request and does not start a second one.
   void loadFacts(full.catch(() => getJson<Record<CountryId, CountryInfo>>('/data/countries.json')));
-  if (location.hash) fromHash();
+  if (location.hash || location.pathname !== '/') fromUrl();
 
   // ---- breaking news: the header chip, the map markers and the 5-minute poll ----
 

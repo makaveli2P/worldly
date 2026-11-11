@@ -25,7 +25,7 @@ Also:
 - **Instrument readout.** `LAT / LON / ALT / SEL` at the bottom of the screen show the centre of view, the camera altitude and the selected country. When the satellite style is on, the image credit is under the readout.
 - **Mobile (< 768px).** A bottom sheet with `Overview | News` tabs. The first tap raises a country, and the second tap opens it. One short leader line goes into the sheet.
 - **Keyboard.** Press `/` to search. Press `Esc` to close the selection. The map style toggle is a radio group (arrow keys).
-- **Links.** A link to a country uses its ISO alpha-3 code, for example `/#JPN`.
+- **Links.** A link to a country uses its English name, for example `/country/japan`. An old link with the ISO alpha-3 code, for example `/#JPN`, still works. The page changes it to the new form. See [Search and sharing](#search-and-sharing).
 
 ## Design
 
@@ -60,7 +60,7 @@ Breaking news uses the alert yellow with an ink keyline, so one of the two colou
 - **Header chip.** `BREAKING`, the country, the headline, the age, a link to the story, `+N` for more alerts and a dismiss button. The chip is in the header between the search and the map style at 1000 px and wider (the headline goes away below 1100 px). From 768 to 999 px it is in a second header row, and on mobile in a third header row. A long country name gets an ellipsis. A click selects the country. A polite live region announces each new story once. The age changes in place every minute, so a screen reader does not read the chip again.
 - **News plate row.** When the selected country has an alert, the news plate (the News tab on mobile) shows one BREAKING row above the stories: the tag, the source, the age and the headline. The headline links to the story in a new tab. A story in the list with the same link or the same headline does not show again under the row.
 - **Story identity.** A dismissed story stays away for the browser session (`sessionStorage`: `worldly:breaking-dismissed`, `worldly:breaking-announced`). The server key can move to the next day at 00:00 UTC. So the client also treats an alert with the same country and kind, and a `since` less than 24 hours from a known alert, as the same story (`sameStory` in `src/ui/alerts-model.ts`). An alert that drops out of the feed stays on screen for one more poll, because a story near the threshold can come and go.
-- **Poll.** Every 5 minutes while the page is visible, and every 15 minutes while it is hidden. While the tab is hidden, the title shows the count of new alerts, for example `(1) Worldly`. The message and the pulse wait until the tab is visible again. The client drops an alert with no evidence in the last 24 hours.
+- **Poll.** Every 5 minutes while the page is visible, and every 15 minutes while it is hidden. While the tab is hidden, the title shows the count of new alerts, for example `(1) Japan: facts and top news · Worldly`. The message and the pulse wait until the tab is visible again. The client drops an alert with no evidence in the last 24 hours.
 - **Mock.** To see the UI with no server data, open `http://localhost:5173/?alerts=mock` in `npm run dev` (also `mock-critical`, `mock-major` and `mock-none`). The production build does not contain the mock.
 
 ## Preferences
@@ -80,6 +80,7 @@ A small script in `index.html` applies both values before the first paint.
 - `src/overlay/`: labels, leader lines and breaking-news markers (DOM and SVG over the canvas).
 - `src/ui/`: the header, search, panels, readout, image credit, preferences and the breaking-news chip (`alerts*.ts`).
 - `src/data/precompute.ts`: the label sites and the lite country file that the build makes.
+- `src/data/site.ts`, `src/data/slug.ts`, `src/data/seo.ts`: the canonical domain, the country URLs and the search files that the build makes. See [Search and sharing](#search-and-sharing).
 - `src/dev/`: the breaking-news mock (dev server only).
 - `src/theme.ts`: light and dark palettes for the UI and the globe.
 - `src/types.ts`: the shared types, with the `/api/news` and `/api/breaking` contracts.
@@ -112,6 +113,7 @@ Open http://localhost:5173. The dev server also runs the `api/` handlers, so new
 | `npm run bias` | Builds the MBFC table `api/_lib/generated/mbfc.json` when `RAPIDAPI_KEY` is set. See [Publisher ratings](#publisher-ratings). |
 | `npm run audit:news` | Scores the news lists against Google's own ranking. See [Audit](#audit). |
 | `npm run texture` | Builds the satellite texture tiers. See [Satellite image](#satellite-image). |
+| `npm run icons` | Builds the PNG app icons in `public/` from `public/favicon.svg`. |
 
 Commit the JSON files that `npm run data`, `npm run aliases` and `npm run aliases:breaking` write. Do not commit the MBFC table.
 
@@ -162,6 +164,22 @@ Set it to an address or a URL where Wikimedia can reach the owner. The server ad
 2. Import the repo in Vercel. Vercel detects Vite. The build command is `npm run build` and the output folder is `dist`.
 3. Add the variables of [Owner setup](#owner-setup).
 4. Deploy. Vercel runs `api/news.ts` and `api/breaking.ts` as serverless functions. `vercel.json` sets the cache headers and puts the MBFC table in the news function when the table exists.
+
+## Search and sharing
+
+The canonical domain is `https://worldly.today`. `SITE_ORIGIN` in `src/data/site.ts` holds it. Change the domain there only.
+
+- **Country URLs.** Each country has a page at `/country/<slug>`, for example `/country/japan` or `/country/sao-tome-and-principe`. `countrySlug()` in `src/data/slug.ts` makes the slug from the English name. The app writes this path when you select a country, and writes `/` when you close it. A test checks that all slugs are unique.
+- **Prerendered pages.** `npm run build` writes `dist/country/<slug>/index.html` for each country (`src/data/seo.ts`, `worldlySeo` in `vite.config.ts`). Each page has its own title, description, canonical link, Open Graph and Twitter tags and JSON-LD (`WebPage`, `BreadcrumbList`). Each page also has a short text summary of the facts for crawlers that do not run JavaScript. The summary shows under the loader line, and the app removes it when the globe is on screen.
+- **Home page.** The dev server and the build put the head tags, the JSON-LD (`WebSite`) and the summary into `index.html`, between the `worldly:head` and `worldly:summary` markers. Keep the markers.
+- **Internal links.** The home summary links to each country page, by region. Each country summary links to its land neighbours and to the other countries in its subregion. So a crawler finds each country page from the home page, and not only from the sitemap. The long lists are in closed `<details>` elements.
+- **Sitemap and robots.** The build writes `/sitemap.xml` (the home page and all country pages, with the build date) and `/robots.txt`. The dev server makes both on request.
+- **Social image.** `public/og-image.png` (1200x630) is a screenshot of the app. All pages use it.
+- **Hosts.** `vercel.json` sends `www.worldly.today` and `worldly-cyan.vercel.app` to `https://worldly.today` with a 308 redirect. Other `*.vercel.app` hosts (the previews) get `X-Robots-Tag: noindex`. `trailingSlash: false` sends `/country/japan/` to `/country/japan` with a 308 redirect, so each page has one URL.
+- **Caution.** Do not add a redirect from `worldly.today` to `www.worldly.today` in Vercel > Project > Settings > Domains. `vercel.json` sends `www` to the apex, so the two redirects make a loop. Browsers keep a 308 redirect, so the error stays with the visitors.
+- **Not found.** An unknown path, for example `/country/nowhere`, gets `public/404.html` on Vercel. The dev server shows the globe and changes the URL to `/`.
+
+After a deploy, submit `https://worldly.today/sitemap.xml` in Google Search Console.
 
 ## Satellite image
 
