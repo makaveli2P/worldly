@@ -58,13 +58,15 @@ export interface CountryInfo {
 }
 
 export interface NewsArticle {
-  title: string;
+  title: string; // in English: a translation when translatedBy is set
   url: string; // the article itself, opened in a new tab
   source: string; // publisher name, e.g. "The Hindu"
   publishedAt: string | null; // ISO 8601
   imageUrl: string | null;
   domain?: string | null; // publisher host, for example "theguardian.com"
-  lang?: string | null; // BCP-47 code when the title is not English, else null
+  lang?: string | null; // BCP-47 code of the source title when it is not English, else null
+  originalTitle?: string | null; // the source title (in `lang`) when `title` is a translation, else null
+  translatedBy?: 'DeepL' | null; // the translation service of `title`, else null
   outlets?: number | null; // distinct outlets that cover the same story (cluster size)
   bias?: ArticleBias | null;
 }

@@ -512,6 +512,15 @@ a {
   animation-duration: 1600ms;
 }
 
+/* After a user action the dots are still. A hover on the chip still blinks it 3 times. */
+:root[data-alerts-calm] .brk-dot {
+  animation: none;
+}
+
+:root[data-alerts-calm] .brk[data-pulse] .brk-dot {
+  animation: brk-dot 1600ms ease-in-out 3;
+}
+
 @keyframes brk-dot {
   0%,
   100% {
@@ -755,15 +764,31 @@ a {
 
 /* ---------- Imagery credit (src/ui/credit.ts) ----------
    The EOX licence needs a clearly visible credit on the satellite map. Desktop: one line under the
-   readout values, on the readout's paper. It wraps only when the space between the plates is narrow. */
+   readout values, on the readout's paper. It wraps only when the space between the plates is narrow.
+   The credit is quiet but legible: 9.5px muted text (the readout paper keeps it at 4.5:1 or more over
+   any imagery), and faint link underlines that become solid on hover and focus. */
 
 .credit {
   max-width: max(360px, calc(100vw - 2 * (var(--edge) + var(--panel-width) + 32px)));
-  margin-top: 2px;
-  font: 400 10px/14px var(--sans);
+  margin-top: 1px;
+  font: 400 9.5px/12px var(--sans);
+  letter-spacing: 0.01em;
   white-space: normal;
   text-align: center;
   text-wrap: balance;
+}
+
+/* Desktop with no open plate: the credit can use the full width, so it stays on one line.
+   With left: 50%, the readout box would otherwise stop at half the viewport width. */
+@media (min-width: 768px) {
+  .readout {
+    width: max-content;
+    max-width: calc(100vw - 2 * var(--edge));
+  }
+
+  .ui:not(:has(.panels[data-open])) .credit {
+    max-width: calc(100vw - 2 * var(--edge) - 24px);
+  }
 }
 
 .credit a,
@@ -774,12 +799,15 @@ a {
 
 .credit a {
   color: inherit;
-  text-decoration: underline;
+  text-decoration: underline 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
   text-underline-offset: 2px;
 }
 
-.credit a:hover {
+.credit a:hover,
+.credit a:focus-visible {
   color: var(--ink);
+  text-decoration-color: currentColor;
 }
 
 .credit-toggle {
@@ -803,8 +831,7 @@ a {
     padding: 2px 8px;
   }
 
-  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout-values,
-  :root[data-style='satellite'] .ui:has(.panels[data-open]) .credit-extra {
+  :root[data-style='satellite'] .ui:has(.panels[data-open]) .readout-values {
     display: none;
   }
 
@@ -1008,14 +1035,22 @@ a {
   gap: 16px;
 }
 
+/* A flag keeps its own shape: a fixed height and its natural width, never cropped
+   (Switzerland 1:1, Japan 3:2, Qatar 28:11). The edge line shows a white flag on a white plate. */
 .flag {
   display: block;
   flex: none;
-  width: 48px;
+  width: auto;
   height: 32px;
-  object-fit: cover;
+  max-width: 96px;
+  object-fit: contain;
   outline: 1px solid var(--flag-edge);
   outline-offset: -1px;
+}
+
+/* A flag that is not a rectangle (Nepal): no edge line, so the plate shows round its shape. */
+.flag--shaped {
+  outline: none;
 }
 
 .id-code {
@@ -1555,6 +1590,92 @@ a {
   text-decoration-color: currentColor;
 }
 
+/* A translated headline (DeepL): the row under it, outside the story link. "Original" shows the source
+   title; "Read in English" opens the article through the Google Translate page proxy. */
+.story--tr .story-link {
+  padding-bottom: 8px;
+}
+
+.story-tr {
+  padding: 0 24px 16px 48px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
+.story--rated .story-tr {
+  padding-bottom: 8px;
+}
+
+.story-tr-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.tr-label,
+.tr-read {
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+
+.tr-toggle,
+.tr-read {
+  color: var(--muted);
+}
+
+.tr-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.tr-sign {
+  display: inline-block;
+  width: 8px;
+  text-align: center;
+}
+
+.tr-toggle:hover,
+.tr-read:hover {
+  color: var(--ink);
+}
+
+.tr-toggle:hover .tr-label,
+.tr-read:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Touch layouts: the two controls are 24 px targets (WCAG 2.5.8). The negative margin keeps the row on the 8 px grid. */
+@media (max-width: 767px), (pointer: coarse) {
+  .tr-toggle,
+  .tr-read {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    margin: -4px 0;
+  }
+}
+
+.story-orig {
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--rule);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+}
+
 .state-tag {
   padding: 0 4px;
   border: 1px solid var(--ink);
@@ -1595,6 +1716,15 @@ a {
   line-height: 20px;
   font-weight: 500;
   letter-spacing: -0.005em;
+}
+
+/* A translation is often longer than its source. Show the full English title: the hover and the
+   Original row give only the source text, so the clamp must not cut the translation. */
+.story--tr .story-title {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+  overflow: visible;
 }
 
 .story-link:hover .story-title {
@@ -1789,6 +1919,8 @@ a {
     gap: 4px;
     max-width: calc(100vw - 16px);
     margin: 0;
+    font: 400 10px/14px var(--sans); /* the pop-up keeps the size of the button */
+    letter-spacing: normal;
     text-align: left;
   }
 
@@ -1872,7 +2004,8 @@ a {
 
   .id--compact {
     display: grid;
-    grid-template-columns: 48px 1fr;
+    /* The flag column takes the flag's own width (26px for Nepal, 81px for Qatar). */
+    grid-template-columns: auto 1fr;
     column-gap: 16px;
     align-items: center;
     padding: 8px 48px 16px 16px;
@@ -1985,8 +2118,13 @@ a {
     padding-bottom: 8px;
   }
 
-  .story-rating {
+  .story-rating,
+  .story-tr {
     padding: 0 16px 16px 40px;
+  }
+
+  .story--rated .story-tr {
+    padding-bottom: 8px;
   }
 
   .news-credits {

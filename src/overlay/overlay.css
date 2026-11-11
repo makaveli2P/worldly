@@ -290,6 +290,11 @@
   opacity: 0;
 }
 
+/* After a user action (src/ui/alerts.ts, setAlertsCalm) the rings are still. A new alert pulses again. */
+:root[data-alerts-calm] .wo-alert:not([data-pulse]) .wo-alert-ring {
+  animation: none;
+}
+
 /* A new alert (or a hover on its chip): 3 fast cycles of 1.6 s first, then the steady pulse above. */
 .wo-alert[data-pulse] .wo-alert-ring {
   animation: wo-alert-ring 1600ms cubic-bezier(0, 0, 0.2, 1) 3;

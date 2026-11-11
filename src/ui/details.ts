@@ -7,6 +7,9 @@ import * as fmt from './format';
 import { getLayout, type PanelLayout } from './layout';
 import { NowBlock } from './now';
 
+/** Countries whose flag is not a rectangle. Their flag gets no edge line. */
+const SHAPED_FLAGS = new Set(['NPL']);
+
 type Value = string | Node | null;
 type Row = [label: string, value: Value];
 
@@ -45,9 +48,10 @@ export class DetailsPanel {
   }
 
   private flag(c: CountryInfo): HTMLElement | null {
-    return c.flag
-      ? h('img', { class: 'flag', src: c.flag, alt: `Flag of ${c.name}`, width: 48, height: 32, decoding: 'async' })
-      : null;
+    if (!c.flag) return null;
+    // No width attribute: the image takes its natural width at a height of 32px (see .flag).
+    const cls = SHAPED_FLAGS.has(c.id) ? 'flag flag--shaped' : 'flag';
+    return h('img', { class: cls, src: c.flag, alt: `Flag of ${c.name}`, height: 32, decoding: 'async' });
   }
 
   private header(c: CountryInfo): HTMLElement {

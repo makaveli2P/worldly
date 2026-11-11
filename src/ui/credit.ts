@@ -3,7 +3,7 @@
 // Mobile (< 768px): a short button that opens the full text (the EOX terms allow this in compact UIs).
 // CSS hides the credit when the atlas style is on (:root[data-style='atlas']).
 
-import { TEXTURE_ATTRIBUTION, TEXTURE_NASA_CREDIT } from '../globe/textureManifest';
+import { TEXTURE_ATTRIBUTION } from '../globe/textureManifest';
 import { h } from './dom';
 
 /** The licence notice of the texture files (licence, attribution, and what was modified). */
@@ -33,7 +33,6 @@ export function creditElement(): HTMLElement {
     before,
     url ? link(url, url) : null,
     after,
-    h('span', { class: 'credit-extra' }, ` · Polar ice: ${TEXTURE_NASA_CREDIT}`),
     ' · ',
     link(TEXTURE_LICENCE_URL, TEXTURE_LICENCE_NAME),
   );

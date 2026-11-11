@@ -112,6 +112,12 @@ export class BreakingBar {
     document.addEventListener('pointerdown', (e) => {
       if (this.listOpen && !slot.contains(e.target as Node)) this.setListOpen(false);
     });
+    // The alerts pulse until the user does something on the page (a click, a tap, a key or a scroll).
+    // A new alert makes them pulse again (see refresh).
+    const calm = () => setAlertsCalm(true);
+    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) {
+      window.addEventListener(type, calm, { capture: true, passive: true });
+    }
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
       if (this.unseen > 0) {
@@ -159,6 +165,7 @@ export class BreakingBar {
     else this.render();
 
     if (fresh.length > 0) {
+      setAlertsCalm(false);
       this.announced.add(...fresh);
       const msg = announcement(fresh, this.opts.nameOf);
       const hidden = document.visibilityState === 'hidden';
@@ -433,4 +440,12 @@ export class BreakingBar {
     const when = ageWords(a.since, now);
     return `Breaking news, ${level}, ${this.name(a)}: ${a.headline}${when ? `, ${when}` : ''}. Show on the globe.`;
   }
+}
+
+/** The attribute on <html> that stops the steady pulse of the alerts after a user action. */
+export const CALM_ATTR = 'data-alerts-calm';
+
+/** Stops (true) or starts (false) the steady pulse of the map rings and the chip dots. */
+export function setAlertsCalm(calm: boolean): void {
+  document.documentElement.toggleAttribute(CALM_ATTR, calm);
 }

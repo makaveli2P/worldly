@@ -9,7 +9,9 @@ The technical reference for the two Vercel functions in `api/`. `README.md` at t
 Each `NewsArticle` can also have these optional fields:
 
 - `domain`: the publisher host, for example `theguardian.com`.
-- `lang`: the BCP-47 code when the title is not in English, else `null`.
+- `lang`: the BCP-47 code of the source title when it is not in English, else `null`. It stays the source language after a translation.
+- `originalTitle`: the source title when `title` is a translation, else absent or `null`.
+- `translatedBy`: `'DeepL'` when `title` is a translation, else absent or `null`.
 - `outlets`: the number of distinct outlets in the story's cluster.
 - `bias`: the publisher rating (`ArticleBias`), or `null` when no rating exists.
 
@@ -24,6 +26,7 @@ Each `NewsArticle` can also have these optional fields:
 - `rank.ts`: clusters, scores and the pick step. Pure functions, with tests in `test/news/rank.test.ts`.
 - `text.ts`: text helpers: whole-word country match, relevance, proper names, junk and press-release filters.
 - `rss.ts`: the RSS item parser. It keeps the feed rank, the Google outlet list in `<description>` and the `<source url>` attribute.
+- `translate.ts`: the DeepL step (see "Translation"). Tests in `test/news/translate.test.ts`.
 - `domain.ts`: publisher hosts. It never takes the host of an aggregator link (news.google.com, msn.com, ...). `isPlatform()` finds posts from social and aggregator platforms (Facebook, NewsBreak, ...), which the Google parser drops.
 - `bias.ts`, `bias-rules.json`, `state-media.json`, `generated/mbfc.json`: publisher ratings (see below).
 
@@ -87,6 +90,22 @@ The best score first. Pass 1 takes 1 cluster per publisher. Pass 2 allows a seco
 4. The native clusters (with `lang`) and the other English clusters compete for the other places by score. So English filler does not push out a main national story. A native story that a strong English story already tells is skipped.
 5. The list is in score order, not in language order.
 
+### Translation
+
+`translateTitles()` in `translate.ts` runs in `build()` after the pick and before the result goes into the cache. So the clusters and the dedupe use the original titles, and only the picked stories (at most 5) go to DeepL.
+
+- Input: the stories with a `lang`. English (`en`) and a language that DeepL does not read as a source (for example Somali `so` and Kinyarwanda `rw`) are not sent. `deeplSource()` maps a BCP-47 tag to the DeepL code (`zh-Hans` → `ZH`, `pt-BR` → `PT`, `no` → `NB`, `iw` → `HE`). The list of DeepL source languages is a constant from `GET /v2/languages?type=source` (2026-11-11).
+- Request: one `POST /v2/translate` with the JSON body `{ text: [...], target_lang: 'EN-GB', source_lang }` and the header `Authorization: DeepL-Auth-Key <key>`. The host is `api-free.deepl.com` for a key that ends in `:fx`, else `api.deepl.com`. `source_lang` is set when all titles have one language; else DeepL finds the language of each title. A title that is twice in the list goes once.
+- Timeout: 1.5 s, and at least 0.5 s. The whole build, translation included, ends by 5 s (`BUILD_END_MS`).
+- Result: `title` becomes the English text, `originalTitle` keeps the source text, `translatedBy` is `'DeepL'`, and `lang` stays the source language. When DeepL finds English, or gives back the same text, the story stays as it is.
+- Memory: each translation (key: DeepL code and original title) stays in memory, at most 2000 entries (the oldest goes first). A title in memory is not sent again.
+- DeepL emphasis: DeepL can put Markdown emphasis in a title (`*The Judge*`). `stripAddedEmphasis()` removes the `*` and `_` markers that are not in the source title.
+- Failure: the titles stay as they are, and the log gets one line, for example `[news] translate failed: timeout`. It never contains the key or a body. Two types of failure:
+  - An error that can go away soon (timeout, network error, HTTP 429 or 5xx, bad answer). The result gets `untranslated`, so the list stays in memory for 60 s and gets the failure cache header, and a later request tries again.
+  - An error that stays (HTTP 403 bad key, 456 quota used up, another 4xx). The list keeps its normal cache. After a 403 or a 456 (`[news] translate failed: http 456 (quota), paused 1 h`), the instance sends no request to DeepL for 1 hour (`PAUSE_MS`).
+- With no key, nothing is sent and nothing is logged; the list keeps its normal cache.
+- Last good list: a list with `untranslated` does not replace a translated last good list, so a later Google failure does not bring back the source titles.
+
 ### Publisher ratings
 
 `lookupBias(domain, name)` in `bias.ts` gives an `ArticleBias` or `null`. It runs once for each picked story, before the result goes into the cache.
@@ -117,12 +136,12 @@ The best score first. Pass 1 takes 1 cluster per publisher. Pass 2 allows a seco
 - Last good list: when a run is degraded or failed, the server gives the last full list of the country (at most 24 hours old) if that list is not shorter, with the failure header.
 - Total failure (no source answered, no last good list): `503` with `no-store`. The CDN then serves its stale copy (`stale-if-error`), and the client shows the retry message.
 - Success: `Cache-Control: public, max-age=60, s-maxage=900, stale-while-revalidate=1800, stale-if-error=86400`. Vercel removes `s-maxage` and `stale-while-revalidate` before the browser. The worst age of a list is about 55 minutes.
-- Failure: `public, s-maxage=60`.
+- Failure, and a list whose translation failed with an error that can go away (timeout, 429, 5xx): `public, s-maxage=60`.
 - Client (`src/main.ts`): a list stays for at most 10 minutes.
 
 ### Keys and logs
 
-The keys (`NEWSDATA_API_KEY`, `RAPIDAPI_KEY`) are in "Owner setup" in `README.md`. The handler never writes a key or an upstream error body to responses or logs. `NEWS_DEBUG=1` logs the score of each picked cluster.
+The keys (`NEWSDATA_API_KEY`, `RAPIDAPI_KEY`, `DEEPL_API_KEY`) are in "Owner setup" in `README.md`. The handler never writes a key or an upstream error body to responses or logs. `NEWS_DEBUG=1` logs the score of each picked cluster.
 
 ## Breaking news API
 

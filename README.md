@@ -56,7 +56,7 @@ The design is "Swiss / instrument". The reference mockup is in `mockups/swiss/`.
 Breaking news uses the alert yellow with an ink keyline, so one of the two colours is at least 3:1 on every background. Red stays the colour of the selection.
 
 - **Globe.** A yellow dot with open rings at the label point of the country, and the country name in bold. A critical alert has a larger dot, a heavier ring and a second outer ring. When the country rises (hover or selection), the marker rises with it (`Globe.liftOf`). On the selected country, the red anchor replaces the dot and the outer ring is off at rest, so the capital name has room. When the country is on the far side or off screen, a still yellow arrow with the name points to it from the globe edge.
-- **Pulse.** The map rings and the chip dot pulse for as long as an alert is live: critical every 1.6 s (0.625 Hz), major every 2.4 s. A story that is new in the browser session first gets 3 fast cycles. The rate is far below 3 flashes a second (WCAG 2.3.1). The dismiss button stops the pulse of an alert (WCAG 2.2.2). With `prefers-reduced-motion`, nothing pulses. The markers are DOM nodes over the canvas, so the globe does not render more frames for them.
+- **Pulse.** The map rings and the chip dot pulse until the user does something on the page (a click, a tap, a key or a scroll): critical every 1.6 s (0.625 Hz), major every 2.4 s. Then they stay still. A new alert makes them pulse again, and a hover on the chip blinks its marker 3 times. A story that is new in the browser session first gets 3 fast cycles. The rate is far below 3 flashes a second (WCAG 2.3.1). The dismiss button stops the pulse of an alert (WCAG 2.2.2). With `prefers-reduced-motion`, nothing pulses. The markers are DOM nodes over the canvas, so the globe does not render more frames for them.
 - **Header chip.** `BREAKING`, the country, the headline, the age, a link to the story, `+N` for more alerts and a dismiss button. The chip is in the header between the search and the map style at 1000 px and wider (the headline goes away below 1100 px). From 768 to 999 px it is in a second header row, and on mobile in a third header row. A long country name gets an ellipsis. A click selects the country. A polite live region announces each new story once. The age changes in place every minute, so a screen reader does not read the chip again.
 - **News plate row.** When the selected country has an alert, the news plate (the News tab on mobile) shows one BREAKING row above the stories: the tag, the source, the age and the headline. The headline links to the story in a new tab. A story in the list with the same link or the same headline does not show again under the row.
 - **Story identity.** A dismissed story stays away for the browser session (`sessionStorage`: `worldly:breaking-dismissed`, `worldly:breaking-announced`). The server key can move to the next day at 00:00 UTC. So the client also treats an alert with the same country and kind, and a `since` less than 24 hours from a known alert, as the same story (`sameStory` in `src/ui/alerts-model.ts`). An alert that drops out of the feed stays on screen for one more poll, because a story near the threshold can come and go.
@@ -124,6 +124,7 @@ Worldly works with no key. Each key below adds one feature. Set a key locally in
 | `RAPIDAPI_KEY` | The MBFC publisher lean. Only `npm run bias` uses it, at build time. | Local, and Vercel **Production only** |
 | `NEWSDATA_API_KEY` (optional) | The NewsData.io fallback for small countries. | Local and Vercel |
 | `BREAKING_CONTACT` (optional) | A contact address or URL in the User-Agent of the Wikipedia request, as the Wikimedia policy asks. | Vercel (local is optional) |
+| `DEEPL_API_KEY` (optional) | English titles for native-language stories. | Local and Vercel |
 
 **RAPIDAPI_KEY (MBFC lean)**
 
@@ -140,6 +141,16 @@ A NewsData.io key helps small countries that have few Google stories. The free p
 1. Get a free key at https://newsdata.io/register.
 2. Set `NEWSDATA_API_KEY=<your key>` in `.env`.
 3. Restart `npm run dev`.
+
+**DEEPL_API_KEY (optional)**
+
+A DeepL key translates the native-language titles of the news plate to English. The server uses `api-free.deepl.com` for a DeepL API Free key (it ends in `:fx`) and `api.deepl.com` for a Pro key.
+
+1. Get a key at https://www.deepl.com/pro-api (the API Free plan is enough).
+2. Local: set `DEEPL_API_KEY=<key>` in `.env`. Restart `npm run dev`.
+3. Vercel: run `vercel env add DEEPL_API_KEY production` (or add it under Project Settings > Environment Variables). Redeploy.
+
+The API Free plan has a monthly character limit (1,000,000 characters for the owner's key on 2026-11-11; `GET /v2/usage` shows it). One list sends 3 to 5 titles, about 100 to 400 characters. The server keeps each translation in memory and the CDN keeps each list for 15 minutes, so a title goes to DeepL about once for each server instance. When the limit is used up, DeepL answers 456, the log shows `[news] translate failed: http 456 (quota), paused 1 h`, and the titles stay in their language. The server then sends no request to DeepL for 1 hour, and the lists keep their normal cache. A wrong key (HTTP 403) gives the same pause. With no key, the server sends nothing and the titles stay in their language.
 
 **BREAKING_CONTACT (optional)**
 
@@ -183,7 +194,8 @@ The page decodes the tiers with `createImageBitmap`, off the main thread. If tha
 The texture files are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). This licence is separate from the licence of the code (MIT, see [License](#license)). `public/textures/LICENSE.md` has the full notice: the attribution, the licence, and the changes to the source imagery.
 
 - Attribution (EOX requires these words): "EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025)". Polar ice: NASA Earth Observatory.
-- The map shows the credit when the satellite style is on: under the readout on desktop, and behind the "Imagery: EOX" button on mobile (`src/ui/credit.ts`). Do not remove it.
+- The map shows the credit when the satellite style is on: on one line under the readout on desktop, and behind the "Imagery: EOX" button on mobile (`src/ui/credit.ts`). The credit is small (9.5px) and muted, but it stays on the solid readout paper, so its contrast is 4.5:1 or more over any imagery (also over white ice). Do not remove it.
+- The map shows the EOX attribution and the licence only. NASA imagery is public domain, so the NASA credit (polar ice) is in `public/textures/LICENSE.md` and in this file, not on the map.
 - Put the credit on each screenshot or video of the satellite globe (the EOX FAQ requires it). Mobile screenshots do not show the full credit, so add it to the image.
 - Non-commercial use only. A fork that earns money (ads, paid features) must replace the texture files: rebuild from the CC BY 4.0 layer `s2cloudless` (2016; change `YEAR` and `LAYER` in the script) or buy a licence from EOX.
 - ShareAlike: if you change the texture files and share them, use the same licence.
@@ -225,6 +237,15 @@ A title matches a country by its name, demonym, capital or leader, as whole word
 
 Language (hybrid): for a country with no English edition (for example Germany, Japan or Mexico), the strong English stories take their places first. A strong story has 3 or more outlets, or names a person or place from the native top 20 (then it gets that native rank). Native-language stories and the other English stories compete for the other places by score, so English filler does not push out a main national story. The list is in score order. A native-language story has a language tag (for example "DE").
 
+Translation (DeepL): after the pick, the server sends the non-English titles of the list (at most 5) to DeepL in one request, and the story shows the English title (British English). The clusters and the dedupe use the original titles, because the translation comes after the pick. On a translated story:
+
+- The language tag shows the translation, for example "ZH → EN". A screen reader reads "Translated from Chinese by DeepL".
+- A hover on the headline shows the original title. The "Original" button under the headline shows it too (touch, keyboard and screen readers). The original text has the `lang` of its language.
+- "Read in English" opens the article through the Google Translate page proxy (`https://<host>.translate.goog/...`). It shows only for a link to the publisher. Most native stories come from Google News, and their links are news.google.com redirects: the proxy shows an empty page for them, so these stories have no "Read in English" link.
+- The panel footer shows "Translations: DeepL".
+
+With no `DEEPL_API_KEY`, or when DeepL fails or takes more than 1.5 s, the titles stay in their language with the language tag (as before). The server keeps each translation in memory, so it never sends one title twice. See [Owner setup](#owner-setup).
+
 Each story row shows the number of outlets that cover the story, when there are 3 or more. `api/_lib/README.md` has the full rules for the gather, the filters, the clusters, the score and the pick.
 
 ### Publisher ratings
@@ -250,7 +271,7 @@ The State Media Monitor table (`api/_lib/state-media.json`, CC BY 4.0) is in git
 
 ### Cache
 
-- The server keeps each list in memory for 10 minutes. When Google does not answer, it keeps a list for 1 minute only, and it shows the last good list (at most 24 hours old) if it has one. When no source answers and no earlier list exists, the API answers 503, so that the CDN can serve its older copy.
+- The server keeps each list in memory for 10 minutes. When Google does not answer, it keeps a list for 1 minute only, and it shows the last good list (at most 24 hours old) if it has one. When the translation fails, the list also stays for 1 minute only (in memory and on the CDN), so a later request tries the translation again. When no source answers and no earlier list exists, the API answers 503, so that the CDN can serve its older copy.
 - The Vercel CDN keeps a list for 15 minutes, and can serve it for 30 more minutes while it gets a new one.
 - The browser keeps a list for at most 10 minutes.
 
@@ -308,6 +329,7 @@ npm run aliases:breaking
 - News and breaking news:
   - Google News RSS (all editions and search), and the RSS feeds of BBC, Al Jazeera, The Guardian, France 24, DW, NPR, Sky News, ABC Australia, CBC, The Times of India, The New York Times and Euronews.
   - [NewsData.io](https://newsdata.io) (optional): follow its terms for your plan.
+  - Translations: [DeepL API](https://www.deepl.com/pro-api) (optional). The server sends only the titles, never article text. The panel footer credits DeepL when a translated title shows. "Read in English" links to the Google Translate page proxy; Worldly does not copy the translated page.
   - Wikipedia "In the news" (CC BY-SA 4.0), [GDACS](https://www.gdacs.org) and the [USGS](https://earthquake.usgs.gov) earthquake feed (US public domain). None of them starts an alert. They confirm, raise or limit an alert that the news feeds start.
 - Publisher ratings:
   - Lean: [Media Bias/Fact Check](https://mediabiasfactcheck.com), through its official RapidAPI product. The terms require a link to MBFC and do not allow redistribution, so the table stays out of git and out of the browser. The MBFC scale is tailored to the United States.
