@@ -1348,9 +1348,9 @@ a {
   outline: none;
 }
 
-.news-count {
-  font-size: 12px;
-  color: var(--muted);
+/* The heading line is 16 + 24 px, so its centre is at 28 px. Put the 32 px close button on the same centre. */
+.panel--news > .close {
+  top: 12px;
 }
 
 /* The BREAKING row above the stories: the chip tag (signal yellow and ink), the source, the age and the headline. */
