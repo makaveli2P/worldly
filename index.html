@@ -3,7 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Spin a globe, pick a country, read its facts and top news." />
     <meta name="theme-color" content="#FFFFFF" />
     <meta name="color-scheme" content="light dark" />
     <script>
@@ -72,7 +71,11 @@
       })();
     </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Worldly</title>
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <!-- The title, the description, the canonical link and the social tags. vite.config.ts (worldlySeo) puts
+         them between these markers from src/data/seo.ts. Keep the markers: each country page replaces this block. -->
+    <!-- worldly:head --><!-- /worldly:head -->
     <style>
       /* The first paint, before the CSS and the module load. It copies .loader in src/styles.css. */
       html {
@@ -97,11 +100,58 @@
       :root[data-theme='dark'] #boot {
         color: var(--muted, #9a9a94);
       }
+      /* A short text summary for crawlers that do not run JavaScript. It is visible, small and under the
+         loader line. src/main.ts removes it when the globe is on screen. */
+      #seo {
+        position: fixed;
+        top: calc(50% + 40px);
+        left: 16px;
+        right: 16px;
+        max-width: 560px;
+        margin: 0 auto;
+        text-align: center;
+        font: 400 12px/18px system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #5c5c58;
+        max-height: calc(50% - 56px);
+        overflow: auto;
+        pointer-events: auto;
+        transition: opacity 400ms ease;
+      }
+      /* The summary does not catch clicks while it fades. */
+      #seo[data-hidden] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #seo h1 {
+        margin: 0 0 4px;
+        font: 500 13px/18px system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #111111;
+      }
+      #seo p {
+        margin: 0 0 4px;
+      }
+      #seo h2 {
+        margin: 8px 0 2px;
+        font: 500 12px/18px system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      #seo summary {
+        cursor: pointer;
+      }
+      #seo a {
+        color: inherit;
+      }
+      :root[data-theme='dark'] #seo {
+        color: #9a9a94;
+      }
+      :root[data-theme='dark'] #seo h1 {
+        color: #f2f2ee;
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
     <p id="boot" class="loader">Loading the map</p>
+    <!-- worldly:summary --><!-- /worldly:summary -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
