@@ -314,18 +314,20 @@ How it works:
    - Wars on the ITN "Ongoing" list give at most `major`, and only for a large escalation.
 6. An alert ends 24 hours after its first evidence. A critical alert drops to major when no headline is newer than 6 hours. A story whose first evidence comes more than 36 hours after the start of the day of a matching ITN blurb is a follow-up and gives no alert. A matching blurb names the same country and kind, and shares a place, the death toll or 2 distinctive words.
 7. The `key` is the country, the kind and the UTC day of the first evidence (`BGR-accident-20261110`). New outlets do not change it. The key can change in one case: the first headline of a story is from before 00:00 UTC, and it leaves its feed while all other headlines are from after 00:00. Then the key moves to the next day. The client treats the two keys as one story (see [Design](#design), "Story identity").
+8. The hold. Each run starts from the alerts of the last run. When an alert fails the full test, it stays as a `major` alert ("held") while 2 outlets agree on tier 2 and one of them leads a front page or an edition. In the first 2 hours after the alert starts, one recent outlet is enough. The hold follows the story of the alert (its links and words), not every story of that country and kind. The hold never overrides the 24-hour limit, the follow-up rules or the rule for chronic wars. A new alert that passes the full test comes before a held alert. The server keeps this state in memory, and on Vercel also in the Runtime Cache (26-hour TTL), so a new instance continues from the same state.
+9. A failed feed. When a source fails or times out, the server uses its last good answer, if that answer is at most 30 minutes old. Each headline keeps its own date, so its age stays true. `sources.ok` counts only the live answers, and `sources.reused` counts the reused ones. The last good answers stay in memory only.
 
 Limits:
 
 - Precision comes first: the detector prefers a miss to a false alarm. It reads English headlines only, so an event that only local or non-English media report can come late or not at all.
-- The server keeps no state. A Vercel CDN region caches the answer for 5 minutes (`s-maxage=300`). When fewer than half of the sources answer, the cache is 60 seconds.
-- A story near the threshold (3 outlets) can come and go between polls, when one headline leaves a feed or one feed is slow. The client keeps a dropped alert for one more poll.
+- A Vercel CDN region caches the answer for 5 minutes (`s-maxage=300`). When fewer than half of the sources answer, the cache is 60 seconds, and the run does not change the hold state.
+- The Runtime Cache is regional and can drop an entry at any time. A failed read looks the same as a missing entry. Then the hold starts again from the memory of the instance, or from no state. A new instance with no state does not write an empty state over the shared one. The client also keeps a dropped alert for one more poll.
 - The rules are regular expressions. When a false alarm happens, save the inputs and add a test (see below).
 - The leader names come from `public/data/countries.json`. A new leader is unknown until the next `npm run data` and `npm run aliases:breaking`.
 
 Tools:
 
-- `npx tsx test/breaking/snapshot.ts`: a live run that prints the flagged headlines, the candidates and the response. `--save <name>` saves the flagged headlines to `test/breaking/fixtures/<name>.json` (5 to 10 KB). Add `--wide` to also save every headline that names a country, with no link (about 50 KB), so that a later rule change can be checked against headlines that the rules did not flag. `--replay <file>` runs the detector on a saved file.
+- `npx tsx test/breaking/snapshot.ts`: a live run that prints the flagged headlines, the candidates and the response. `--save <name>` saves the flagged headlines to `test/breaking/fixtures/<name>.json` (5 to 10 KB). Add `--wide` to also save every headline that names a country, with no link (about 50 KB), so that a later rule change can be checked against headlines that the rules did not flag. `--replay <file>` runs the detector on a saved file. `--state <file>` gives a saved detector state to the run, to check the hold.
 
 ## Refresh the country data
 

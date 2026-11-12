@@ -211,12 +211,47 @@ export interface SourceStatus {
   status: string; // "200", "http 404", "timeout"
   ms: number;
   items: number;
+  reused?: boolean; // the source failed, and the run used its last good answer
+}
+
+/** A failed source uses its last good answer when the answer is at most this old. */
+export const LAST_GOOD_MAX_MS = 30 * 60 * 1000;
+
+/** The last good parsed answer of one source, with the time of its fetch. */
+export interface LastGood {
+  at: number; // epoch ms
+  value: unknown; // Headline[], Itn or Hazard[]
+  items: number;
 }
 
 export interface FetchOptions {
   userAgent?: string;
   contact?: string; // added to the Wikipedia User-Agent (Wikimedia asks for contact details)
   fetchImpl?: typeof fetch;
+  lastGood?: Map<string, LastGood>; // by source id. fetchInputs() reads it and writes the new good answers to it.
+}
+
+/**
+ * The answer of one source for this run. A live answer replaces the last good answer. A failed source
+ * gives the last good answer when it is at most LAST_GOOD_MAX_MS old, else nothing.
+ */
+export function mergeLastGood(
+  id: string,
+  live: { value: unknown; items: number } | null,
+  lastGood: Map<string, LastGood> | undefined,
+  now: number,
+): { value: unknown; items: number; reused: boolean } | null {
+  if (live) {
+    lastGood?.set(id, { at: now, value: live.value, items: live.items });
+    return { ...live, reused: false };
+  }
+  const prev = lastGood?.get(id);
+  if (!prev) return null;
+  if (now - prev.at > LAST_GOOD_MAX_MS || now < prev.at) {
+    lastGood?.delete(id);
+    return null;
+  }
+  return { value: prev.value, items: prev.items, reused: true };
 }
 
 async function getText(url: string, parent: AbortSignal, userAgent: string, fetchImpl: typeof fetch): Promise<{ text: string; status: string; ms: number }> {
@@ -243,7 +278,10 @@ async function getText(url: string, parent: AbortSignal, userAgent: string, fetc
 
 const parseJson = (text: string): unknown => (text ? JSON.parse(text) : {});
 
-/** Fetches every source in parallel and parses the answers. A failed source gives no items. */
+/**
+ * Fetches every source in parallel and parses the answers. A failed source gives no items, or its last
+ * good answer when `options.lastGood` has one (see mergeLastGood()). `sources.ok` counts live answers only.
+ */
 export async function fetchInputs(now: number, options: FetchOptions = {}): Promise<{ inputs: BreakingInputs; status: SourceStatus[] }> {
   const userAgent = options.userAgent || DEFAULT_USER_AGENT;
   const wikiAgent = options.contact ? `${userAgent} (${options.contact})` : userAgent;
@@ -292,16 +330,20 @@ export async function fetchInputs(now: number, options: FetchOptions = {}): Prom
   const status: SourceStatus[] = [];
   settled.forEach((s, i) => {
     const id = jobs[i].id;
+    const answer = mergeLastGood(id, s.status === 'fulfilled' ? s.value : null, options.lastGood, now);
     if (s.status === 'rejected') {
       const err = s.reason as Error & { ms?: number };
-      status.push({ id, ok: false, status: err?.message ?? 'error', ms: err?.ms ?? 0, items: 0 });
-      return;
+      status.push({ id, ok: false, status: err?.message ?? 'error', ms: err?.ms ?? 0, items: answer?.items ?? 0, ...(answer ? { reused: true } : {}) });
+    } else {
+      status.push({ id, ok: true, status: s.value.status, ms: s.value.ms, items: s.value.items });
     }
-    status.push({ id, ok: true, status: s.value.status, ms: s.value.ms, items: s.value.items });
-    if (id === 'itn') itn = s.value.value as Itn;
-    else if (id === 'gdacs' || id === 'usgs') hazards.push(...(s.value.value as Hazard[]));
-    else headlines.push(...(s.value.value as Headline[]));
+    if (!answer) return;
+    if (id === 'itn') itn = answer.value as Itn;
+    else if (id === 'gdacs' || id === 'usgs') hazards.push(...(answer.value as Hazard[]));
+    else headlines.push(...(answer.value as Headline[]));
   });
   const ok = status.filter((s) => s.ok).length;
-  return { inputs: { headlines, itn, hazards, now, sources: { ok, total: jobs.length } }, status };
+  const reused = status.filter((s) => s.reused).length;
+  const sources = reused ? { ok, total: jobs.length, reused } : { ok, total: jobs.length };
+  return { inputs: { headlines, itn, hazards, now, sources }, status };
 }
