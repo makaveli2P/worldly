@@ -4,10 +4,14 @@
 // A country goes on alert only when several independent outlets lead with the same severe event
 // there. GDACS and USGS can confirm or raise a news story, but they never start an alert alone.
 // Wikipedia "In the news" (ITN) gives the list of chronic wars and a clock for follow-up stories.
+//
+// Each run also takes the state of the last run (the alerts that it gave) and returns the next state.
+// The state is an argument, so `detect()` stays pure. An alert near the threshold stays on the list
+// ("held") while it keeps some support. See `holdResult()`.
 import type { BreakingAlert, BreakingLevel, BreakingResponse } from '../../../src/types';
 import { AFTERMATH, classify, isLive } from './classify.js';
 import { countryWords, ongoingCountries, placeKeys, primaryCountries } from './match.js';
-import type { BreakingInputs, Classification, Family, Hazard, HazardType, Headline } from './types.js';
+import type { BreakingInputs, BreakingState, Classification, Family, Hazard, HazardType, Headline, HeldAlert } from './types.js';
 
 export const CONFIG = {
   windowHours: 12, // only headlines this new count toward the level
@@ -27,6 +31,11 @@ export const CONFIG = {
   majorOutlets: 3,
   chronicOutlets: 6,
   chronicEditions: 3,
+  holdVoices: 2, // a held alert stays while this many voices agree on tier 2 and one of them leads
+  holdMinHours: 2, // for this long after the first alert, one recent voice keeps a held alert
+  sameStoryHours: 24, // a held alert and a story with the same country and kind can be one story within this gap
+  heldItemIds: 40, // a held alert keeps at most this many item hashes
+  heldWords: 20, // a held alert keeps at most this many distinctive words
 };
 
 const HOUR = 3.6e6;
@@ -268,15 +277,19 @@ export interface Candidate {
   best: Item;
   basis: BreakingAlert['basis'];
   items: Item[];
+  held: boolean; // true when only the hold keeps the alert
+  chronicBlock: boolean; // a chronic war with no large escalation
+  stop: string | null; // the follow-up rule that ends the story, or null
 }
 
 export interface DetectResult {
   response: BreakingResponse;
   candidates: Candidate[];
+  state: BreakingState; // give it to the next run
 }
 
 /** Detects breaking news. See README "Breaking news" for the rules in plain words. */
-export function detect(inputs: BreakingInputs): DetectResult {
+export function detect(inputs: BreakingInputs, previous: BreakingState | null = null): DetectResult {
   const { now } = inputs;
   const groups = new Map<string, { id: string; family: Family; items: Item[] }>();
   for (const h of inputs.headlines) {
@@ -368,9 +381,10 @@ export function detect(inputs: BreakingInputs): DetectResult {
       level = 'major';
       reason = 'major, hazard-confirmed';
     }
-    if (level && chronic.has(story.id) && (story.family === 'conflict' || story.family === 'attack')) {
-      // An ongoing war leads the news every day. Only a large escalation counts, and only as major.
-      const escalation = tierEff === 3 && nVoices >= CONFIG.chronicOutlets && editions >= CONFIG.chronicEditions;
+    // An ongoing war leads the news every day. Only a large escalation counts, and only as major.
+    const chronicStory = chronic.has(story.id) && (story.family === 'conflict' || story.family === 'attack');
+    const escalation = tierEff === 3 && nVoices >= CONFIG.chronicOutlets && editions >= CONFIG.chronicEditions;
+    if (level && chronicStory) {
       level = escalation ? 'major' : null;
       reason = escalation ? 'chronic, escalation' : 'chronic conflict';
     }
@@ -379,23 +393,23 @@ export function detect(inputs: BreakingInputs): DetectResult {
       reason = 'critical, no fresh headline';
     }
     // Follow-ups: an old story, a story that ITN reported days ago, or (with no ITN) a long or aftermath story.
-    if (level && now - since > CONFIG.maxAgeHours * HOUR) {
-      level = null;
-      reason = 'older than 24 h';
-    }
-    // An ITN date is the UTC day of the event, with no time. The story is a follow-up only when its
-    // first evidence comes more than 36 h after the start of that day (12 h after its end).
-    if (level && itn.some((e) => since - e.time > CONFIG.itnFollowUpHours * HOUR && itnMatches(e, story, true))) {
-      level = null;
-      reason = 'ITN follow-up';
-    }
-    if (level && !itnOk) {
-      const span = times.length ? (Math.max(...times) - since) / HOUR : 0;
-      const aftermath = new Set(recent.filter((i) => AFTERMATH.test(i.h.title)).map((i) => i.outlet)).size;
-      if (span > CONFIG.maxSpanHoursNoItn || (story.family !== 'politics' && aftermath >= 2)) {
-        level = null;
-        reason = 'follow-up (no ITN)';
+    // The hold also obeys these rules, so the detector finds them for every story.
+    const followUp = (): string | null => {
+      if (now - since > CONFIG.maxAgeHours * HOUR) return 'older than 24 h';
+      // An ITN date is the UTC day of the event, with no time. The story is a follow-up only when its
+      // first evidence comes more than 36 h after the start of that day (12 h after its end).
+      if (itn.some((e) => since - e.time > CONFIG.itnFollowUpHours * HOUR && itnMatches(e, story, true))) return 'ITN follow-up';
+      if (!itnOk) {
+        const span = times.length ? (Math.max(...times) - since) / HOUR : 0;
+        const aftermath = new Set(recent.filter((i) => AFTERMATH.test(i.h.title)).map((i) => i.outlet)).size;
+        if (span > CONFIG.maxSpanHoursNoItn || (story.family !== 'politics' && aftermath >= 2)) return 'follow-up (no ITN)';
       }
+      return null;
+    };
+    const stop = followUp();
+    if (level && stop) {
+      level = null;
+      reason = stop;
     }
 
     // The headline: a front-page item at the agreed tier, near the top, before a Google News redirect.
@@ -411,20 +425,40 @@ export function detect(inputs: BreakingInputs): DetectResult {
     if (hazards.some((z) => z.source === 'usgs')) basis.push('usgs');
     if (itnSupport) basis.push('itn');
     const score = nVoices + 2 * editions + lead + 3 * tierEff + 2 * Math.log10(deaths + 1) + (live ? 1 : 0);
-    candidates.push({ id: story.id, family: story.family, level, reason, score, voices: nVoices, editions, lead, tierEff, deaths, since, updatedAt, best, basis, items: story.items });
+    candidates.push({
+      id: story.id, family: story.family, level, reason, score, voices: nVoices, editions, lead, tierEff, deaths, since, updatedAt, best, basis,
+      items: story.items, held: false, chronicBlock: chronicStory && !escalation, stop,
+    });
   }
 
-  // One alert per country: the best candidate.
+  // The hold: each alert of the last run finds its story again. A story that fails the full test now
+  // stays an alert when holdResult() allows it.
+  const entryOf = new Map<Candidate, HeldAlert>();
+  for (const entry of previous?.alerts ?? []) {
+    const c = matchEntry(entry, candidates.filter((x) => !entryOf.has(x)));
+    if (!c) continue; // the story is gone
+    entryOf.set(c, entry);
+    if (c.level) continue; // the story passes the full test
+    const hold = holdResult(c, entry, now);
+    c.reason = hold.reason;
+    if (hold.held) {
+      c.level = 'major';
+      c.held = true;
+    }
+  }
+
+  // One alert per country: the best candidate. At the same level, a story that passes the full test
+  // comes before a held story, so a new alert pushes a held alert off the list first.
   const rank = (c: Candidate) => (c.level ? LEVEL_RANK[c.level] : 0);
+  const order = (a: Candidate, b: Candidate) => rank(b) - rank(a) || Number(a.held) - Number(b.held) || b.score - a.score;
   const byCountry = new Map<string, Candidate>();
   for (const c of candidates) {
     if (!c.level) continue;
     const prev = byCountry.get(c.id);
-    if (!prev || rank(c) > rank(prev) || (rank(c) === rank(prev) && c.score > prev.score)) byCountry.set(c.id, c);
+    if (!prev || order(c, prev) < 0) byCountry.set(c.id, c);
   }
-  const alerts = [...byCountry.values()]
-    .sort((a, b) => rank(b) - rank(a) || b.score - a.score)
-    .slice(0, CONFIG.maxAlerts)
+  const shown = [...byCountry.values()].sort(order).slice(0, CONFIG.maxAlerts);
+  const alerts = shown
     .map((c): BreakingAlert => ({
       key: alertKey(c.id, c.family, c.since),
       country: c.id,
@@ -439,10 +473,93 @@ export function detect(inputs: BreakingInputs): DetectResult {
       basis: c.basis,
     }));
 
+  // The next state holds the alerts of this run only. A story that is gone, too old or below the hold drops out.
+  const state: BreakingState = {
+    v: 1,
+    savedAt: now,
+    alerts: shown.map((c): HeldAlert => {
+      const e = entryOf.get(c);
+      // The item hashes of this run come first. The hashes of the last runs fill the rest.
+      const itemIds = [...new Set([...c.items.map((i) => itemId(i.h.url)), ...(e?.itemIds ?? [])])].slice(0, CONFIG.heldItemIds);
+      return {
+        key: alertKey(c.id, c.family, c.since),
+        country: c.id,
+        family: c.family,
+        level: c.level!,
+        since: e ? Math.min(e.since, c.since) : c.since,
+        firstAlertAt: e?.firstAlertAt ?? now,
+        lastQualifiedAt: c.held && e ? e.lastQualifiedAt : now,
+        itemIds,
+        words: [...new Set([...storyWords(c.items), ...(e?.words ?? [])])].slice(0, CONFIG.heldWords),
+      };
+    }),
+  };
+
   return {
     response: { alerts, generatedAt: new Date(now).toISOString(), sources: inputs.sources },
-    candidates: candidates.sort((a, b) => rank(b) - rank(a) || b.score - a.score),
+    candidates: candidates.sort(order),
+    state,
   };
+}
+
+/** The distinctive words of the headlines of a story, the most frequent first. */
+function storyWords(items: Item[]): string[] {
+  const count = new Map<string, number>();
+  for (const i of items) for (const w of i.tokens) count.set(w, (count.get(w) ?? 0) + 1);
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([w]) => w);
+}
+
+/**
+ * The story of an alert of the last run. The story must have the same country and kind, the same key
+ * or a first evidence less than 24 h apart, and an overlap with the alert: an item with a stored URL
+ * hash, or a headline that shares 2 distinctive words with the stored words. The country, kind and
+ * day are not enough, because two stories of one country and kind on one day have the same key.
+ * The story with the most shared items wins, then the most headlines with shared words, then the same
+ * key, then a story that passes the full test, then the higher score.
+ */
+function matchEntry(entry: HeldAlert, candidates: Candidate[]): Candidate | null {
+  const ids = new Set(entry.itemIds);
+  const words = new Set(entry.words);
+  const sameKey = (c: Candidate) => alertKey(c.id, c.family, c.since) === entry.key;
+  const matches = candidates
+    .filter((c) => c.id === entry.country && c.family === entry.family && (sameKey(c) || Math.abs(c.since - entry.since) < CONFIG.sameStoryHours * HOUR))
+    .map((c) => ({
+      c,
+      byId: c.items.filter((i) => ids.has(itemId(i.h.url))).length,
+      byWords: c.items.filter((i) => similar(i.tokens, words, 2)).length,
+    }))
+    .filter((m) => m.byId > 0 || m.byWords > 0);
+  matches.sort(
+    (a, b) =>
+      b.byId - a.byId ||
+      b.byWords - a.byWords ||
+      Number(sameKey(b.c)) - Number(sameKey(a.c)) ||
+      Number(!!b.c.level) - Number(!!a.c.level) ||
+      b.c.score - a.c.score,
+  );
+  return matches[0]?.c ?? null;
+}
+
+/** A short hash (FNV-1a, 32 bits) of an item URL. The state keeps the hash, not the URL. */
+export function itemId(url: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < url.length; i++) h = Math.imul(h ^ url.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * The hold of a story that was an alert in the last run and fails the full test now. The hold never
+ * overrides the hard stops: the chronic-war rule, the 24 h limit and the follow-up rules. Then the alert
+ * stays (as major at most) when 2 voices agree on tier 2 and one of them leads a front page or an edition,
+ * or when the first alert is less than 2 h old and one recent voice remains.
+ */
+export function holdResult(c: Candidate, entry: HeldAlert, now: number): { held: boolean; reason: string } {
+  if (c.chronicBlock) return { held: false, reason: 'hold ended: chronic conflict' };
+  if (now - Math.min(c.since, entry.since) > CONFIG.maxAgeHours * HOUR) return { held: false, reason: 'hold ended: older than 24 h' };
+  if (c.stop) return { held: false, reason: `hold ended: ${c.stop}` };
+  if (c.voices >= CONFIG.holdVoices && c.tierEff >= 2 && (c.editions >= 1 || c.lead >= 1)) return { held: true, reason: 'held: 2 voices lead' };
+  if (now - entry.firstAlertAt < CONFIG.holdMinHours * HOUR && c.voices >= 1) return { held: true, reason: 'held: alert under 2 h old' };
+  return { held: false, reason: 'hold ended: below hold' };
 }
 
 /**

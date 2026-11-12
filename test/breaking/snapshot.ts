@@ -4,6 +4,7 @@
 //   npx tsx test/breaking/snapshot.ts --save <name>      live run, and save the inputs to test/breaking/fixtures/<name>.json
 //   npx tsx test/breaking/snapshot.ts --save <name> --wide   also save every headline that names a country
 //   npx tsx test/breaking/snapshot.ts --replay <file>    run the detector on a saved fixture
+//   npx tsx test/breaking/snapshot.ts --state <file>     also give a saved detector state (JSON) to the run, for the hold
 //
 // The tool sends a generic User-Agent. Set BREAKING_USER_AGENT to send another one.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -13,6 +14,7 @@ import { classify } from '../../api/_lib/breaking/classify.js';
 import { detect } from '../../api/_lib/breaking/detect.js';
 import { primaryCountries } from '../../api/_lib/breaking/match.js';
 import { fetchInputs } from '../../api/_lib/breaking/sources.js';
+import { parseState } from '../../api/_lib/breaking/state.js';
 import type { BreakingInputs } from '../../api/_lib/breaking/types.js';
 import { fromFixture, toFixture, type Fixture } from './fixture.js';
 
@@ -42,7 +44,10 @@ async function main() {
     }
   }
   const t1 = performance.now();
-  const out = detect(inputs);
+  const statePath = flag('--state');
+  const previous = statePath ? parseState(JSON.parse(readFileSync(statePath, 'utf8'))) : null;
+  if (statePath && !previous) throw new Error('--state: not a valid detector state');
+  const out = detect(inputs, previous);
   console.log(`detect ${Math.round(performance.now() - t1)} ms; ITN ongoing=${JSON.stringify(inputs.itn?.ongoing ?? null)} blurbs=${inputs.itn?.blurbs.length ?? 'n/a'} hazards=${inputs.hazards.length}`);
 
   console.log('\n== flagged headlines (tier family deaths countries | outlet feed#pos age)');
@@ -61,6 +66,8 @@ async function main() {
   }
   console.log('\n== response');
   console.log(JSON.stringify(out.response, null, 2));
+  console.log('\n== next state');
+  console.log(JSON.stringify(out.state));
 }
 
 main().catch((err) => {

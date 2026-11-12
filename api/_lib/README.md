@@ -152,7 +152,8 @@ The keys (`NEWSDATA_API_KEY`, `RAPIDAPI_KEY`, `DEEPL_API_KEY`) are in "Owner set
 - `breaking/sources.ts`: the 24 feeds, Wikipedia ITN, GDACS and USGS. The parsers and `fetchInputs()`. Euronews comes from its FeedBurner copy, because `euronews.com/rss` answers 406 to a server.
 - `breaking/match.ts`: the country matcher. One case-sensitive regex over `aliases.json`, longest alias first, with Unicode word boundaries. Block phrases ("Gulf of Guinea", "Indian Ocean", "New York Times") hide the country inside them. Trap rules: Georgia needs Caucasus context and no US context; Turkey the food; given names ("Jordan Davis"); a demonym before "nationals" or "tourists"; "US" in an upper-case title; plain "Congo" is DR Congo; "Paris, Texas" is the US.
 - `breaking/classify.ts`: the family, the tier and the death count of one headline.
-- `breaking/detect.ts`: stories, levels, follow-ups, the key and the response.
+- `breaking/detect.ts`: stories, levels, follow-ups, the hold, the key and the response.
+- `breaking/state.ts`: the detector state between runs. It checks a stored state and reads and writes it in the Vercel Runtime Cache.
 - `breaking/aliases.json`: made by `scripts/build-aliases.mjs` (`npm run aliases:breaking`). Do not edit it by hand.
 
 ### Scene of the event
@@ -187,7 +188,8 @@ A story joins headlines of one country and kind. Two headlines join when they sh
 
 ### Sources and failures
 
-- Each request has a 2.5 s timeout and the run has a 6 s budget. The server uses `Promise.allSettled`, so a failed source gives no items.
+- Each request has a 2.5 s timeout and the run has a 6 s budget. The server uses `Promise.allSettled`, so a failed source does not stop the run.
+- A failed source gives its last good answer when that answer is at most 30 minutes old (`LAST_GOOD_MAX_MS`, `mergeLastGood()` in `sources.ts`), else no items. The module keeps the last good answers in memory only: all of them are about 280 KB, too large for a write to the Runtime Cache on each run. `sources.ok` counts live answers only, so the degraded rule stays true. `sources.reused` (only when more than 0) counts the reused answers. The client ignores both.
 - GDACS: `eventlist=EQ;TC;FL;VO`. Do not add `TS`: it removes events. HTTP 204 means no events. The detector reads `episodealertlevel` (the current level) and `affectedcountries`, not `alertlevel` and `iso3`.
 - USGS: the significant earthquakes of the week. The PAGER level is the level, and the place text gives the country.
 - ITN: the blurb date comes from the `<!--Nov 7-->` comment. It is the UTC day of the event, at 00:00, so the follow-up rule compares it with the first evidence of the story and allows 36 hours. For the follow-up rule a blurb must share a place, the toll or 2 distinctive words with the story; for support of the critical gate, 1 word is enough. The "Ongoing" list gives the chronic wars. When ITN fails, the chronic list is UKR, RUS, PSE, SDN, IRN and YEM, and two more follow-up rules apply: a story that spans more than 12 hours, or aftermath words in 2 or more outlets.
@@ -199,6 +201,7 @@ A story joins headlines of one country and kind. Two headlines join when they sh
 - Success: `Cache-Control: public, s-maxage=300, stale-while-revalidate=900, stale-if-error=3600`.
 - Fewer than half of the sources answered, or an unexpected failure: `public, s-maxage=60`.
 - The server keeps a result in memory for 5 minutes (60 seconds when degraded). Parallel requests share one upstream run.
+- The hold state (`BreakingState`: per alert the key, country, kind, level, first evidence, first alert time, last qualified time, and the identity of the story: up to 40 short hashes of item URLs and up to 20 distinctive words) is in module memory. The key is the same for all stories of one country, kind and day, so `matchEntry()` in `detect.ts` finds the story of a held alert by a shared item hash, or by a headline that shares 2 words with the stored words. A story with no such overlap never takes the hold. On Vercel (`VERCEL=1`), the server also writes the state to the Runtime Cache (`getCache()` from `@vercel/functions`, key `breaking-state-v1`, TTL 26 hours) after each run that is not degraded. It reads the cache at the start of each run, while the sources load, and merges the cache copy and the memory copy entry by entry (`mergeStates()` in `state.ts`): an alert that only one copy has stays when the two copies are at most 15 minutes apart. The Vercel client does not throw: on a failure (also its own 500 ms timeout) it logs the error object with `console.error` and gives null, so a failed read and a missing entry look the same. That error object names the address of the cache endpoint, but not the headers or the state. For this reason a run with no memory state and a null read ("blind") does not write a state with no alerts: such a write could remove the alerts of the other instances. `state.ts` logs a short reason only for a store that throws (not the Vercel client) and for an invalid entry, never the state. The state is at most about 3 KB (3 alerts).
 - The research review asked for `stale-if-error=900`. The shared contract of the app sets 3600, so the header keeps 3600. The handler answers 200 also when the sources fail, so `stale-if-error` applies only when the function itself fails. Then the CDN can show an old answer for at most 1 hour. The client drops an alert with no evidence in the last 24 hours, so an old answer cannot show a stale alert for long.
 
 ### Key and client

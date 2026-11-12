@@ -120,5 +120,7 @@ export interface BreakingAlert {
 export interface BreakingResponse {
   alerts: BreakingAlert[];
   generatedAt: string; // ISO 8601
-  sources: { ok: number; total: number } | null; // upstream sources that answered; null after a failure
+  // Upstream sources that answered live; null after a failure. `reused` (only when more than 0): failed
+  // sources whose last good answer (at most 30 minutes old) the server used. Clients can ignore it.
+  sources: { ok: number; total: number; reused?: number } | null;
 }
