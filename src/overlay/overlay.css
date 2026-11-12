@@ -285,7 +285,7 @@
 }
 
 /* The selected country: no outer ring at rest. The red anchor marks it, and its capital needs the room. */
-.wo-alert[data-sel][data-level='critical']:not([data-pulse]) .wo-alert-ring + .wo-alert-ring {
+.wo-alert[data-sel][data-level='critical']:not([data-pulse='']) .wo-alert-ring + .wo-alert-ring {
   animation: none;
   opacity: 0;
 }
@@ -302,6 +302,16 @@
 
 .wo-alert[data-pulse] .wo-alert-ring + .wo-alert-ring {
   animation: wo-alert-ring 1600ms cubic-bezier(0, 0, 0.2, 1) 800ms 2;
+}
+
+/* The chip shows the alert of this marker (a rotation, src/ui/alerts.ts): one cycle of the first ring.
+   The outer ring stays still. This rule also applies after a user action (data-alerts-calm). */
+.wo-alert[data-pulse='1'] .wo-alert-ring {
+  animation: wo-alert-ring 1600ms cubic-bezier(0, 0, 0.2, 1) 1;
+}
+
+.wo-alert[data-pulse='1'] .wo-alert-ring + .wo-alert-ring {
+  animation: none;
 }
 
 @keyframes wo-alert-ring {

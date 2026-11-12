@@ -12,11 +12,13 @@ import {
   announcement,
   holdDropped,
   newStories,
+  nextIndex,
   nextPollDelay,
   parseAlert,
   parseBreakingResponse,
   sameStory,
   sameView,
+  shownIndex,
   sortAlerts,
   stripBadge,
   visibleAlerts,
@@ -358,5 +360,40 @@ describe('DEV mock', () => {
     expect(all.filter((a) => a.level === 'major')).toHaveLength(2);
     expect(mockBreaking('mock-none', NOW).alerts).toEqual([]);
     expect(mockBreaking('mock-major', NOW).alerts.map((a) => a.level)).toEqual(['major']);
+  });
+});
+
+describe('chip rotation', () => {
+  it('moves to the next index and wraps after the last', () => {
+    expect([0, 1, 2].map((i) => nextIndex(i, 3))).toEqual([1, 2, 0]);
+    expect(nextIndex(0, 1)).toBe(0);
+    expect(nextIndex(0, 0)).toBe(0);
+  });
+
+  const ukr = alert({ key: 'u', country: 'UKR', level: 'critical' });
+  const jpn = alert({ key: 'j', country: 'JPN' });
+  const lbn = alert({ key: 'l', country: 'LBN', kind: 'attack' });
+
+  it('keeps the alert on screen when a poll still has it, at its new index', () => {
+    expect(shownIndex(jpn, [ukr, jpn, lbn])).toBe(1);
+    expect(shownIndex(jpn, [jpn, lbn])).toBe(0);
+  });
+
+  it('keeps the alert on screen when its key moved at 00:00 UTC (sameStory)', () => {
+    const moved = { ...lbn, key: 'l2', since: iso(20) };
+    expect(shownIndex(lbn, [ukr, jpn, moved])).toBe(2);
+  });
+
+  it('starts from the top when the alert on screen is gone, or when nothing was on screen', () => {
+    expect(shownIndex(lbn, [ukr, jpn])).toBe(0);
+    expect(shownIndex(null, [ukr, jpn])).toBe(0);
+    expect(shownIndex(lbn, [])).toBe(0);
+  });
+
+  it('shows the first new story at once, in list order', () => {
+    expect(shownIndex(ukr, [ukr, jpn, lbn], [lbn])).toBe(2);
+    expect(shownIndex(ukr, [ukr, jpn, lbn], [lbn, jpn])).toBe(1);
+    // A fresh key that is not in the list does not count.
+    expect(shownIndex(jpn, [ukr, jpn], [lbn])).toBe(1);
   });
 });

@@ -1,5 +1,5 @@
 // Pure logic of the breaking-news UI: response checks, order, story identity, the dismiss and announce sets,
-// the hold of a dropped alert, the live-region message, the title badge and the poll delay.
+// the hold of a dropped alert, the rotation of the chip, the live-region message, the title badge and the poll delay.
 // No DOM here, so tests run in Node.
 
 import type { BreakingAlert, BreakingKind, BreakingLevel, CountryId } from '../types';
@@ -173,6 +173,24 @@ export function sameView(a: readonly BreakingAlert[], b: readonly BreakingAlert[
       );
     })
   );
+}
+
+/** With 2 or more alerts, the chip shows each alert for this time, then the next one. */
+export const ROTATE_MS = 8000;
+
+/** The index after `i` in a list of `n` items. After the last item, it is 0 again. */
+export function nextIndex(i: number, n: number): number {
+  return n > 0 ? (i + 1) % n : 0;
+}
+
+/**
+ * The index of the alert that the chip shows after the list changes. The first new story in `list` shows
+ * at once. Else the alert on screen stays when its story is still in `list` (sameStory). Else the top alert shows.
+ */
+export function shownIndex(shown: StoryRef | null, list: readonly StoryRef[], fresh: readonly StoryRef[] = []): number {
+  const first = list.findIndex((a) => fresh.some((f) => f.key === a.key));
+  if (first >= 0) return first;
+  return shown ? Math.max(0, list.findIndex((a) => sameStory(a, shown))) : 0;
 }
 
 /** Alerts in `alerts` whose story is not in `known`, in the order of `alerts`. */

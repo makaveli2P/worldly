@@ -488,6 +488,13 @@ a {
   color: var(--on-alert);
 }
 
+/* The chip tag changes its level when the chip rotates: the fill fades with the text. */
+.brk-main > .brk-tag {
+  transition:
+    background-color 250ms ease,
+    color 250ms ease;
+}
+
 .brk-dot {
   flex: none;
   width: 8px;
@@ -559,6 +566,35 @@ a {
   flex: none;
   font: 400 11px/16px var(--mono);
   color: var(--muted);
+}
+
+/* The chip rotates: all alerts are in one grid cell, so the cell is as wide as the widest alert and the
+   chip width does not change. Only the alert on screen ([data-on]) is visible. The old text fades out,
+   then the new text fades in. */
+.brk-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.brk-item {
+  display: flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 120ms ease-out,
+    visibility 0s linear 120ms;
+}
+
+.brk-item[data-on] {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 160ms ease-in 100ms;
 }
 
 .brk-btn {
@@ -1861,6 +1897,10 @@ a {
     flex: 1 1 auto;
     gap: 8px;
     padding-right: 8px;
+  }
+
+  .brk-item {
+    gap: 8px;
   }
 
   .brk-tag {
