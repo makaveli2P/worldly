@@ -66,6 +66,8 @@ const BIG_KM2 = 2e6;
 const MAX_ALERTS = 5;
 /** Three ring cycles of 1.6 s, plus a margin. The pulse attribute goes away after this time. */
 const PULSE_MS = 3 * 1600 + 200;
+/** One ring cycle of 1.6 s (a rotation of the breaking-news chip), plus a margin. */
+const PULSE_ONE_MS = 1600 + 200;
 /** Outer radius of a marker at rest, px (critical: the second ring at scale 1.45). The label sits outside it. */
 const ALERT_R = { critical: 22, major: 12 } as const;
 /** The same for the selected country: the critical outer ring is off at rest, so the capital has room. */
@@ -347,12 +349,19 @@ export class Overlay {
     this.kick();
   }
 
-  /** Pulses the marker of `id` once more (the user hovers or focuses its alert). Not with reduced motion. */
-  pulseAlert(id: CountryId): void {
+  /**
+   * Pulses the marker of `id` again. Not with reduced motion.
+   * 3 cycles: the user hovers or focuses its alert. A marker that is not in clear view pulses when it is.
+   * 1 cycle: the chip shows its alert (a rotation). Only a marker in clear view pulses.
+   */
+  pulseAlert(id: CountryId, cycles: 1 | 3 = 3): void {
     const n = this.alerts.get(id);
-    if (!n || this.reducedMotion.matches || n.el.hasAttribute('data-pulse')) return;
-    if (n.shown && n.op > 0.5) this.startPulse(n);
-    else {
+    if (!n || this.reducedMotion.matches) return;
+    // A pulse that runs now continues. Only a 3-cycle pulse replaces a 1-cycle pulse.
+    const running = n.el.getAttribute('data-pulse');
+    if (running !== null && (cycles === 1 || running === '')) return;
+    if (n.shown && n.op > 0.5) this.startPulse(n, cycles);
+    else if (cycles === 3) {
       // Not in clear view (the globe still turns there): pulse when it is.
       n.pending = true;
       this.kick();
@@ -896,13 +905,14 @@ export class Overlay {
     return n;
   }
 
-  private startPulse(n: AlertNode): void {
+  private startPulse(n: AlertNode, cycles: 1 | 3 = 3): void {
     clearTimeout(n.pulseTimer);
     n.el.removeAttribute('data-pulse');
     void n.el.offsetWidth; // restart the CSS animation
-    n.el.setAttribute('data-pulse', '');
+    // data-pulse="" gives 3 cycles, data-pulse="1" gives 1 cycle (overlay.css).
+    n.el.setAttribute('data-pulse', cycles === 1 ? '1' : '');
     // A hidden marker gets no animationend; the timer ends the pulse in any case.
-    n.pulseTimer = window.setTimeout(() => this.endPulse(n), PULSE_MS);
+    n.pulseTimer = window.setTimeout(() => this.endPulse(n), cycles === 1 ? PULSE_ONE_MS : PULSE_MS);
   }
 
   private endPulse(n: AlertNode): void {

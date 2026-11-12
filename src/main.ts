@@ -429,6 +429,7 @@ async function start(): Promise<void> {
             overlay.pulseAlert(a.country);
           },
           onPreview: (a) => overlay.pulseAlert(a.country),
+          onRotate: (a) => overlay.pulseAlert(a.country, 1),
           onChange: (alerts, fresh) => {
             liveAlerts = alerts;
             syncNewsBreaking();
