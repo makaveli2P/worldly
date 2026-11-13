@@ -67,8 +67,8 @@ Breaking news uses the alert yellow with an ink keyline, so one of the two colou
 
 The page keeps two values in `localStorage`:
 
-- `worldly:style`: `satellite` (default) or `atlas`.
-- `worldly:theme`: `light` or `dark`. With no value, the theme follows the system setting.
+- `worldly:style`: `atlas` (default) or `satellite`.
+- `worldly:theme`: `dark` (default) or `light`. The system light or dark setting does not change the theme.
 
 A small script in `index.html` applies both values before the first paint.
 

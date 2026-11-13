@@ -5,7 +5,7 @@ import { closeButton, h } from './dom';
 
 export type PanelKind = 'details' | 'news';
 
-/** Fired on window when a panel opens or closes, or the layout switches desktop/mobile. */
+/** Fired on window when a panel opens, closes or changes size, or the layout switches desktop/mobile. */
 export const PANELS_CHANGE_EVENT = 'worldly:panelschange';
 
 const MOBILE_QUERY = '(max-width: 767px)';
@@ -27,6 +27,10 @@ export class PanelLayout {
   private readonly tabs: Record<PanelKind, HTMLButtonElement>;
   private tab: PanelKind = 'details';
   private readonly identity: HTMLElement;
+  // A plate gets shorter when its content changes (5 loading rows, then "No recent coverage").
+  // The leader lines must then end on the new edge, so a size change also fires PANELS_CHANGE_EVENT.
+  private readonly resize =
+    typeof ResizeObserver === 'function' ? new ResizeObserver(() => window.dispatchEvent(new CustomEvent(PANELS_CHANGE_EVENT))) : null;
 
   constructor(host: HTMLElement) {
     this.tabs = {
@@ -47,6 +51,7 @@ export class PanelLayout {
     this.enableSwipeDown(head);
     this.el = h('div', { class: 'panels' }, head);
     host.append(this.el);
+    this.resize?.observe(this.el);
 
     window.matchMedia(MOBILE_QUERY).addEventListener('change', () => this.sync());
     this.sync();
@@ -65,6 +70,7 @@ export class PanelLayout {
     if (kind === 'details') this.el.querySelector('.sheet-head')!.after(el);
     else this.el.append(el);
     this.slots.set(kind, { el, body, open: false, onClose });
+    this.resize?.observe(el);
     this.sync();
     return body;
   }

@@ -77,7 +77,8 @@ describe('colour tokens', () => {
   });
 
   it('set theme-color to the header (panel) colour in all three places', () => {
-    expect(html).toContain(`name="theme-color" content="${ui.light.panel}"`);
+    // The static value is the default (dark) theme. The boot script and prefs.ts change it for light.
+    expect(html).toContain(`name="theme-color" content="${ui.dark.panel}"`);
     expect(html).toContain(`t === 'dark' ? '${ui.dark.panel}' : '${ui.light.panel}'`);
     expect(prefs).toContain(`{ light: '${ui.light.panel}', dark: '${ui.dark.panel}' }`);
   });
