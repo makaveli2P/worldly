@@ -1,11 +1,12 @@
-// Trackball input: drag rotates the globe about any axis, with inertia; wheel and pinch zoom.
+// Drag input: drag turns the view (lat/lng, north up), with inertia; wheel and pinch zoom.
 // The controls only report gestures. Globe applies them.
 
-import { Quaternion, Vector3 } from 'three';
-
 export interface ControlEvents {
-  /** Rotation in world space for this frame of drag. */
-  rotate(delta: Quaternion): void;
+  /**
+   * Turn for this frame of drag or inertia, in radians of arc at the view centre.
+   * dx is to the right and dy is down: the surface moves with the pointer.
+   */
+  turn(dx: number, dy: number): void;
   /** Multiplies the zoom ratio (less than 1 = closer). */
   zoom(factor: number): void;
   /**
@@ -18,11 +19,12 @@ export interface ControlEvents {
   /** Mouse or pen moves over the canvas without a drag. Null when it leaves. */
   hover(clientX: number, clientY: number): void;
   leave(): void;
-  dragStart(): void;
+  /** A drag starts. clientX, clientY is the pointer-down point of the drag. */
+  dragStart(clientX: number, clientY: number): void;
   dragEnd(): void;
   /** Any user input, so the idle timer restarts. */
   activity(): void;
-  /** Radians of rotation per pixel of drag at the current zoom. */
+  /** Radians of arc per pixel of drag at the current zoom. */
   radiansPerPixel(): number;
 }
 
@@ -43,7 +45,7 @@ interface Tracked {
   type: string;
 }
 
-export class TrackballControls {
+export class GlobeControls {
   private readonly el: HTMLElement;
   private readonly ev: ControlEvents;
   private readonly pointers = new Map<number, Tracked>();
@@ -51,10 +53,9 @@ export class TrackballControls {
   private multiTouch = false;
   private pinchDistance = 0;
   private lastMoveTime = 0;
-  // Angular velocity in world space: axis * radians per ms.
-  private readonly velocity = new Vector3();
-  private readonly tmpAxis = new Vector3();
-  private readonly tmpQuat = new Quaternion();
+  // Turn velocity in radians per ms: vx to the right, vy down.
+  private vx = 0;
+  private vy = 0;
   // The last tap: a candidate first half of a double tap, or the end of one (consumed).
   private lastTap: { x: number; y: number; time: number; consumed: boolean } | null = null;
   private pendingTap = 0; // timer of the held single tap
@@ -77,7 +78,8 @@ export class TrackballControls {
   }
 
   stopInertia(): void {
-    this.velocity.set(0, 0, 0);
+    this.vx = 0;
+    this.vy = 0;
   }
 
   /** Drops a held single tap, so it never fires. */
@@ -89,11 +91,11 @@ export class TrackballControls {
   /** Applies inertia. Returns true while the globe still moves. */
   update(dt: number): boolean {
     if (this.dragging || this.pointers.size > 0) return false;
-    const speed = this.velocity.length();
-    if (speed < 1e-6) return false;
-    this.tmpAxis.copy(this.velocity).divideScalar(speed);
-    this.ev.rotate(this.tmpQuat.setFromAxisAngle(this.tmpAxis, speed * dt));
-    this.velocity.multiplyScalar(Math.exp(-DAMPING * dt));
+    if (Math.hypot(this.vx, this.vy) < 1e-6) return false;
+    this.ev.turn(this.vx * dt, this.vy * dt);
+    const decay = Math.exp(-DAMPING * dt);
+    this.vx *= decay;
+    this.vy *= decay;
     return true;
   }
 
@@ -114,14 +116,14 @@ export class TrackballControls {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     this.el.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, type: e.pointerType });
-    this.velocity.set(0, 0, 0);
+    this.stopInertia();
     this.lastMoveTime = performance.now();
     if (this.pointers.size === 2) {
       this.multiTouch = true;
       this.pinchDistance = this.currentPinchDistance();
       if (!this.dragging) {
         this.dragging = true;
-        this.ev.dragStart();
+        this.ev.dragStart(e.clientX, e.clientY);
       }
     }
     this.ev.activity();
@@ -151,23 +153,22 @@ export class TrackballControls {
     if (!this.dragging && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) >= TAP_SLOP) {
       this.dragging = true;
       this.lastTap = null; // a drag ends any double-tap sequence
-      this.ev.dragStart();
+      this.ev.dragStart(p.startX, p.startY);
     }
     if (!this.dragging) return;
+    if (dx === 0 && dy === 0) return;
 
-    const len = Math.hypot(dx, dy);
-    if (len === 0) return;
-    const angle = len * this.ev.radiansPerPixel();
-    // Screen y points down, world y points up: drag right turns about +Y, drag down about +X.
-    this.tmpAxis.set(dy / len, dx / len, 0);
-    this.ev.rotate(this.tmpQuat.setFromAxisAngle(this.tmpAxis, angle));
+    const k = this.ev.radiansPerPixel();
+    const ax = dx * k;
+    const ay = dy * k;
+    this.ev.turn(ax, ay);
 
     const now = performance.now();
     const dt = Math.max(1, now - this.lastMoveTime);
     this.lastMoveTime = now;
     // Smooth the velocity a little so one jittery event does not decide the throw.
-    const instant = this.tmpAxis.multiplyScalar(angle / dt);
-    this.velocity.lerp(instant, 0.6);
+    this.vx += (ax / dt - this.vx) * 0.6;
+    this.vy += (ay / dt - this.vy) * 0.6;
   };
 
   private readonly onUp = (e: PointerEvent) => {
@@ -184,7 +185,7 @@ export class TrackballControls {
     this.multiTouch = false;
     if (wasDragging) {
       // A pause before release means no throw.
-      if (performance.now() - this.lastMoveTime > 80 || wasMulti) this.velocity.set(0, 0, 0);
+      if (performance.now() - this.lastMoveTime > 80 || wasMulti) this.stopInertia();
       this.ev.dragEnd();
     } else if (!wasMulti) {
       this.onTap(e.clientX, e.clientY, p.type);
@@ -200,7 +201,7 @@ export class TrackballControls {
       const wasDragging = this.dragging;
       this.dragging = false;
       this.multiTouch = false;
-      this.velocity.set(0, 0, 0);
+      this.stopInertia();
       if (wasDragging) this.ev.dragEnd();
     }
   };
