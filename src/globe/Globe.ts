@@ -40,7 +40,7 @@ import type { CountryFeature, CountryId } from '../types';
 import { GlobeControls } from './controls';
 import { buildGlobeGeometry, lonLatToVec, type BoundingCap, type Range } from './geometry';
 import { CountryPicker } from './picker';
-import { clampLat, dragLatLimit, dragView, lerpView, orientationFor, visibleArc, wrapLng, type ViewCentre } from './view';
+import { clampLat, dragLatLimit, dragView, fitRadius, lerpView, orientationFor, visibleArc, wrapLng, type ViewCentre } from './view';
 import { TEXTURES, type TextureFile } from './textureManifest';
 import { canUploadTexture, chooseTextureTiers, neededTextureWidth, nextTextureLevel } from './textureTiers';
 import {
@@ -151,7 +151,7 @@ interface LabelData {
   lat: number;
   lng: number;
   radius: number; // angular radius (rad) of a disc with the area of the main polygon
-  ring: number[][] | null; // outer ring [lng, lat] of the main polygon
+  rings: number[][][] | null; // all rings [lng, lat] of the main polygon (Antarctica: a pole ring and the coastline)
 }
 
 function limbGeometry(segments = 256): BufferGeometry {
@@ -1349,16 +1349,9 @@ export class Globe {
 
   /** Angular radius (rad) of the cap around lat/lng that holds the country's main polygon. */
   private mainRadius(index: number, latlng: [number, number]): number {
-    const ring = this.labelData(index).ring;
-    if (!ring || ring.length === 0) return this.capRadius[index];
-    const c = lonLatToVec(latlng[1], latlng[0], [0, 0, 0]);
-    let minDot = 1;
-    const v = [0, 0, 0];
-    for (const pt of ring) {
-      lonLatToVec(pt[0], pt[1], v);
-      minDot = Math.min(minDot, c[0] * v[0] + c[1] * v[1] + c[2] * v[2]);
-    }
-    return Math.acos(Math.max(-1, Math.min(1, minDot)));
+    const rings = this.labelData(index).rings;
+    if (!rings || rings.length === 0 || rings[0].length === 0) return this.capRadius[index];
+    return fitRadius(latlng, rings);
   }
 
   private computeLabel(index: number): LabelData {
@@ -1379,7 +1372,7 @@ export class Globe {
     const inside = (lng: number, lat: number) => this.picker.pick(lng, lat) === index;
     if (best) {
       const [lng, lat] = geoCentroid(best);
-      if (Number.isFinite(lat) && inside(lng, lat)) return { lat, lng, radius, ring: best.coordinates[0] };
+      if (Number.isFinite(lat) && inside(lng, lat)) return { lat, lng, radius, rings: best.coordinates };
       // A crescent or ring shape: walk from the centroid toward each vertex until inside.
       const ring = best.coordinates[0];
       const stride = Math.max(1, Math.floor(ring.length / 24));
@@ -1387,7 +1380,7 @@ export class Globe {
         for (const t of [0.5, 0.75, 0.9]) {
           const x = lng + (ring[i][0] - lng) * t;
           const y = lat + (ring[i][1] - lat) * t;
-          if (inside(x, y)) return { lat: y, lng: x, radius, ring };
+          if (inside(x, y)) return { lat: y, lng: x, radius, rings: best.coordinates };
         }
       }
     }
@@ -1396,7 +1389,7 @@ export class Globe {
       lat: (Math.asin(Math.max(-1, Math.min(1, c.y))) * 180) / Math.PI,
       lng: (Math.atan2(c.x, c.z) * 180) / Math.PI,
       radius,
-      ring: best ? best.coordinates[0] : null,
+      rings: best ? best.coordinates : null,
     };
   }
 

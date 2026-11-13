@@ -2,6 +2,7 @@
 // Globe keeps the view as lat/lng and turns it into a globe orientation each frame.
 
 import { Euler, Quaternion } from 'three';
+import { lonLatToVec } from './geometry';
 
 /** Max |lat| that a drag can bring to the view centre when the globe is far away. Closer in, the limit goes up. */
 export const MAX_DRAG_LAT = 80;
@@ -93,4 +94,23 @@ const euler = new Euler(0, 0, 0, 'XYZ');
 export function orientationFor(lat: number, lng: number, out = new Quaternion()): Quaternion {
   // Euler 'XYZ' gives the matrix Rx · Ry · Rz: Ry acts first.
   return out.setFromEuler(euler.set(lat / DEG, -lng / DEG, 0, 'XYZ'));
+}
+
+/**
+ * The angular radius (rad) of the smallest cap round `centre` [lat, lng] that holds every point of
+ * `rings` ([lng, lat] rings of one polygon). It reads all rings, not only the first: the world data
+ * keeps Antarctica as a small ring round the pole plus its coastline as a second ring, so the first
+ * ring alone gives a radius near 0, and the focus then zooms in all the way.
+ */
+export function fitRadius(centre: [number, number], rings: readonly (readonly number[])[][]): number {
+  const c = lonLatToVec(centre[1], centre[0], [0, 0, 0]);
+  const v = [0, 0, 0];
+  let minDot = 1;
+  for (const ring of rings) {
+    for (const pt of ring) {
+      lonLatToVec(pt[0], pt[1], v);
+      minDot = Math.min(minDot, c[0] * v[0] + c[1] * v[1] + c[2] * v[2]);
+    }
+  }
+  return Math.acos(Math.max(-1, Math.min(1, minDot)));
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { lonLatToVec } from '../../src/globe/geometry';
 import {
+  fitRadius,
   MAX_DRAG_LAT,
   clampLat,
   dragLatLimit,
@@ -222,5 +223,23 @@ describe('orientationFor', () => {
   it('writes into the out quaternion', () => {
     const out = new Quaternion();
     expect(orientationFor(10, 20, out)).toBe(out);
+  });
+});
+
+describe('fitRadius', () => {
+  const deg = (r: number) => (r * 180) / Math.PI;
+  // Antarctica as the world data keeps it: a small ring round the pole, then the coastline.
+  const poleRing = Array.from({ length: 37 }, (_, i) => [-180 + i * 10, -89.999]);
+  const coast = Array.from({ length: 37 }, (_, i) => [180 - i * 10, -70]);
+
+  it('reads every ring: Antarctica fits its coastline, not the ring round the pole', () => {
+    expect(deg(fitRadius([-90, 0], [poleRing]))).toBeLessThan(0.01);
+    expect(deg(fitRadius([-90, 0], [poleRing, coast]))).toBeCloseTo(20, 5);
+  });
+
+  it('a hole inside the outer ring does not change the radius', () => {
+    const outer = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]];
+    const hole = [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]];
+    expect(fitRadius([5, 5], [outer, hole])).toBeCloseTo(fitRadius([5, 5], [outer]), 12);
   });
 });
