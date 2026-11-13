@@ -13,12 +13,12 @@ import {
   LineSegments,
   Mesh,
   MeshBasicMaterial,
-  Matrix4,
   NoColorSpace,
   OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
   Quaternion,
+  Ray,
   Raycaster,
   RepeatWrapping,
   Scene,
@@ -37,9 +37,10 @@ import { geoArea, geoCentroid } from 'd3-geo';
 import type { Polygon } from 'geojson';
 import { globePalettes, systemTheme, type GlobePalette, type MapStyle, type ThemeName } from '../theme';
 import type { CountryFeature, CountryId } from '../types';
-import { TrackballControls } from './controls';
+import { GlobeControls } from './controls';
 import { buildGlobeGeometry, lonLatToVec, type BoundingCap, type Range } from './geometry';
 import { CountryPicker } from './picker';
+import { clampLat, dragLatLimit, dragView, lerpView, orientationFor, visibleArc, wrapLng, type ViewCentre } from './view';
 import { TEXTURES, type TextureFile } from './textureManifest';
 import { canUploadTexture, chooseTextureTiers, neededTextureWidth, nextTextureLevel } from './textureTiers';
 import {
@@ -209,7 +210,7 @@ export class Globe {
   private readonly limbScene = new Scene(); // drawn last, sharp, also over the blur
   private readonly globe = new Group();
   private readonly overlayGlobe = new Group();
-  private readonly controls: TrackballControls;
+  private readonly controls: GlobeControls;
   private readonly picker: CountryPicker;
   private readonly idToIndex = new Map<CountryId, number>();
   private readonly triangleRanges: Range[];
@@ -292,8 +293,13 @@ export class Globe {
   private pointerMoved = false;
   private lastActivity = -Infinity; // spin from the first frame
   private spin = 0; // 0..1 ramp of the idle rotation
-  private focusAnim: { from: Quaternion; to: Quaternion; start: number } | null = null;
-  private readonly homeQuat = new Quaternion(); // orientation on first load, for resetView()
+  // The lat/lng at the centre of the view. globe.quaternion always follows it, with north up (see view.ts).
+  private view: ViewCentre = { lat: 0, lng: 0 };
+  private focusAnim: { from: ViewCentre; to: ViewCentre; start: number } | null = null;
+  private home: ViewCentre = { lat: 0, lng: 0 }; // view on first load, for resetView()
+  // Lat of the surface point that the last drag grabbed. Undefined when the grab was off the globe.
+  // The inertia of the throw uses it too, so the turn speed does not jump at release.
+  private grabLat: number | undefined;
   private hoverHold: { x: number; y: number } | null = null; // no hover pick after a reset until the pointer moves
 
   // Framing.
@@ -526,13 +532,13 @@ export class Globe {
 
     // Start with the viewer's own longitude, from the time zone.
     const lon = -new Date().getTimezoneOffset() / 4;
-    this.homeQuat.copy(this.orientationFor(20, ((lon + 540) % 360) - 180));
-    this.globe.quaternion.copy(this.homeQuat);
+    this.home = { lat: 20, lng: wrapLng(lon) };
+    this.setView(this.home);
 
-    this.controls = new TrackballControls(this.canvas, {
-      rotate: (q) => {
+    this.controls = new GlobeControls(this.canvas, {
+      turn: (dx, dy) => {
         this.focusAnim = null;
-        this.globe.quaternion.premultiply(q).normalize();
+        this.setView(dragView(this.view, dx, dy, { maxLat: this.dragLimit(), grabLat: this.grabLat }));
         this.needsRender = true;
       },
       zoom: (f) => {
@@ -567,7 +573,8 @@ export class Globe {
         this.pointer = null;
         this.setHover(-1, null);
       },
-      dragStart: () => {
+      dragStart: (x, y) => {
+        this.grabLat = this.surfaceLatAt(x, y);
         this.focusAnim = null;
         this.hoverHold = null;
         this.setHover(-1, null);
@@ -614,30 +621,33 @@ export class Globe {
     this.pointer = null;
     this.setHover(-1, null);
     if (this.reducedMotion.matches) {
-      this.globe.quaternion.copy(this.homeQuat);
+      this.setView(this.home);
       this.focusAnim = null;
       this.distance = this.targetDistance();
       this.updateCamera();
     } else {
-      this.focusAnim = { from: this.globe.quaternion.clone(), to: this.homeQuat.clone(), start: performance.now() };
+      this.focusAnim = { from: { ...this.view }, to: { ...this.home }, start: performance.now() };
     }
     this.lastActivity = -Infinity;
     this.updateCursor();
     this.needsRender = true;
   }
 
-  /** Turns lat/lng to face the camera. With a selected country, also zooms to fit it. */
+  /**
+   * Turns lat/lng to face the camera. With a selected country, also zooms to fit it.
+   * The target can be past the drag limit (Antarctica is at 90°S). A drag then only moves the view away from the pole.
+   */
   focus(latlng: [number, number]): void {
     // Fit the main polygon, not the whole feature: overseas territories must not stop the zoom.
     this.focusRadius = this.selectedIndex >= 0 ? this.mainRadius(this.selectedIndex, latlng) : null;
-    const to = this.orientationFor(latlng[0], latlng[1]);
+    const to = { lat: clampLat(latlng[0]), lng: wrapLng(latlng[1]) };
     this.controls.stopInertia();
     if (this.reducedMotion.matches) {
-      this.globe.quaternion.copy(to);
+      this.setView(to);
       this.focusAnim = null;
       this.pointerMoved = true; // the jump does not count as a move: pick the hover again
     } else {
-      this.focusAnim = { from: this.globe.quaternion.clone(), to, start: performance.now() };
+      this.focusAnim = { from: { ...this.view }, to, start: performance.now() };
     }
     this.lastActivity = performance.now();
     this.needsRender = true;
@@ -723,10 +733,9 @@ export class Globe {
 
   /** The point at the centre of the view, and the camera height above the surface. */
   getView(): GlobeView {
-    const v = this.tmpV.set(0, 0, 1).applyQuaternion(this.tmpQ.copy(this.globe.quaternion).invert());
     return {
-      lat: (Math.asin(Math.max(-1, Math.min(1, v.y))) * 180) / Math.PI,
-      lng: (Math.atan2(v.x, v.z) * 180) / Math.PI,
+      lat: this.view.lat,
+      lng: this.view.lng,
       altitudeKm: Math.max(0, this.distance - 1) * EARTH_KM,
       distance: this.distance,
     };
@@ -999,21 +1008,22 @@ export class Globe {
 
     if (this.focusAnim) {
       const t = Math.min(1, (now - this.focusAnim.start) / FOCUS_MS);
-      this.globe.quaternion.slerpQuaternions(this.focusAnim.from, this.focusAnim.to, easeInOut(t));
+      this.setView(lerpView(this.focusAnim.from, this.focusAnim.to, easeInOut(t)));
       if (t >= 1) this.focusAnim = null;
       moved = true;
     } else if (this.controls.update(dt)) {
-      this.globe.quaternion.normalize();
       moved = true;
       inertia = true;
     }
 
-    // Idle spin about the globe's own axis, with a soft start.
+    // Idle spin about the polar axis, with a soft start. North stays up. The surface moves to the
+    // right, so the view centre goes west.
     const active = this.hoverIndex >= 0 || this.previewIndex >= 0 || this.selectedIndex >= 0;
     const canSpin = !reduced && !active && !this.focusAnim && !this.controls.isDragging && now - this.lastActivity > IDLE_MS;
     this.spin = canSpin ? Math.min(1, this.spin + dt / 1500) : 0;
     if (this.spin > 0) {
-      this.globe.quaternion.multiply(this.tmpQ.setFromAxisAngle(this.tmpV.set(0, 1, 0), (SPIN * this.spin * dt) / 1000));
+      const step = (((SPIN * this.spin * dt) / 1000) * 180) / Math.PI;
+      this.setView({ lat: this.view.lat, lng: this.view.lng - step });
       moved = true;
     }
     if (moved) this.needsRender = true;
@@ -1308,14 +1318,17 @@ export class Globe {
     l.uWidth.value = (2 * Math.tan((FOV * Math.PI) / 360) * (d - 1 / d)) / this.height;
   }
 
-  /** Globe orientation that puts lat/lng in front of the camera with north up. */
-  private orientationFor(lat: number, lng: number): Quaternion {
-    const p = new Vector3(...lonLatToVec(lng, lat));
-    const l = (lng * Math.PI) / 180;
-    const east = new Vector3(Math.cos(l), 0, -Math.sin(l));
-    const north = new Vector3().crossVectors(p, east);
-    const m = new Matrix4().makeBasis(east, north, p);
-    return new Quaternion().setFromRotationMatrix(m).invert();
+  /** Sets the view centre (lat clamped to ±90, lng wrapped) and turns the globe to it with north up. */
+  private setView(v: ViewCentre): void {
+    this.view = { lat: clampLat(v.lat), lng: wrapLng(v.lng) };
+    orientationFor(this.view.lat, this.view.lng, this.globe.quaternion);
+  }
+
+  /** Max |lat| that a drag can bring to the view centre at this zoom. The pole stays in the free rect. */
+  private dragLimit(): number {
+    const { h } = this.freeRect();
+    const tanEdge = (h / this.height) * Math.tan((FOV * Math.PI) / 360);
+    return dragLatLimit(visibleArc(this.distance, tanEdge));
   }
 
   // ---- labels ----
@@ -1389,11 +1402,25 @@ export class Globe {
 
   // ---- picking ----
 
-  private pickAt(clientX: number, clientY: number): number {
+  /** The camera ray through a client point. */
+  private rayAt(clientX: number, clientY: number): Ray {
     const rect = this.canvas.getBoundingClientRect();
     this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    const ray = this.raycaster.ray;
+    return this.raycaster.ray;
+  }
+
+  /** Lat of the surface point under a client point, or undefined off the globe. */
+  private surfaceLatAt(clientX: number, clientY: number): number | undefined {
+    this.tmpSphere.radius = BASE_RADIUS;
+    if (!this.rayAt(clientX, clientY).intersectSphere(this.tmpSphere, this.tmpV)) return undefined;
+    const v = this.tmpV.normalize().applyQuaternion(this.tmpQ.copy(this.globe.quaternion).invert());
+    return (Math.asin(Math.max(-1, Math.min(1, v.y))) * 180) / Math.PI;
+  }
+
+  private pickAt(clientX: number, clientY: number): number {
+    const rect = this.canvas.getBoundingClientRect();
+    const ray = this.rayAt(clientX, clientY);
     const inv = this.tmpQ.copy(this.globe.quaternion).invert();
 
     const at = (radius: number): number => {
