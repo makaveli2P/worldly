@@ -6,19 +6,22 @@
     <meta name="theme-color" content="#1A1A1A" />
     <meta name="color-scheme" content="light dark" />
     <script>
-      // Set theme and map style before first paint. src/ui/prefs.ts keeps them in sync later.
+      // Set theme, map style and view before first paint. src/ui/prefs.ts keeps them in sync later.
       // theme-color is the header (panel) colour; keep it in step with META_COLOR in src/ui/prefs.ts.
+      // src/main.ts reads data-view to start the map chunk early.
       (function () {
-        var t = null, s = null;
+        var t = null, s = null, v = null;
         try {
           t = localStorage.getItem('worldly:theme');
           s = localStorage.getItem('worldly:style');
+          v = localStorage.getItem('worldly:view');
         } catch (e) {}
-        // Default: dark Atlas. A saved choice wins (src/ui/prefs.ts writes it).
+        // Default: dark Atlas on the globe. A saved choice wins (src/ui/prefs.ts writes it).
         if (t !== 'light' && t !== 'dark') t = 'dark';
         var d = document.documentElement;
         d.dataset.theme = t;
         d.dataset.style = s === 'satellite' ? 'satellite' : 'atlas';
+        d.dataset.view = v === 'map' ? 'map' : 'globe';
         document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'dark' ? '#1A1A1A' : '#FFFFFF');
       })();
     </script>

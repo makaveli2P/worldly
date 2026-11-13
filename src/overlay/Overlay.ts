@@ -5,6 +5,7 @@
 
 import './overlay.css';
 import type { CountryFeature, CountryId, CountryInfo } from '../types';
+import type { Surface } from '../view/types';
 import { CAPITAL_LATLNG } from './capitals';
 import { computeLabelSites } from './labelPoints';
 
@@ -30,6 +31,34 @@ export interface OverlayGlobe {
   labelPoint?(id: CountryId): [number, number] | null;
   /** Optional: raise of any country in earth radii (hover or selection). */
   liftOf?(id: CountryId): number;
+  /** Optional: the part of the screen that shows the world. With none, the overlay finds the globe disc. */
+  surface?(): Surface | null;
+  /** Optional: the ground scale at lat over the ground scale at the view centre (1 with none). */
+  groundScale?(lat: number): number;
+}
+
+/** A box on the screen, in client px. */
+export interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * The point where the ray from (cx, cy) in the direction (dx, dy) leaves the box. A centre outside the box
+ * moves to the nearest point of the box first. With no direction, the result is that point.
+ */
+export function edgePoint(cx: number, cy: number, dx: number, dy: number, box: Box): { x: number; y: number } {
+  const x = clamp(cx, box.x0, box.x1);
+  const y = clamp(cy, box.y0, box.y1);
+  let t = Infinity;
+  if (dx > 0) t = Math.min(t, (box.x1 - x) / dx);
+  else if (dx < 0) t = Math.min(t, (box.x0 - x) / dx);
+  if (dy > 0) t = Math.min(t, (box.y1 - y) / dy);
+  else if (dy < 0) t = Math.min(t, (box.y0 - y) / dy);
+  if (!Number.isFinite(t)) return { x, y };
+  return { x: x + dx * t, y: y + dy * t };
 }
 
 /** One breaking-news marker. A new key pulses once; the most severe level is "critical". */
@@ -45,6 +74,11 @@ export interface OverlayOptions {
   countries: Record<CountryId, CountryInfo>;
   features: CountryFeature[];
   globe: OverlayGlobe;
+  /**
+   * The page parts over the view at this moment, such as the readout and the hint. On the flat map, labels
+   * keep out of them, because the map fills the canvas up to the readout. The globe does not use them.
+   */
+  chromeRects?: () => readonly (DOMRect | null)[];
 }
 
 export interface PanelRects {
@@ -179,12 +213,16 @@ export class Overlay {
   readonly perf = { frames: 0, totalMs: 0, maxMs: 0 };
 
   private readonly globe: OverlayGlobe;
+  private readonly chromeRects: OverlayOptions['chromeRects'];
   private readonly el: HTMLDivElement;
   private readonly labelsEl: HTMLDivElement;
   private readonly alertsEl: HTMLDivElement;
   private readonly svg: SVGSVGElement;
   private readonly discIn: SVGCircleElement;
   private readonly discOut: SVGCircleElement;
+  private readonly rectIn: SVGRectElement;
+  private readonly rectOut: SVGRectElement;
+  private clipKind: 'disc' | 'rect' = 'disc';
   private readonly sides: [LineSide, LineSide];
   private readonly dot: SVGCircleElement;
   private readonly items: CountryItem[]; // sorted by priority, highest first
@@ -218,9 +256,12 @@ export class Overlay {
   private discX = 0;
   private discY = 0;
   private discR = 0;
+  // The map surface for this frame, or null on the globe (then the disc above applies).
+  private surf: Box | null = null;
 
   constructor(root: HTMLElement, opts: OverlayOptions) {
     this.globe = opts.globe;
+    this.chromeRects = opts.chromeRects;
     this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     this.el = document.createElement('div');
@@ -230,6 +271,7 @@ export class Overlay {
     this.el.dataset.style = 'satellite';
 
     // Leader lines: two strokes per line, one clipped to the globe disc and one masked outside it.
+    // On the map, a rect takes the place of the disc.
     const id = `wo-${++seq}`;
     this.svg = document.createElementNS(NS, 'svg');
     this.svg.setAttribute('class', 'wo-lines');
@@ -237,9 +279,11 @@ export class Overlay {
     const defs = this.svgEl('defs', {}, this.svg);
     const clip = this.svgEl('clipPath', { id: `${id}-in` }, defs);
     this.discIn = this.svgEl('circle', { cx: 0, cy: 0, r: 0 }, clip) as SVGCircleElement;
+    this.rectIn = this.svgEl('rect', { x: 0, y: 0, width: 0, height: 0, display: 'none' }, clip) as SVGRectElement;
     const mask = this.svgEl('mask', { id: `${id}-out`, maskUnits: 'userSpaceOnUse', x: -1e4, y: -1e4, width: 2e4, height: 2e4 }, defs);
     this.svgEl('rect', { x: -1e4, y: -1e4, width: 2e4, height: 2e4, fill: '#fff' }, mask);
     this.discOut = this.svgEl('circle', { cx: 0, cy: 0, r: 0, fill: '#000' }, mask) as SVGCircleElement;
+    this.rectOut = this.svgEl('rect', { x: 0, y: 0, width: 0, height: 0, fill: '#000', display: 'none' }, mask) as SVGRectElement;
     const side = (): LineSide => {
       const g = this.svgEl('g', {}, this.svg) as SVGGElement;
       const out = this.svgEl('path', { class: 'wo-line-out', mask: `url(#${id}-out)`, pathLength: 1 }, g) as SVGPathElement;
@@ -557,11 +601,17 @@ export class Overlay {
 
   private free(x0: number, y0: number, x1: number, y1: number, pad: number): boolean {
     if (x0 < 4 || y0 < 4 || x1 > this.width - 4 || y1 > this.height - 4) return false;
-    // Keep the whole box on the globe disc.
-    const r2 = (this.discR - 6) * (this.discR - 6);
-    const dy = Math.max(Math.abs(y0 - this.discY), Math.abs(y1 - this.discY));
-    const dx = Math.max(Math.abs(x0 - this.discX), Math.abs(x1 - this.discX));
-    if (dx * dx + dy * dy > r2) return false;
+    const m = this.surf;
+    if (m) {
+      // Keep the whole box on the map, 6px in from its edges.
+      if (x0 < m.x0 + 6 || y0 < m.y0 + 6 || x1 > m.x1 - 6 || y1 > m.y1 - 6) return false;
+    } else {
+      // Keep the whole box on the globe disc.
+      const r2 = (this.discR - 6) * (this.discR - 6);
+      const dy = Math.max(Math.abs(y0 - this.discY), Math.abs(y1 - this.discY));
+      const dx = Math.max(Math.abs(x0 - this.discX), Math.abs(x1 - this.discX));
+      if (dx * dx + dy * dy > r2) return false;
+    }
     x0 -= pad;
     y0 -= pad;
     x1 += pad;
@@ -612,15 +662,30 @@ export class Overlay {
     const c1 = g.project(view.lat > 0 ? view.lat - 1 : view.lat + 1, view.lng);
     const pxPerKm = Math.hypot(c1.x - c0.x, c1.y - c0.y) / KM_PER_DEG;
 
-    // Globe disc on screen, for the two-tone leader lines.
-    const dist = view.distance > 1 ? view.distance : 1 + view.altitudeKm / 6371;
-    const horizon = (Math.acos(1 / dist) * 180) / Math.PI;
-    const limbLat = view.lat + horizon <= 90 ? view.lat + horizon : view.lat - horizon;
-    const lp = g.project(limbLat, view.lng);
-    const discR = Math.hypot(lp.x - c0.x, lp.y - c0.y);
-    this.discX = c0.x;
-    this.discY = c0.y;
-    this.discR = discR;
+    // Globe disc on screen, for the two-tone leader lines. A view with a surface gives its own shape.
+    const surf = g.surface?.() ?? null;
+    let discR = 0;
+    this.surf = null;
+    if (surf?.kind === 'rect') {
+      this.surf = { x0: surf.x0, y0: surf.y0, x1: surf.x1, y1: surf.y1 };
+      this.discX = c0.x;
+      this.discY = c0.y;
+      this.discR = 0;
+    } else if (surf?.kind === 'disc') {
+      discR = surf.r;
+      this.discX = surf.x;
+      this.discY = surf.y;
+      this.discR = discR;
+    } else {
+      const dist = view.distance > 1 ? view.distance : 1 + view.altitudeKm / 6371;
+      const horizon = (Math.acos(1 / dist) * 180) / Math.PI;
+      const limbLat = view.lat + horizon <= 90 ? view.lat + horizon : view.lat - horizon;
+      const lp = g.project(limbLat, view.lng);
+      discR = Math.hypot(lp.x - c0.x, lp.y - c0.y);
+      this.discX = c0.x;
+      this.discY = c0.y;
+      this.discR = discR;
+    }
 
     this.nBoxes = 0;
     const blockRect = (r: DOMRect | null) => {
@@ -629,6 +694,8 @@ export class Overlay {
     blockRect(this.panels.details);
     blockRect(this.panels.news);
     if (this.topInset > 0) this.push(-1e4, -1e4, 1e4, this.topInset + 4);
+    // The map: block the readout and the hint too. The globe keeps its disc rule.
+    if (this.surf) for (const r of this.chromeRects?.() ?? []) blockRect(r);
 
     // Selected country: anchor, leader lines, its label and capital.
     const sel = this.selected ? this.byId.get(this.selected) : undefined;
@@ -639,7 +706,7 @@ export class Overlay {
     }
     const anchorLimb = anchor && anchor.visible ? clamp((anchor.facing - 0.05) / 0.15, 0, 1) : 0;
     this.lineFrom = this.lineTo = this.nBoxes;
-    this.updateLines(anchor, anchorLimb, c0.x, c0.y, discR);
+    this.updateLines(anchor, anchorLimb, this.discX, this.discY, discR);
 
     for (const it of this.items) {
       it.placed = false;
@@ -760,7 +827,7 @@ export class Overlay {
     }
 
     // Breaking-news markers and their labels. They come before the other labels, so an alert always has its name.
-    if (this.alerts.size > 0) this.updateAlerts(sel ?? null, c0.x, c0.y, discR);
+    if (this.alerts.size > 0) this.updateAlerts(sel ?? null, this.discX, this.discY, discR);
 
     // Other countries, by priority. Density follows the zoom: a country joins when it is large on screen.
     const topN = mobile ? 10 : 20;
@@ -771,7 +838,7 @@ export class Overlay {
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i];
       if (it === sel || it.placed) continue;
-      const sizePx = Math.sqrt(it.areaKm2) * pxPerKm;
+      const sizePx = Math.sqrt(it.areaKm2) * pxPerKm * (g.groundScale?.(it.lat) ?? 1);
       const candidate = placed < maxPlaced && (i < topN || sizePx >= minPx);
       if (!candidate && it.fade <= 0) continue;
       const w = it.w;
@@ -808,7 +875,7 @@ export class Overlay {
       for (const it of this.items) {
         const cap = it.cap;
         if (!cap || it === sel) continue;
-        const want = it.placed && Math.sqrt(it.areaKm2) * pxPerKm >= capPx;
+        const want = it.placed && Math.sqrt(it.areaKm2) * pxPerKm * (g.groundScale?.(it.lat) ?? 1) >= capPx;
         if (!want && cap.fade <= 0) continue;
         const p = g.project(cap.lat, cap.lng);
         cap.limb = p.visible ? clamp((p.facing - 0.12) / 0.2, 0, 1) : 0;
@@ -1033,8 +1100,11 @@ export class Overlay {
         const y1 = Math.max(y0, bottom - 10);
         const w = it.w + 4;
         // Offsets apply after the first clamp: far off screen, a small step must still move the arrow.
-        const bx = clamp(cx + dx * (discR + 12), x0, x1);
-        const by = clamp(cy + dy * (discR + 12), y0, y1);
+        // On the map, the arrow starts 12px past the edge of the map along the ray, then takes the same clamps.
+        const m = this.surf;
+        const e = m ? edgePoint(cx, cy, dx, dy, m) : null;
+        const bx = clamp(e ? e.x + dx * 12 : cx + dx * (discR + 12), x0, x1);
+        const by = clamp(e ? e.y + dy * 12 : cy + dy * (discR + 12), y0, y1);
         const at = (k: number, sx = 0, sy = 0): [number, number] => [clamp(bx - dy * k + sx, x0, x1), clamp(by + dx * k + sy, y0, y1)];
         // The name goes on the outer side of the arrow (on the canvas) when it fits, else on the inner side.
         let [ex, ey] = at(0);
@@ -1185,12 +1255,29 @@ export class Overlay {
       this.svg.style.display = '';
       this.linesOn = true;
     }
-    this.discIn.setAttribute('cx', cx.toFixed(1));
-    this.discIn.setAttribute('cy', cy.toFixed(1));
-    this.discIn.setAttribute('r', r.toFixed(1));
-    this.discOut.setAttribute('cx', cx.toFixed(1));
-    this.discOut.setAttribute('cy', cy.toFixed(1));
-    this.discOut.setAttribute('r', r.toFixed(1));
+    const m = this.surf;
+    // Show only the clip shape of the current surface.
+    const kind = m ? 'rect' : 'disc';
+    if (kind !== this.clipKind) {
+      this.clipKind = kind;
+      for (const el of [this.discIn, this.discOut]) el.setAttribute('display', m ? 'none' : 'inline');
+      for (const el of [this.rectIn, this.rectOut]) el.setAttribute('display', m ? 'inline' : 'none');
+    }
+    if (m) {
+      for (const el of [this.rectIn, this.rectOut]) {
+        el.setAttribute('x', m.x0.toFixed(1));
+        el.setAttribute('y', m.y0.toFixed(1));
+        el.setAttribute('width', Math.max(0, m.x1 - m.x0).toFixed(1));
+        el.setAttribute('height', Math.max(0, m.y1 - m.y0).toFixed(1));
+      }
+    } else {
+      this.discIn.setAttribute('cx', cx.toFixed(1));
+      this.discIn.setAttribute('cy', cy.toFixed(1));
+      this.discIn.setAttribute('r', r.toFixed(1));
+      this.discOut.setAttribute('cx', cx.toFixed(1));
+      this.discOut.setAttribute('cy', cy.toFixed(1));
+      this.discOut.setAttribute('r', r.toFixed(1));
+    }
     const xy = `${ax.toFixed(1)} ${ay.toFixed(1)}`;
     if (xy !== this.dotXY) {
       this.dot.setAttribute('cx', ax.toFixed(1));

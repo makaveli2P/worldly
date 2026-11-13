@@ -7,8 +7,11 @@ export interface ControlEvents {
    * dx is to the right and dy is down: the surface moves with the pointer.
    */
   turn(dx: number, dy: number): void;
-  /** Multiplies the zoom ratio (less than 1 = closer). */
-  zoom(factor: number): void;
+  /**
+   * Multiplies the zoom ratio (less than 1 = closer). clientX, clientY is the zoom centre: the wheel
+   * pointer, or the midpoint of the two pinch pointers. The globe ignores it; the flat map zooms about it.
+   */
+  zoom(factor: number, clientX?: number, clientY?: number): void;
   /**
    * Click or tap with less than 5px of movement. The controls hold it for TAP_DELAY ms,
    * so a second quick tap turns the pair into a doubleTap and this never fires.
@@ -144,7 +147,10 @@ export class GlobeControls {
 
     if (this.pointers.size >= 2) {
       const d = this.currentPinchDistance();
-      if (this.pinchDistance > 0 && d > 0) this.ev.zoom(this.pinchDistance / d);
+      if (this.pinchDistance > 0 && d > 0) {
+        const [a, b] = [...this.pointers.values()];
+        this.ev.zoom(this.pinchDistance / d, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      }
       this.pinchDistance = d;
       return;
     }
@@ -256,7 +262,7 @@ export class GlobeControls {
     // Pixel deltas from trackpads, line deltas from some mice.
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
     const speed = e.ctrlKey ? 0.01 : 0.0015; // ctrlKey = trackpad pinch
-    this.ev.zoom(Math.exp(Math.max(-100, Math.min(100, e.deltaY * scale)) * speed));
+    this.ev.zoom(Math.exp(Math.max(-100, Math.min(100, e.deltaY * scale)) * speed), e.clientX, e.clientY);
   };
 
   private currentPinchDistance(): number {

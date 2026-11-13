@@ -178,6 +178,12 @@ a {
   outline: none;
 }
 
+/* The globe and the flat map put their canvases here. During a switch the new canvas fades in over the old one. */
+.globe > canvas {
+  position: absolute;
+  inset: 0;
+}
+
 /* Labels and leader lines: above the globe, below the panels. */
 .overlay {
   position: fixed;
@@ -292,6 +298,12 @@ a {
 .toggle button:focus-visible {
   outline-offset: -4px;
   outline-color: var(--accent);
+}
+
+/* The view toggle (Globe | Map) shows its text, and an icon only on narrow phones (see the 479px block). */
+.toggle button svg {
+  display: none;
+  flex: none;
 }
 
 .theme-toggle {
@@ -2170,6 +2182,57 @@ a {
   .news-credits {
     padding-left: 16px;
     padding-right: 16px;
+  }
+}
+
+/* Narrow phones: three header tools sit next to the brand. The view toggle shows icons, and the
+   spacing is tighter, so the header fits at 360px. This block comes after the 767px block, so it wins. */
+@media (max-width: 479px) {
+  .bar {
+    column-gap: 12px;
+  }
+
+  .bar-tools {
+    gap: 6px;
+  }
+
+  .toggle button {
+    padding: 0 10px;
+  }
+
+  .toggle.view-toggle button {
+    padding: 0 8px;
+  }
+
+  .view-toggle button svg {
+    display: block;
+  }
+
+  .view-toggle .toggle-text {
+    display: none;
+  }
+}
+
+/* The smallest phones (320px): the header tools still end at the screen edge. Less padding and smaller
+   text in the toggles, and less space between the tools. The brand column can shrink (minmax), so the
+   min-content width of the header does not make the chip row wider than the screen. */
+@media (max-width: 340px) {
+  .bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+  }
+
+  .bar-tools {
+    gap: 4px;
+  }
+
+  .toggle button {
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .toggle.view-toggle button {
+    padding: 0 6px;
   }
 }
 

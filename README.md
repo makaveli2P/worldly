@@ -22,9 +22,10 @@ Also:
 - **Light and dark themes.** The theme follows `prefers-color-scheme`. The sun/moon button in the header sets a theme and keeps it. Both map styles work in both themes.
 - **Always-on labels.** Country names (uppercase) and capitals (small square and name) stay on the globe with no hover. The overlay hides labels on the far side, fades them near the limb, and stops labels from overlapping. Zoom in to see more countries. The selected country always has a label.
 - **Leader lines.** Lines with a 45° elbow join the selected country to the inner edge of each panel. The lines follow the globe while it moves. The lines are white over the satellite globe and ink elsewhere.
-- **Instrument readout.** `LAT / LON / ALT / SEL` at the bottom of the screen show the centre of view, the camera altitude and the selected country. When the satellite style is on, the image credit is under the readout.
+- **Flat map.** The `Globe | Map` switch in the header shows the same world on a flat Web Mercator map. See [Views](#views).
+- **Instrument readout.** `LAT / LON / ALT / SEL` at the bottom of the screen show the centre of view, the camera altitude and the selected country. On the flat map, `SCL` (the map scale) replaces `ALT`. When the satellite style is on, the image credit is under the readout.
 - **Mobile (< 768px).** A bottom sheet with `Overview | News` tabs. The first tap raises a country, and the second tap opens it. One short leader line goes into the sheet.
-- **Keyboard.** Press `/` to search. Press `Esc` to close the selection. The map style toggle is a radio group (arrow keys).
+- **Keyboard.** Press `/` to search. Press `Esc` to close the selection. The view toggle and the map style toggle are radio groups (arrow keys).
 - **Links.** A link to a country uses its English name, for example `/country/japan`. An old link with the ISO alpha-3 code, for example `/#JPN`, still works. The page changes it to the new form. See [Search and sharing](#search-and-sharing).
 
 ## Design
@@ -65,23 +66,37 @@ Breaking news uses the alert yellow with an ink keyline, so one of the two colou
 
 ## Preferences
 
-The page keeps two values in `localStorage`:
+The page keeps three values in `localStorage`:
 
 - `worldly:style`: `atlas` (default) or `satellite`.
 - `worldly:theme`: `dark` (default) or `light`. The system light or dark setting does not change the theme.
+- `worldly:view`: `globe` (default) or `map`. Any other value gives the globe.
 
-A small script in `index.html` applies both values before the first paint.
+A small script in `index.html` applies the three values (`html[data-style]`, `html[data-theme]` and `html[data-view]`) before the first paint. It starts no request for the view.
+
+## Views
+
+The `Globe | Map` radio group in the header, before `Satellite | Atlas`, selects the view. Under 480 px wide, the two buttons show icons. Each button keeps its name for screen readers and as a tooltip. The URL does not hold the view.
+
+- **Globe.** The default view: the 3D globe, with the idle spin.
+- **Map.** A flat Web Mercator map of the same world, with the same styles, themes, labels, leader lines, breaking-news markers and selection raise. Drag to pan, and use the wheel or a pinch to zoom at the pointer. The map repeats to the east and to the west, so a pan has no end. It has no idle spin. A double-click or a double-tap goes back to the home view.
+- **Mercator limits.** The map stops at 85.05° north and south (the square Web Mercator world). Antarctica sits on the bottom edge. Areas far from the equator look large: Greenland, Russia and Antarctica. The polar satellite image is soft on the map.
+- **Readout.** On the map, `SCL` shows the map scale at the centre, for example `1:42M` (1 CSS px = 1/96 in). On the globe, `ALT` shows the camera altitude.
+- **Switch.** The new view starts at the same place, with the same selection, and with about the same ground scale. A view near its home zoom gives the home zoom of the other view. The new view fades in over 180 ms (no fade with reduced motion). The old view goes 200 ms after the first frame of the new view (at once with reduced motion or on a second switch). During a flight to a country, the new view starts at the end of the flight and fits the country there. The satellite image on screen goes to the new view, so it does not load again. If the map does not load, the toggle goes back to Globe.
+- **Load.** The map code is a separate chunk. A globe visitor does not download it. When `worldly:view` is `map`, `src/main.ts` asks for the chunk at the same time as the data.
 
 ## Code map
 
 - `index.html`: the boot script, which starts the data requests and the first texture.
 - `src/main.ts`: loads the data and joins the globe, overlay, panels and breaking-news feed.
-- `src/globe/`: the three.js globe (`Globe.ts`), its shaders, controls, picker and texture tiers.
+- `src/globe/`: the three.js globe (`Globe.ts`), its shaders, controls, picker and texture tiers, and the parts that the flat map also uses.
+- `src/map/`: the flat Web Mercator map (`FlatMap.ts`), its shaders and its pure camera math. It loads with `import()`.
+- `src/view/`: the view host (`ViewHost.ts`), which switches between the globe and the map, and the zoom that carries between them (`carry.ts`).
 - `src/overlay/`: labels, leader lines and breaking-news markers (DOM and SVG over the canvas).
 - `src/ui/`: the header, search, panels, readout, image credit, preferences and the breaking-news chip (`alerts*.ts`).
 - `src/data/precompute.ts`: the label sites and the lite country file that the build makes.
 - `src/data/site.ts`, `src/data/slug.ts`, `src/data/seo.ts`: the canonical domain, the country URLs and the search files that the build makes. See [Search and sharing](#search-and-sharing).
-- `src/dev/`: the breaking-news mock (dev server only).
+- `src/dev/`: the breaking-news mock and the flat map test page `/dev/map.html` (dev server only).
 - `src/theme.ts`: light and dark palettes for the UI and the globe.
 - `src/types.ts`: the shared types, with the `/api/news` and `/api/breaking` contracts.
 - `api/`: the two Vercel functions, `news.ts` and `breaking.ts`. See `api/_lib/README.md`.

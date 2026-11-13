@@ -6,21 +6,14 @@ import {
   BufferGeometry,
   Color,
   Group,
-  ImageBitmapLoader,
-  ImageLoader,
-  LinearMipmapLinearFilter,
   LinearSRGBColorSpace,
   LineSegments,
   Mesh,
   MeshBasicMaterial,
-  NoColorSpace,
-  OrthographicCamera,
   PerspectiveCamera,
-  PlaneGeometry,
   Quaternion,
   Ray,
   Raycaster,
-  RepeatWrapping,
   Scene,
   ShaderMaterial,
   Sphere,
@@ -29,24 +22,43 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
-  WebGLRenderTarget,
   DoubleSide,
   type IUniform,
 } from 'three';
-import { geoArea, geoCentroid } from 'd3-geo';
-import type { Polygon } from 'geojson';
 import { globePalettes, systemTheme, type GlobePalette, type MapStyle, type ThemeName } from '../theme';
 import type { CountryFeature, CountryId } from '../types';
+import { globeZoomRatio, handOnKmPerPx, kmPerPxGlobe } from '../view/carry';
+import type { Insets, TextureHandover, ViewInitial, ViewState } from '../view/types';
+import { worldAssets } from './assets';
+import { BlurPass } from './blurPass';
+import {
+  EARTH_KM,
+  FOCUS_FILL,
+  FOCUS_MS,
+  FOV,
+  FRAME_TAU,
+  LIFT,
+  MARKER_PX,
+  MIN_DIST,
+  NUDGES,
+  OUTLINE_PX,
+  SMALL_CAP,
+  TAP_HOLD_PX,
+  easeInOut,
+  rgb,
+} from './constants';
 import { GlobeControls } from './controls';
-import { buildGlobeGeometry, lonLatToVec, type BoundingCap, type Range } from './geometry';
-import { CountryPicker } from './picker';
-import { clampLat, dragLatLimit, dragView, fitRadius, lerpView, orientationFor, visibleArc, wrapLng, type ViewCentre } from './view';
-import { TEXTURES, type TextureFile } from './textureManifest';
-import { canUploadTexture, chooseTextureTiers, neededTextureWidth, nextTextureLevel } from './textureTiers';
+import { lonLatToVec, type BoundingCap, type Range } from './geometry';
+import type { CountryLabels } from './labels';
+import { nearestSmall, pickWithSlop, type SmallCandidate } from './pick';
+import type { CountryPicker } from './picker';
+import { SatelliteTexture } from './satelliteTexture';
+import { SlotAnimator } from './slots';
+import { clampLat, dragLatLimit, dragView, lerpView, orientationFor, visibleArc, wrapLng, type ViewCentre } from './view';
+import { TEXTURES } from './textureManifest';
+import { chooseTextureTiers, neededTextureWidth } from './textureTiers';
 import {
   SLOTS,
-  blurFragment,
-  compositeFragment,
   landFragment,
   landVertex,
   lineFragment,
@@ -56,7 +68,6 @@ import {
   oceanVertex,
   plainLineFragment,
   plainLineVertex,
-  quadVertex,
 } from './shaders';
 
 export type { MapStyle, ThemeName } from '../theme';
@@ -73,6 +84,8 @@ export interface GlobeOptions {
   inverted?: ReadonlySet<CountryId>;
   /** The first texture tier that index.html started to download (a null Blob: it did not start). */
   firstTexture?: { url: string; blob: Promise<Blob | null> };
+  /** The state to show in the first frame, from the view before (src/view/ViewHost.ts). */
+  initial?: ViewInitial;
 }
 
 export interface ProjectedPoint {
@@ -89,69 +102,18 @@ export interface GlobeView {
   distance: number; // camera distance from the globe centre, in earth radii
 }
 
-const EARTH_KM = 6371;
-const FOV = 30;
-const MIN_DIST = 1.3; // ~1900 km: closer than this even the 8192 texture turns to mush
 const MAX_DIST = 6;
 const BASE_RADIUS = 1.002;
-const LIFT = 0.033;
 const LINE_OFFSET = 0.0006;
 const GRATICULE_RADIUS = 1.0008;
 const FIT = 0.42; // globe radius as a share of the smaller side of the free rect
-const RAISE_MS = 200;
-const BLUR_MS = 200;
-const FOCUS_MS = 700;
-const TEXTURE_FADE_MS = 400;
-const FRAME_TAU = 110; // ms, smoothing for zoom and inset changes
 const IDLE_MS = 1500;
-const TAP_HOLD_PX = 4; // after a double-click reset, the hover pick waits until the mouse moves this far
 const SPIN = 0.1; // rad/s, idle rotation (about 6°/s)
-const FOCUS_FILL = 0.25; // selected country radius as a share of the smaller side of the free rect
-const SMALL_CAP = (0.6 * Math.PI) / 180; // countries smaller than this get a pick tolerance
-const PICK_SLOP_PX = 6;
-const SLOP_MAX_RADIUS_PX = 10; // small countries larger than this on screen get no slop
-const MARKER_PX = 5; // below this projected radius the selected country gets a ring marker
-const OUTLINE_PX = 0.45; // CSS px offset of the extra passes that make active outlines about 2px wide
-const NUDGES: [number, number][] = [
-  [0, 0],
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-];
 
-function rgb(hex: string): Vector3 {
-  const n = parseInt(hex.slice(1), 16);
-  return new Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
-}
-
-const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-
-/** Frees the CPU copy of an ImageBitmap. An <img> needs nothing. */
-function closeImage(image: unknown): void {
-  if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) image.close();
-}
-
-interface Slot {
-  index: number;
-  t: number; // linear progress 0..1
-  kind: 'sel' | 'hover' | null;
+/** The meshes of one raise slot (src/globe/slots.ts). */
+interface SlotMeshes {
   mesh: Mesh;
   lines: LineSegments[];
-}
-
-interface Insets {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-interface LabelData {
-  lat: number;
-  lng: number;
-  radius: number; // angular radius (rad) of a disc with the area of the main polygon
-  rings: number[][][] | null; // all rings [lng, lat] of the main polygon (Antarctica: a pole ring and the coastline)
 }
 
 function limbGeometry(segments = 256): BufferGeometry {
@@ -199,10 +161,11 @@ function graticuleGeometry(r: number): BufferGeometry {
 export class Globe {
   /** Height of a raised country, in earth radii. project(lat, lng, Globe.RAISE) hits the top of a raised cap. */
   static readonly RAISE = LIFT;
+  readonly kind = 'globe' as const;
+  readonly canvas: HTMLCanvasElement;
 
   private readonly opts: GlobeOptions;
   private readonly container: HTMLElement;
-  private readonly canvas: HTMLCanvasElement;
   private readonly renderer: WebGLRenderer;
   private readonly camera = new PerspectiveCamera(FOV, 1, 0.02, 40);
   private readonly scene = new Scene();
@@ -212,7 +175,7 @@ export class Globe {
   private readonly overlayGlobe = new Group();
   private readonly controls: GlobeControls;
   private readonly picker: CountryPicker;
-  private readonly idToIndex = new Map<CountryId, number>();
+  private readonly idToIndex: Map<CountryId, number>;
   private readonly triangleRanges: Range[];
   private readonly lineRanges: Range[];
   private readonly resizeObserver: ResizeObserver;
@@ -220,7 +183,7 @@ export class Globe {
   private readonly caps: BoundingCap[];
   private readonly capRadius: number[]; // true angular radius per country, rad
   private readonly smallCountries: number[];
-  private readonly labels: (LabelData | undefined)[] = [];
+  private readonly labels: CountryLabels;
   private readonly marker: HTMLDivElement;
   private dpr = 1; // the devicePixelRatio of the last resize
 
@@ -228,18 +191,8 @@ export class Globe {
   private mapStyle: MapStyle;
   private themeName: ThemeName;
   private palette: GlobePalette;
-  private texture: Texture | null = null;
-  private textureState: 'none' | 'loading' | 'ready' = 'none';
-  private texMix = 0; // 0..1 fade-in of the satellite texture
-  private texTiers: TextureFile[] = []; // usable tiers for this device, smallest first (src/globe/textureTiers.ts)
-  private texLevel = -1; // tier on screen
-  private texBusy = false; // a tier is loading, or waits in texPending
-  // A decoded larger tier that waits for a frame at rest (canUploadTexture), because its upload blocks the main thread.
-  private texPending: { level: number; image: ImageBitmap | HTMLImageElement } | null = null;
-  private texShownAt = 0; // when the first tier showed
-  private texViaImg = typeof createImageBitmap !== 'function'; // <img> decode instead of createImageBitmap
+  private readonly satellite: SatelliteTexture;
   private zoomedOrSelected = false; // the largest tier waits for the first zoom or selection
-  private firstTexture: GlobeOptions['firstTexture'] | null = null; // from index.html, used one time
   // Phones and tablets: fewer pixels for the same look (about 44% fewer than DPR 2).
   private readonly maxDpr = window.matchMedia('(pointer: coarse)').matches ? 1.5 : 2;
 
@@ -256,13 +209,7 @@ export class Globe {
   private readonly graticuleMaterial: ShaderMaterial;
   private readonly limbMaterial: ShaderMaterial;
   private readonly depthMaterial = new MeshBasicMaterial({ colorWrite: false });
-  private readonly slotUniforms: {
-    uSlotIndex: IUniform<number[]>;
-    uSlotAmount: IUniform<number[]>;
-    uSlotCap: IUniform<Vector3[]>;
-    uSlotWall: IUniform<Vector3[]>;
-    uSlotLine: IUniform<Vector3[]>;
-  };
+  private readonly slotAnimator = new SlotAnimator();
   private readonly styleUniforms: {
     tMap: IUniform<Texture | null>;
     uTex: IUniform<number>;
@@ -272,30 +219,23 @@ export class Globe {
     uColor: IUniform<Vector3>; // border colour
     uAlpha: IUniform<number>; // border alpha
   };
-  private readonly slots: Slot[] = [];
+  private readonly slotMeshes: SlotMeshes[] = [];
 
   // Post-processing for the blur.
-  private readonly rtScene: WebGLRenderTarget;
-  private readonly rtA: WebGLRenderTarget;
-  private readonly rtB: WebGLRenderTarget;
-  private readonly quadCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  private readonly quadScene = new Scene();
-  private readonly quad: Mesh;
-  private readonly blurMaterial: ShaderMaterial;
-  private readonly compositeMaterial: ShaderMaterial;
+  private readonly blurPass = new BlurPass();
 
   // Interaction state.
   private hoverIndex = -1;
   private previewIndex = -1;
   private selectedIndex = -1;
-  private blurT = 0;
   private pointer: { x: number; y: number } | null = null;
   private pointerMoved = false;
   private lastActivity = -Infinity; // spin from the first frame
   private spin = 0; // 0..1 ramp of the idle rotation
   // The lat/lng at the centre of the view. globe.quaternion always follows it, with north up (see view.ts).
   private view: ViewCentre = { lat: 0, lng: 0 };
-  private focusAnim: { from: ViewCentre; to: ViewCentre; start: number } | null = null;
+  // latlng is the focus point of a focus flight (null for the flight home), for getState().
+  private focusAnim: { from: ViewCentre; to: ViewCentre; start: number; latlng: [number, number] | null } | null = null;
   private home: ViewCentre = { lat: 0, lng: 0 }; // view on first load, for resetView()
   // Lat of the surface point that the last drag grabbed. Undefined when the grab was off the globe.
   // The inertia of the throw uses it too, so the turn speed does not jump at release.
@@ -332,14 +272,13 @@ export class Globe {
     this.mapStyle = opts.mapStyle ?? 'satellite';
     this.themeName = opts.theme ?? systemTheme();
     this.palette = globePalettes[this.themeName][this.mapStyle];
-    opts.features.forEach((f, i) => this.idToIndex.set(f.id, i));
 
     this.renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = LinearSRGBColorSpace; // shaders write sRGB values as they are
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxDpr));
     this.renderer.autoClear = false;
     const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
-    this.texTiers = chooseTextureTiers(TEXTURES, {
+    const tiers = chooseTextureTiers(TEXTURES, {
       maxTextureSize: this.renderer.capabilities.maxTextureSize,
       finePointer: window.matchMedia('(pointer: fine)').matches,
       saveData: nav.connection?.saveData === true,
@@ -364,8 +303,10 @@ export class Globe {
     this.marker.setAttribute('aria-hidden', 'true');
     this.container.appendChild(this.marker);
 
-    // Land, walls and borders: one merged geometry.
-    const data = buildGlobeGeometry(opts.features);
+    // Land, walls and borders: one merged geometry. worldAssets() builds it one time for these features.
+    const assets = worldAssets(opts.features, opts.inverted);
+    const data = assets.geometry;
+    this.idToIndex = assets.idToIndex;
     this.triangleRanges = data.triangleRanges;
     this.lineRanges = data.lineRanges;
     const position = new BufferAttribute(data.positions, 3);
@@ -385,22 +326,24 @@ export class Globe {
     };
     this.landGeometry = makeGeometry(triIndex);
     this.lineGeometry = makeGeometry(lineIndex);
-    this.picker = new CountryPicker(opts.features, data.caps, opts.inverted);
-    this.firstTexture = opts.firstTexture ?? null;
-    this.caps = data.caps;
-    // geometry.ts pads each cap by 0.001 in cosine; remove the pad for the true size.
-    this.capRadius = data.caps.map((c) => (c.cosRadius > 1 ? 0 : Math.acos(Math.min(1, c.cosRadius + 0.001))));
-    this.smallCountries = this.capRadius.flatMap((r, i) => (r < SMALL_CAP ? [i] : []));
+    this.picker = assets.picker;
+    this.caps = assets.caps;
+    this.capRadius = assets.capRadius;
+    this.smallCountries = assets.smallCountries;
+    this.labels = assets.labels;
+    this.satellite = new SatelliteTexture(this.renderer, {
+      tiers,
+      firstTexture: opts.firstTexture,
+      handover: opts.initial?.texture,
+      reducedMotion: this.reducedMotion,
+      onChange: () => {
+        this.updateTextureUniforms();
+        this.needsRender = true;
+      },
+    });
 
-    this.slotUniforms = {
-      uSlotIndex: { value: new Array(SLOTS).fill(-1) },
-      uSlotAmount: { value: new Array(SLOTS).fill(0) },
-      uSlotCap: { value: Array.from({ length: SLOTS }, () => new Vector3()) },
-      uSlotWall: { value: Array.from({ length: SLOTS }, () => new Vector3()) },
-      uSlotLine: { value: Array.from({ length: SLOTS }, () => new Vector3()) },
-    };
     this.styleUniforms = {
-      tMap: { value: null },
+      tMap: this.satellite.uniform,
       uTex: { value: 0 },
       uSatellite: { value: 0 },
       uLand: { value: new Vector3() },
@@ -409,7 +352,7 @@ export class Globe {
       uAlpha: { value: 1 },
     };
     const landShared = {
-      ...this.slotUniforms,
+      ...this.slotAnimator.uniforms,
       ...this.styleUniforms,
       uBaseRadius: { value: BASE_RADIUS },
       uLift: { value: LIFT },
@@ -494,39 +437,8 @@ export class Globe {
       }
       lines.forEach((l) => (l.renderOrder = 2));
       this.overlayGlobe.add(mesh, ...lines);
-      this.slots.push({ index: -1, t: 0, kind: null, mesh, lines });
+      this.slotMeshes.push({ mesh, lines });
     }
-
-    // Blur pipeline.
-    // Mipmaps on the scene target give the blur a clean downsample.
-    this.rtScene = new WebGLRenderTarget(1, 1, { samples: 4, generateMipmaps: true, minFilter: LinearMipmapLinearFilter });
-    this.rtA = new WebGLRenderTarget(1, 1, { depthBuffer: false });
-    this.rtB = new WebGLRenderTarget(1, 1, { depthBuffer: false });
-    this.blurMaterial = new ShaderMaterial({
-      vertexShader: quadVertex,
-      fragmentShader: blurFragment,
-      uniforms: { tInput: { value: null }, uStep: { value: new Vector2() }, uLod: { value: 0 } },
-      depthTest: false,
-      depthWrite: false,
-    });
-    this.compositeMaterial = new ShaderMaterial({
-      vertexShader: quadVertex,
-      fragmentShader: compositeFragment,
-      uniforms: {
-        tSharp: { value: this.rtScene.texture },
-        tBlur: { value: this.rtB.texture },
-        uAmount: { value: 0 },
-        uPaper: { value: new Vector3() },
-        uRecede: { value: new Vector3() },
-        uRecedeAmount: { value: 0 },
-        uDesaturate: { value: 0 },
-      },
-      depthTest: false,
-      depthWrite: false,
-    });
-    this.quad = new Mesh(new PlaneGeometry(2, 2), this.blurMaterial);
-    this.quad.frustumCulled = false;
-    this.quadScene.add(this.quad);
 
     this.applyPalette();
 
@@ -591,9 +503,36 @@ export class Globe {
     this.resizeObserver.observe(this.container);
     window.addEventListener('scroll', this.onScroll, { passive: true, capture: true });
     this.resize();
+    if (opts.initial) this.applyInitial(opts.initial);
     this.distance = this.targetDistance();
     this.updateCamera();
+    // The view before was in a focus flight: fly on to its end and fit the selected country there.
+    if (opts.initial?.state?.focus) this.focus(opts.initial.state.focus);
     this.raf = requestAnimationFrame(this.frame);
+  }
+
+  /** The first frame shows the state of the view before: the place, the zoom, the insets and the raise. */
+  private applyInitial(init: ViewInitial): void {
+    if (init.insets) {
+      Object.assign(this.insets, init.insets);
+      Object.assign(this.insetsTarget, init.insets);
+    }
+    this.selectedIndex = this.indexOf(init.selected ?? null);
+    this.previewIndex = this.indexOf(init.preview ?? null);
+    if (this.selectedIndex >= 0) this.zoomedOrSelected = true;
+    // The raise and the blur start at their end state, so the first frame matches the view before.
+    if (this.selectedIndex >= 0 || this.previewIndex >= 0) this.animateSlots(0, true);
+    if (init.state) {
+      const { lat, lng, kmPerPx } = init.state;
+      this.setView({ lat, lng });
+      this.focusRadius = null;
+      const fit = this.fitDistance();
+      this.zoomRatio = globeZoomRatio(kmPerPx, this.height, fit, this.maxDistance(fit));
+      if (kmPerPx !== null) this.zoomedOrSelected = true;
+      // The view came from a user action: the idle spin waits as after any other input.
+      this.lastActivity = performance.now();
+    }
+    this.needsRender = true;
   }
 
   setSelected(id: CountryId | null): void {
@@ -626,7 +565,7 @@ export class Globe {
       this.distance = this.targetDistance();
       this.updateCamera();
     } else {
-      this.focusAnim = { from: { ...this.view }, to: { ...this.home }, start: performance.now() };
+      this.focusAnim = { from: { ...this.view }, to: { ...this.home }, start: performance.now(), latlng: null };
     }
     this.lastActivity = -Infinity;
     this.updateCursor();
@@ -639,7 +578,8 @@ export class Globe {
    */
   focus(latlng: [number, number]): void {
     // Fit the main polygon, not the whole feature: overseas territories must not stop the zoom.
-    this.focusRadius = this.selectedIndex >= 0 ? this.mainRadius(this.selectedIndex, latlng) : null;
+    this.focusRadius =
+      this.selectedIndex >= 0 ? this.labels.mainRadius(this.selectedIndex, latlng, this.capRadius[this.selectedIndex]) : null;
     const to = { lat: clampLat(latlng[0]), lng: wrapLng(latlng[1]) };
     this.controls.stopInertia();
     if (this.reducedMotion.matches) {
@@ -647,7 +587,7 @@ export class Globe {
       this.focusAnim = null;
       this.pointerMoved = true; // the jump does not count as a move: pick the hover again
     } else {
-      this.focusAnim = { from: { ...this.view }, to, start: performance.now() };
+      this.focusAnim = { from: { ...this.view }, to, start: performance.now(), latlng };
     }
     this.lastActivity = performance.now();
     this.needsRender = true;
@@ -741,6 +681,26 @@ export class Globe {
     };
   }
 
+  /**
+   * The place on view, for the next view. kmPerPx is null at the home zoom (no fit, and a zoom near 1).
+   * During a flight, the place is the end of the flight and the zoom is the target zoom; a focus flight also
+   * gives its focus point.
+   */
+  getState(): ViewState {
+    const a = this.focusAnim;
+    const at = a ? a.to : this.view;
+    const ratio = this.focusRadius === null ? this.zoomRatio : null;
+    const distance = a ? this.targetDistance() : this.distance;
+    const state: ViewState = { lat: at.lat, lng: at.lng, kmPerPx: handOnKmPerPx(ratio, kmPerPxGlobe(distance, this.height)) };
+    if (a?.latlng) state.focus = a.latlng;
+    return state;
+  }
+
+  /** Gives the satellite image on screen to the next view (see SatelliteTexture.handover). */
+  takeTexture(): TextureHandover | null {
+    return this.satellite.handover();
+  }
+
   /** The canvas rect in client px (cached; refreshed on resize, scroll and each rendered frame). */
   rect(): DOMRect {
     return this.canvasRect;
@@ -748,7 +708,7 @@ export class Globe {
 
   /** Label point of the selected country, where the leader lines start. Null with no selection. */
   selectedAnchor(): [number, number] | null {
-    return this.selectedIndex >= 0 ? this.labelOf(this.selectedIndex).latlng : null;
+    return this.selectedIndex >= 0 ? this.labels.labelOf(this.selectedIndex).latlng : null;
   }
 
   /** Current raise of the selected country in earth radii (0..Globe.RAISE), for project(). */
@@ -765,22 +725,20 @@ export class Globe {
   }
 
   private liftAt(index: number): number {
-    if (index < 0) return 0;
-    const i = this.slots.findIndex((s) => s.index === index);
-    return i < 0 ? 0 : this.slotUniforms.uSlotAmount.value[i] * LIFT;
+    return this.slotAnimator.liftAt(index);
   }
 
   /** Label point [lat, lng] of a country: the centroid of its largest polygon, kept inside the shape. */
   labelPoint(id: CountryId): [number, number] | null {
     const i = this.indexOf(id);
-    return i < 0 ? null : this.labelOf(i).latlng;
+    return i < 0 ? null : this.labels.labelOf(i).latlng;
   }
 
   /** Approximate on-screen radius in CSS px of the country's main polygon at its label point. 0 on the far side. */
   screenRadius(id: CountryId): number {
     const i = this.indexOf(id);
     if (i < 0) return 0;
-    const l = this.labelOf(i);
+    const l = this.labels.labelOf(i);
     const a = lonLatToVec(l.latlng[1], l.latlng[0], this.vecScratch);
     const p = this.tmpV.set(a[0], a[1], a[2]).applyQuaternion(this.globe.quaternion);
     if (p.z <= 1 / this.camera.position.z) return 0;
@@ -796,7 +754,7 @@ export class Globe {
     window.removeEventListener('scroll', this.onScroll, { capture: true });
     this.frameListeners.clear();
     this.marker.remove();
-    for (const s of this.slots) {
+    for (const s of this.slotMeshes) {
       s.mesh.geometry.dispose();
       s.lines[0].geometry.dispose();
     }
@@ -805,7 +763,6 @@ export class Globe {
     this.oceanGeometry.dispose();
     this.graticuleGeometry.dispose();
     this.limbGeometry.dispose();
-    this.quad.geometry.dispose();
     for (const m of [
       this.landMaterial,
       this.lineMaterial,
@@ -814,15 +771,12 @@ export class Globe {
       this.graticuleMaterial,
       this.limbMaterial,
       this.depthMaterial,
-      this.blurMaterial,
-      this.compositeMaterial,
     ])
       m.dispose();
-    for (const rt of [this.rtScene, this.rtA, this.rtB]) rt.dispose();
-    this.texture?.dispose();
-    closeImage(this.texture?.image);
-    closeImage(this.texPending?.image);
-    this.texPending = null;
+    this.blurPass.dispose();
+    this.satellite.dispose();
+    // Free the GL context now: a browser keeps only a few, and a view switch makes a new one.
+    this.renderer.forceContextLoss();
     this.renderer.dispose();
     this.canvas.remove();
   }
@@ -835,7 +789,7 @@ export class Globe {
     const p = globePalettes[this.themeName][this.mapStyle];
     this.palette = p;
     const sat = this.mapStyle === 'satellite';
-    if (sat && this.textureState === 'none') this.loadLevel(0);
+    if (sat) this.satellite.ensure();
     const s = this.styleUniforms;
     s.uSatellite.value = sat ? 1 : 0;
     s.uLand.value.copy(rgb(p.land));
@@ -847,14 +801,10 @@ export class Globe {
     const l = this.limbMaterial.uniforms;
     l.uColor.value.copy(rgb(p.limb));
     l.uAlpha.value = p.limbAlpha;
-    this.compositeMaterial.uniforms.uPaper.value.copy(rgb(p.paper));
     const g = this.graticuleMaterial.uniforms;
     g.uColor.value.copy(rgb(p.graticule));
     g.uAlpha.value = p.graticuleAlpha;
-    const c = this.compositeMaterial.uniforms;
-    c.uRecede.value.copy(rgb(p.recede));
-    c.uRecedeAmount.value = p.recedeAmount;
-    c.uDesaturate.value = p.desaturate;
+    this.blurPass.setPalette(p);
     const bg = rgb(p.paper);
     this.clearColor.setRGB(bg.x, bg.y, bg.z, LinearSRGBColorSpace);
     this.updateTextureUniforms();
@@ -862,123 +812,9 @@ export class Globe {
   }
 
   private updateTextureUniforms(): void {
-    const t = this.mapStyle === 'satellite' ? easeInOut(this.texMix) : 0;
+    const t = this.mapStyle === 'satellite' ? this.satellite.mix : 0;
     this.oceanMaterial.uniforms.uTex.value = t;
     this.styleUniforms.uTex.value = t;
-  }
-
-  /**
-   * Loads one texture tier. Tier 0 fades in; a larger tier replaces the texture on screen with no fade.
-   * createImageBitmap decodes off the main thread. index.html starts the download of tier 0 (opts.firstTexture).
-   * Every path uploads with flipY = false (ImageBitmap uploads ignore flipY); the shader flips v instead.
-   */
-  private loadLevel(level: number, url = this.texTiers[level]?.url, viaImg = this.texViaImg): void {
-    if (!url || this.disposed) return;
-    this.texBusy = true;
-    if (level === 0) this.textureState = 'loading';
-    const done = (image: ImageBitmap | HTMLImageElement) => this.onDecoded(level, image);
-    const fail = (err: unknown) => this.textureFailed(level, url, viaImg, err);
-    const first = this.firstTexture;
-    this.firstTexture = null;
-    if (first && first.url === url && !viaImg) {
-      // The same decode as ImageBitmapLoader. With no Blob, or on an error, load the file again as usual.
-      first.blob
-        .then((blob) => {
-          if (!blob) throw new Error('no preloaded texture');
-          return createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-        })
-        .then(done, () => this.loadLevel(level, url, viaImg));
-      return;
-    }
-    if (viaImg) new ImageLoader().setCrossOrigin('anonymous').load(url, done, undefined, fail);
-    else new ImageBitmapLoader().load(url, done, undefined, fail);
-  }
-
-  /** Tier 0 goes to the GPU at once. A larger tier waits in texPending; frame() uploads it at rest. */
-  private onDecoded(level: number, image: ImageBitmap | HTMLImageElement): void {
-    if (this.disposed) {
-      closeImage(image);
-      return;
-    }
-    if (level <= 0) {
-      this.useImage(level, image);
-      return;
-    }
-    closeImage(this.texPending?.image);
-    this.texPending = { level, image };
-  }
-
-  private useImage(level: number, image: ImageBitmap | HTMLImageElement): void {
-    this.texBusy = false;
-    if (this.disposed) {
-      closeImage(image);
-      return;
-    }
-    const tex = new Texture(image);
-    tex.flipY = false;
-    tex.colorSpace = NoColorSpace; // raw sRGB values, like every other colour here
-    tex.wrapS = RepeatWrapping;
-    tex.minFilter = LinearMipmapLinearFilter;
-    tex.generateMipmaps = true;
-    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
-    tex.needsUpdate = true;
-    this.renderer.initTexture(tex);
-    const old = this.texture;
-    this.texture = tex;
-    this.texLevel = level;
-    this.styleUniforms.tMap.value = tex; // the ocean material shares this uniform
-    if (old) {
-      old.dispose();
-      closeImage(old.image);
-    }
-    if (this.textureState !== 'ready') {
-      this.textureState = 'ready';
-      this.texShownAt = performance.now();
-      if (this.reducedMotion.matches) this.texMix = 1;
-      this.updateTextureUniforms();
-    }
-    this.needsRender = true;
-  }
-
-  private textureFailed(level: number, url: string, viaImg: boolean, err: unknown): void {
-    this.texBusy = false;
-    if (this.disposed) return;
-    if (!viaImg) {
-      // createImageBitmap failed (an old browser, or options it does not know): use <img> from now on.
-      this.texViaImg = true;
-      this.loadLevel(level, url, true);
-      return;
-    }
-    console.warn('[worldly] satellite texture failed', url, err);
-    if (level === 0 && url !== TEXTURES.fallback.url) {
-      // No WebP: the JPEG fallback takes the place of all tiers.
-      this.texTiers = [TEXTURES.fallback];
-      this.loadLevel(0, TEXTURES.fallback.url, true);
-    } else if (level === 0) {
-      this.textureState = 'none';
-    } else {
-      // A larger tier failed: keep the texture on screen and stop the upgrades.
-      this.texTiers = this.texTiers.slice(0, level);
-    }
-  }
-
-  /** Loads the next tier when the view needs more texels and the globe is at rest (see textureTiers.ts). */
-  private maybeUpgradeTexture(now: number): void {
-    if (this.texBusy || this.textureState !== 'ready' || this.texLevel + 1 >= this.texTiers.length) return;
-    if (this.mapStyle !== 'satellite') return;
-    const next = nextTextureLevel({
-      tiers: this.texTiers.length,
-      level: this.texLevel,
-      busy: this.texBusy,
-      shownForMs: now - this.texShownAt,
-      idleMs: now - this.lastActivity,
-      moving: this.focusAnim !== null || this.controls.isDragging,
-      zoomedOrSelected: this.zoomedOrSelected,
-      // The target distance: a selection starts the download while the camera still moves in.
-      needWidth: neededTextureWidth(this.height, this.renderer.getPixelRatio(), Math.min(this.distance, this.targetDistance()), FOV),
-      widths: this.texTiers.map((t) => t.width),
-    });
-    if (next > 0) this.loadLevel(next);
   }
 
   // ---- frame loop ----
@@ -999,12 +835,14 @@ export class Globe {
     // ResizeObserver misses a DPR change at the same CSS size (window moved to another screen).
     if ((window.devicePixelRatio || 1) !== this.dpr) this.resize();
 
-    if (this.textureState === 'ready' && this.texMix < 1) {
-      this.texMix = reduced ? 1 : Math.min(1, this.texMix + dt / TEXTURE_FADE_MS);
-      this.updateTextureUniforms();
-      this.needsRender = true;
-    }
-    this.maybeUpgradeTexture(now);
+    const upgrade = {
+      idleMs: now - this.lastActivity,
+      moving: this.focusAnim !== null || this.controls.isDragging,
+      zoomedOrSelected: this.zoomedOrSelected,
+      // The target distance: a selection starts the download while the camera still moves in.
+      needWidth: neededTextureWidth(this.height, this.renderer.getPixelRatio(), Math.min(this.distance, this.targetDistance()), FOV),
+    };
+    if (this.satellite.tick(now, dt, { satellite: this.mapStyle === 'satellite', upgrade })) this.needsRender = true;
 
     if (this.focusAnim) {
       const t = Math.min(1, (now - this.focusAnim.start) / FOCUS_MS);
@@ -1049,22 +887,14 @@ export class Globe {
     }
 
     // A larger texture tier goes to the GPU only in a frame at rest: its upload is a main-thread task.
-    const pending = this.texPending;
-    if (
-      pending &&
-      canUploadTexture({
-        level: pending.level,
-        dragging: this.controls.isDragging,
-        focusAnim: this.focusAnim !== null,
-        inertia,
-        framing,
-        spinning: this.spin > 0,
-        idleMs: now - this.lastActivity,
-      })
-    ) {
-      this.texPending = null;
-      this.useImage(pending.level, pending.image);
-    }
+    this.satellite.upload({
+      dragging: this.controls.isDragging,
+      focusAnim: this.focusAnim !== null,
+      inertia,
+      framing,
+      spinning: this.spin > 0,
+      idleMs: now - this.lastActivity,
+    });
 
     // Hover pick, at most once per frame.
     if (this.pointer && !this.controls.isDragging && (this.pointerMoved || moved || framing)) {
@@ -1081,60 +911,11 @@ export class Globe {
   };
 
   private animateSlots(dt: number, reduced: boolean): boolean {
-    const p = this.palette;
     const want = new Map<number, 'sel' | 'hover'>();
     if (this.selectedIndex >= 0) want.set(this.selectedIndex, 'sel');
     const hover = this.previewIndex >= 0 ? this.previewIndex : this.hoverIndex;
     if (hover >= 0 && !want.has(hover)) want.set(hover, 'hover');
-
-    // Give each wanted country a slot: its own, a free one, or the lowest fading one.
-    for (const [index] of want) {
-      if (this.slots.some((s) => s.index === index)) continue;
-      const free = this.slots
-        .filter((s) => !want.has(s.index))
-        .sort((a, b) => (a.index < 0 ? -1 : b.index < 0 ? 1 : a.t - b.t))[0];
-      if (free) {
-        free.index = index;
-        free.t = 0;
-      }
-    }
-
-    let changed = false;
-    const step = reduced ? 1 : dt / RAISE_MS;
-    const u = this.slotUniforms;
-    this.slots.forEach((s, i) => {
-      if (s.index < 0) return;
-      const kind = want.get(s.index);
-      if (kind) s.kind = kind; // a fading slot keeps the colours it had
-      if (s.kind === 'sel') {
-        u.uSlotCap.value[i].copy(rgb(p.selectedCap));
-        u.uSlotWall.value[i].copy(rgb(p.selectedWall));
-        u.uSlotLine.value[i].copy(rgb(p.selectedLine));
-      } else if (s.kind === 'hover') {
-        u.uSlotCap.value[i].copy(rgb(p.hoverCap));
-        u.uSlotWall.value[i].copy(rgb(p.hoverWall));
-        u.uSlotLine.value[i].copy(rgb(p.hoverLine));
-      }
-      const target = kind ? 1 : 0;
-      if (s.t !== target) {
-        s.t = target > s.t ? Math.min(1, s.t + step) : Math.max(0, s.t - step);
-        changed = true;
-      }
-      if (s.t === 0 && !kind) {
-        s.index = -1;
-        s.kind = null;
-      }
-      u.uSlotIndex.value[i] = s.index;
-      u.uSlotAmount.value[i] = s.index < 0 ? 0 : easeInOut(s.t);
-    });
-
-    const blurTarget = want.size ? 1 : 0;
-    if (this.blurT !== blurTarget) {
-      const b = reduced ? 1 : dt / BLUR_MS;
-      this.blurT = blurTarget > this.blurT ? Math.min(1, this.blurT + b) : Math.max(0, this.blurT - b);
-      changed = true;
-    }
-    return changed;
+    return this.slotAnimator.step(dt, reduced, want, this.palette);
   }
 
   // ---- rendering ----
@@ -1154,7 +935,7 @@ export class Globe {
 
   private draw(): void {
     const r = this.renderer;
-    const amount = easeInOut(this.blurT);
+    const amount = easeInOut(this.slotAnimator.blurT);
     this.overlayGlobe.quaternion.copy(this.globe.quaternion);
 
     if (amount < 0.002) {
@@ -1166,48 +947,20 @@ export class Globe {
       return;
     }
 
-    // Transparent black: the composite reads alpha as "this pixel is globe".
-    r.setRenderTarget(this.rtScene);
-    r.setClearColor(this.clearColor, 0);
-    r.clear();
-    r.render(this.scene, this.camera);
-
-    // Separable blur at half resolution.
-    const w = this.rtA.width;
-    const h = this.rtA.height;
-    this.quad.material = this.blurMaterial;
-    const u = this.blurMaterial.uniforms;
-    {
-      u.tInput.value = this.rtScene.texture;
-      u.uLod.value = Math.log2(Math.max(1, this.rtScene.width / w));
-      u.uStep.value.set(1 / w, 0);
-      r.setRenderTarget(this.rtA);
-      r.render(this.quadScene, this.quadCamera);
-      u.tInput.value = this.rtA.texture;
-      u.uLod.value = 0;
-      u.uStep.value.set(0, 1 / h);
-      r.setRenderTarget(this.rtB);
-      r.render(this.quadScene, this.quadCamera);
-    }
-
-    this.quad.material = this.compositeMaterial;
-    this.compositeMaterial.uniforms.uAmount.value = amount;
-    r.setRenderTarget(null);
-    r.setClearColor(this.clearColor, 1);
-    r.clear();
-    r.render(this.quadScene, this.quadCamera);
+    this.blurPass.render(r, () => r.render(this.scene, this.camera), amount, this.clearColor);
 
     // Active countries, sharp, hidden behind the ocean sphere where they turn away.
     r.clearDepth();
-    this.slots.forEach((s) => {
+    this.slotAnimator.slots.forEach((s, i) => {
+      const m = this.slotMeshes[i];
       const on = s.index >= 0 && s.t > 0;
-      s.mesh.visible = on;
-      for (const l of s.lines) l.visible = on;
+      m.mesh.visible = on;
+      for (const l of m.lines) l.visible = on;
       if (!on) return;
       const tr = this.triangleRanges[s.index];
       const lr = this.lineRanges[s.index];
-      s.mesh.geometry.setDrawRange(tr.start, tr.count);
-      s.lines[0].geometry.setDrawRange(lr.start, lr.count);
+      m.mesh.geometry.setDrawRange(tr.start, tr.count);
+      m.lines[0].geometry.setDrawRange(lr.start, lr.count);
     });
     r.render(this.overlay, this.camera);
     r.render(this.limbScene, this.camera);
@@ -1250,10 +1003,7 @@ export class Globe {
     const dpr = Math.min(this.dpr, this.maxDpr);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
-    this.rtScene.setSize(Math.round(w * dpr), Math.round(h * dpr));
-    // Blur buffers at half of CSS size: the blur radius stays the same on any screen.
-    this.rtA.setSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
-    this.rtB.setSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
+    this.blurPass.resize(w, h, dpr);
     // Outline passes: offsets in NDC for OUTLINE_PX CSS pixels.
     this.outlineMaterials.forEach((m, i) => {
       const [nx, ny] = NUDGES[i];
@@ -1331,68 +1081,6 @@ export class Globe {
     return dragLatLimit(visibleArc(this.distance, tanEdge));
   }
 
-  // ---- labels ----
-
-  private labelData(index: number): LabelData {
-    let l = this.labels[index];
-    if (!l) {
-      l = this.computeLabel(index);
-      this.labels[index] = l;
-    }
-    return l;
-  }
-
-  private labelOf(index: number): { latlng: [number, number]; radius: number } {
-    const l = this.labelData(index);
-    return { latlng: [l.lat, l.lng], radius: l.radius };
-  }
-
-  /** Angular radius (rad) of the cap around lat/lng that holds the country's main polygon. */
-  private mainRadius(index: number, latlng: [number, number]): number {
-    const rings = this.labelData(index).rings;
-    if (!rings || rings.length === 0 || rings[0].length === 0) return this.capRadius[index];
-    return fitRadius(latlng, rings);
-  }
-
-  private computeLabel(index: number): LabelData {
-    const f = this.opts.features[index];
-    const polygons = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
-    let best: Polygon | null = null;
-    let bestArea = -1;
-    for (const coordinates of polygons) {
-      const poly: Polygon = { type: 'Polygon', coordinates };
-      let a = geoArea(poly);
-      if (a > 2 * Math.PI) a = 4 * Math.PI - a; // reversed winding
-      if (a > bestArea) {
-        bestArea = a;
-        best = poly;
-      }
-    }
-    const radius = Math.acos(Math.max(-1, 1 - Math.max(0, bestArea) / (2 * Math.PI)));
-    const inside = (lng: number, lat: number) => this.picker.pick(lng, lat) === index;
-    if (best) {
-      const [lng, lat] = geoCentroid(best);
-      if (Number.isFinite(lat) && inside(lng, lat)) return { lat, lng, radius, rings: best.coordinates };
-      // A crescent or ring shape: walk from the centroid toward each vertex until inside.
-      const ring = best.coordinates[0];
-      const stride = Math.max(1, Math.floor(ring.length / 24));
-      for (let i = 0; i < ring.length; i += stride) {
-        for (const t of [0.5, 0.75, 0.9]) {
-          const x = lng + (ring[i][0] - lng) * t;
-          const y = lat + (ring[i][1] - lat) * t;
-          if (inside(x, y)) return { lat: y, lng: x, radius, rings: best.coordinates };
-        }
-      }
-    }
-    const c = this.caps[index];
-    return {
-      lat: (Math.asin(Math.max(-1, Math.min(1, c.y))) * 180) / Math.PI,
-      lng: (Math.atan2(c.x, c.z) * 180) / Math.PI,
-      radius,
-      rings: best ? best.coordinates : null,
-    };
-  }
-
   // ---- picking ----
 
   /** The camera ray through a client point. */
@@ -1416,54 +1104,37 @@ export class Globe {
     const ray = this.rayAt(clientX, clientY);
     const inv = this.tmpQ.copy(this.globe.quaternion).invert();
 
-    const at = (radius: number): number => {
-      this.tmpSphere.radius = radius;
+    const at = (amount: number): number => {
+      this.tmpSphere.radius = BASE_RADIUS + amount * LIFT;
       if (!ray.intersectSphere(this.tmpSphere, this.tmpV)) return -2;
       const v = this.tmpV.normalize().applyQuaternion(inv);
       const lon = (Math.atan2(v.x, v.z) * 180) / Math.PI;
       const lat = (Math.asin(Math.max(-1, Math.min(1, v.y))) * 180) / Math.PI;
       return this.picker.pick(lon, lat);
     };
-
-    // A raised country sits above the surface: test its cap first.
-    const amounts = this.slotUniforms.uSlotAmount.value;
-    for (let i = 0; i < SLOTS; i++) {
-      const s = this.slots[i];
-      if (s.index < 0 || amounts[i] < 0.05) continue;
-      if (at(BASE_RADIUS + amounts[i] * LIFT) !== s.index) continue;
-      if (this.capRadius[s.index] < SMALL_CAP) return s.index;
-      const near = this.nearSmallCountry(clientX - rect.left, clientY - rect.top);
-      return near >= 0 ? near : s.index;
-    }
-    const hit = at(BASE_RADIUS);
-    if (hit >= 0 && this.capRadius[hit] < SMALL_CAP) return hit;
-    // Micro-states (Vatican, Monaco) are a few px wide: accept a near miss.
-    const near = this.nearSmallCountry(clientX - rect.left, clientY - rect.top);
-    if (near >= 0) return near;
-    return hit < 0 ? -1 : hit;
+    return pickWithSlop({
+      slots: this.slotAnimator.amounts(),
+      capRadius: this.capRadius,
+      smallCap: SMALL_CAP,
+      at,
+      near: () => this.nearSmallCountry(clientX - rect.left, clientY - rect.top),
+    });
   }
 
-  /** The small country whose projected bounding cap is nearest the point and within PICK_SLOP_PX, or -1. */
+  /** The small country whose projected bounding cap is nearest the point and within the pick slop, or -1 (pick.ts). */
   private nearSmallCountry(x: number, y: number): number {
-    let best = -1;
-    let bestD = PICK_SLOP_PX;
     const camZ = this.camera.position.z;
     const v = new Vector3();
+    const candidates: SmallCandidate[] = [];
     for (const i of this.smallCountries) {
       const cap = this.caps[i];
       v.set(cap.x, cap.y, cap.z).applyQuaternion(this.globe.quaternion);
-      if (v.z <= 1 / camZ) continue;
+      if (v.z <= 1 / camZ) continue; // on the far side
       const radiusPx = this.projectedRadius(this.capRadius[i], v);
-      // Once a country is big on screen the exact pick is enough; its cap also covers neighbours.
-      if (radiusPx > SLOP_MAX_RADIUS_PX) continue;
       v.multiplyScalar(BASE_RADIUS).project(this.camera);
-      const d = Math.hypot(((v.x + 1) / 2) * this.width - x, ((1 - v.y) / 2) * this.height - y) - radiusPx;
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
+      candidates.push({ index: i, x: ((v.x + 1) / 2) * this.width, y: ((1 - v.y) / 2) * this.height, radiusPx });
     }
-    return best;
+    return nearestSmall(x, y, candidates);
   }
 
   private setHover(index: number, screen: { x: number; y: number } | null): void {

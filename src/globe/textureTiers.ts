@@ -35,6 +35,15 @@ export function neededTextureWidth(viewHeightCss: number, dpr: number, distance:
   return 2 * Math.PI * (focalPx / Math.max(1e-3, distance - 1)) * TEXEL_TARGET;
 }
 
+/**
+ * neededTextureWidth() for the flat map at scale s (CSS px per radian of lng). The texture is equirectangular,
+ * so near a pole Mercator stretches it by sec(lat) in y. That factor stops at 2 (lat 60°): further north the
+ * map stays soft, and the 8192 tier does not load for one look at Greenland.
+ */
+export function mapNeededTextureWidth(s: number, dpr: number, lat: number): number {
+  return 2 * Math.PI * s * dpr * TEXEL_TARGET * Math.min(2, 1 / Math.cos((lat * Math.PI) / 180));
+}
+
 export interface UpgradeState {
   tiers: number; // count of usable tiers
   level: number; // tier on screen, -1 = none
