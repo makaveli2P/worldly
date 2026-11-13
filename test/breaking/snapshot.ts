@@ -67,8 +67,10 @@ async function main() {
   console.log('\n== candidates (top 12)');
   const hours = (t: number | null) => (t === null ? '-' : `${((inputs.now - t) / 3.6e6).toFixed(1)}h`);
   for (const c of out.candidates.slice(0, 12)) {
-    console.log(`  ${c.id.padEnd(8)} ${String(c.level).padEnd(8)} ${c.family.padEnd(8)}${c.subject ? ` (${subjectName(c.subject)})` : ''} ${c.reason.padEnd(34)} voices=${c.voices} ed=${c.editions} lead=${c.lead} tierEff=${c.tierEff} deaths=${c.deaths} score=${c.score.toFixed(1)}`);
+    console.log(`  ${c.id.padEnd(8)} ${String(c.level).padEnd(8)} ${c.family.padEnd(8)}${c.subject ? ` (${subjectName(c.subject)})` : ''} ${c.reason.padEnd(34)} voices=${c.voices}${c.cluster.length ? ` cluster=+${c.cluster.length}` : ''} ed=${c.editions} lead=${c.lead} tierEff=${c.tierEff} deaths=${c.deaths} score=${c.score.toFixed(1)}`);
     console.log(`      full=${c.fullLevel} freshLeads=${c.freshLeads} freshVoices=${c.freshVoices} windowVoices=${c.windowVoices} pulse=${c.pulse} wave=${c.wave} since=${hours(c.since)}`);
+    // The cluster voices: other outlets that Google lists under a strong, placed and fresh Google News item.
+    if (c.cluster.length) console.log(`      cluster=+${c.cluster.length} (${c.cluster.join(', ')})`);
     console.log(`      pick: ${c.pick.h.publisher} ${c.pick.h.feed}#${c.pick.h.position} ${hours(c.pick.time)} | ${c.pick.h.title.slice(0, 100)}`);
     for (const i of c.items.filter((x) => x.recent).slice(0, 4)) console.log(`      ${i.h.publisher}: ${i.h.title.slice(0, 110)}`);
   }
