@@ -76,7 +76,7 @@ A small script in `index.html` applies the three values (`html[data-style]`, `ht
 
 ## Views
 
-The `Globe | Map` radio group in the header, before `Satellite | Atlas`, selects the view. Under 480 px wide, the two buttons show icons. Each button keeps its name for screen readers and as a tooltip. The URL does not hold the view.
+The `Globe | Map` radio group in the header, before `Satellite | Atlas`, selects the view. The two buttons show icons only (a globe and a folded map). Each button keeps its name for screen readers and as a tooltip. The URL does not hold the view.
 
 - **Globe.** The default view: the 3D globe, with the idle spin.
 - **Map.** A flat Web Mercator map of the same world, with the same styles, themes, labels, leader lines, breaking-news markers and selection raise. Drag to pan, and use the wheel or a pinch to zoom at the pointer. The map repeats to the east and to the west, so a pan has no end. It has no idle spin. A double-click or a double-tap goes back to the home view.
