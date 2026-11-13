@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#FFFFFF" />
+    <meta name="theme-color" content="#1A1A1A" />
     <meta name="color-scheme" content="light dark" />
     <script>
       // Set theme and map style before first paint. src/ui/prefs.ts keeps them in sync later.
@@ -14,10 +14,11 @@
           t = localStorage.getItem('worldly:theme');
           s = localStorage.getItem('worldly:style');
         } catch (e) {}
-        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        // Default: dark Atlas. A saved choice wins (src/ui/prefs.ts writes it).
+        if (t !== 'light' && t !== 'dark') t = 'dark';
         var d = document.documentElement;
         d.dataset.theme = t;
-        d.dataset.style = s === 'atlas' ? 'atlas' : 'satellite';
+        d.dataset.style = s === 'satellite' ? 'satellite' : 'atlas';
         document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'dark' ? '#1A1A1A' : '#FFFFFF');
       })();
     </script>

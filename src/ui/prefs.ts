@@ -1,5 +1,6 @@
 // Theme and map style preferences. index.html sets both on <html> before first paint;
-// this module keeps them in sync, persists overrides and tells listeners.
+// this module keeps them in sync, persists the visitor's choices and tells listeners.
+// With no saved choice, the page uses the dark theme and the Atlas style.
 
 import type { MapStyle, ThemeName } from '../theme';
 
@@ -7,7 +8,6 @@ export type { MapStyle, ThemeName };
 
 const STYLE_KEY = 'worldly:style';
 const THEME_KEY = 'worldly:theme';
-const DARK_QUERY = '(prefers-color-scheme: dark)';
 // The browser bar matches the header, which uses the panel colour. index.html has the same values.
 const META_COLOR: Record<ThemeName, string> = { light: '#FFFFFF', dark: '#1A1A1A' };
 
@@ -32,20 +32,12 @@ type Listener<T> = (value: T) => void;
 export class Prefs {
   private styleValue: MapStyle;
   private themeValue: ThemeName;
-  private themeOverride: boolean;
   private readonly styleListeners = new Set<Listener<MapStyle>>();
   private readonly themeListeners = new Set<Listener<ThemeName>>();
 
   constructor() {
-    this.styleValue = read(STYLE_KEY) === 'atlas' ? 'atlas' : 'satellite';
-    const saved = read(THEME_KEY);
-    this.themeOverride = saved === 'light' || saved === 'dark';
-    const media = window.matchMedia(DARK_QUERY);
-    this.themeValue = this.themeOverride ? (saved as ThemeName) : media.matches ? 'dark' : 'light';
-    // Without an override, the page follows the system setting live.
-    media.addEventListener('change', (e) => {
-      if (!this.themeOverride) this.applyTheme(e.matches ? 'dark' : 'light');
-    });
+    this.styleValue = read(STYLE_KEY) === 'satellite' ? 'satellite' : 'atlas';
+    this.themeValue = read(THEME_KEY) === 'light' ? 'light' : 'dark';
     this.applyDom();
   }
 
@@ -65,9 +57,8 @@ export class Prefs {
     for (const cb of this.styleListeners) cb(s);
   }
 
-  /** An explicit choice: it overrides the system setting and persists. */
+  /** The visitor's choice: it persists. */
   setTheme(t: ThemeName): void {
-    this.themeOverride = true;
     write(THEME_KEY, t);
     this.applyTheme(t);
   }
