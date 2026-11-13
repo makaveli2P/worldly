@@ -1,8 +1,10 @@
-// Gives one headline a family (conflict, attack, disaster, accident, politics) and a tier.
+// Gives one headline a family (conflict, attack, disaster, accident, politics, business) and a tier.
 //
 // Tier 3 is critical-class (a coup, a head of state killed or removed, an invasion, 50 or more dead),
 // tier 2 is major-class (a deadly strike, a mass shooting, a deadly earthquake or crash),
 // tier 1 only supports a story. The rules prefer a miss to a false alarm.
+// The business rules are in business.ts.
+import { businessEvent, mainClause, PRESS_REVIEW } from './business.js';
 import { ALIASES, matchCountries, type CountryMatch } from './match.js';
 import type { Classification, Family } from './types.js';
 
@@ -70,6 +72,7 @@ interface Rule {
   tier: 1 | 2 | 3;
   re: RegExp;
   interstate?: boolean;
+  business?: boolean; // the hit of businessEvent()
 }
 
 const RULES: Rule[] = [
@@ -305,18 +308,26 @@ export function isLive(title: string, url: string): boolean {
   return LIVE.test(title) || /\/live\//.test(url);
 }
 
-// On a tie of tiers: a disaster word wins, and an accident word ("blast", "explosion") loses.
-const FAMILY_PREF: Record<Family, number> = { disaster: 1, attack: 0, conflict: 0, politics: 0, accident: -1 };
+// On a tie of tiers: a disaster word wins, and an accident word ("blast", "explosion") loses. A business
+// event loses to every other family.
+const FAMILY_PREF: Record<Family, number> = { disaster: 1, attack: 0, conflict: 0, politics: 0, accident: -1, business: -2 };
 // One victim named by age: "Shooting leaves 70-year-old dead".
 const ONE_VICTIM = new RegExp(String.raw`\b\d+${AGE_SUFFIX}\b(?!s)`, 'i');
 
 /** Returns the family, tier and death count of a headline, or null when it reports no severe event. */
 export function classify(title: string): Classification | null {
-  const matches = matchCountries(title);
+  // A press review quotes the headlines of other stories: "The Papers: 'Nvidia chief quits' and ...".
+  if (PRESS_REVIEW.test(title)) return null;
+  // Gazetteer places (cities, districts, regions) name a scene only. They never make a party to a war,
+  // a coup or a strike: "Tourists invade Venice" is no invasion.
+  const matches = matchCountries(title).filter((m) => m.source === 'alias');
   const hits: Rule[] = RULES.filter((r) => r.re.test(title));
   if (headOfStateEvent(title, matches) || leaderDeath(title, matches) || countryCoup(title, matches)) hits.push({ family: 'politics', tier: 3, re: /./ });
   if (warOnCountry(title, matches)) hits.push({ family: 'conflict', tier: 3, re: /./ });
   if (countryStrikesCountry(title, matches)) hits.push({ family: 'conflict', tier: 2, re: /./, interstate: true });
+  // A business event. A leader of a company who is shot or stabbed is an attack.
+  const biz = businessEvent(title);
+  if (biz) hits.push({ family: biz.violent ? 'attack' : 'business', tier: biz.tier, re: /./, business: true });
   if (!hits.length) return null;
 
   const countries = new Set(matches.filter((m) => m.weight > 0).map((m) => m.id));
@@ -326,6 +337,14 @@ export function classify(title: string): Classification | null {
   hits.sort((a, b) => b.tier - a.tier || FAMILY_PREF[b.family] - FAMILY_PREF[a.family]);
   const family = hits[0].family;
   let tier: number = hits[0].tier;
+  const subject = hits[0].business && biz ? { subject: { id: biz.subject, country: biz.country } } : {};
+  if (family === 'business' && biz) {
+    // The general demotions apply to the main clause only: "arrested over alleged fraud" is an arrest.
+    // The generic de-escalation and aftermath words are not used: "halts" and "resigns" are business events.
+    const main = mainClause(title);
+    if (NOT_EVENT.test(main) || MODAL_MAY.test(main) || FEATURE_START.test(title)) tier = Math.min(tier, 1);
+    return { family, tier: tier as 1 | 2 | 3, deaths: 0, ...subject, event: biz.event, ...(biz.person ? { person: biz.person } : {}) };
+  }
   // In a war, "death toll passes 70,000" is the total of the war, not of this event.
   const deaths = deathCount(title, family !== 'conflict');
 
@@ -352,5 +371,5 @@ export function classify(title: string): Classification | null {
   if (NOT_EVENT.test(title) || MODAL_MAY.test(title) || FEATURE_START.test(title)) tier = Math.min(tier, 1);
   if (DEESCALATE.test(title)) tier = Math.min(tier, 1);
   if (family !== 'politics' && AFTERMATH.test(title)) tier = Math.min(tier, 1);
-  return tier >= 1 ? { family, tier: tier as 1 | 2 | 3, deaths } : null;
+  return tier >= 1 ? { family, tier: tier as 1 | 2 | 3, deaths, ...subject } : null;
 }

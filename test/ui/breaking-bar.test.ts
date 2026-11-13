@@ -125,7 +125,8 @@ describe('BreakingBar rotation', () => {
     expect(rotations).toEqual(['JPN']);
     expect(previews).toEqual([]);
     expect(main().getAttribute('aria-label')).toMatch(/^Breaking news, major, Japan: News from JPN/);
-    expect(main().title).toBe('News from JPN');
+    // The tooltip names the source and the age of the article. (Before: the headline only.)
+    expect(main().title).toBe('News from JPN — BBC News, 30m ago');
     expect(slot.querySelector('.brk')!.getAttribute('data-level')).toBe('major');
     expect(slot.querySelector('.brk-main > .brk-tag')!.getAttribute('data-level')).toBe('major');
     expect(slot.querySelector('.brk-open')!.getAttribute('href')).toBe('https://example.com/j');
@@ -339,5 +340,38 @@ describe('BreakingBar list changes', () => {
     tick(60 * 60_000);
     expect(age()).not.toBe(before);
     expect(main().getAttribute('aria-label')).toContain('hour');
+  });
+});
+
+describe('the article age in the chip', () => {
+  it('C3: the age, the label and the tooltip describe the article; "first reported" names the first report', () => {
+    const bgr = alert('b', 'JPN', { headline: 'Motorway pile-up kills 12', source: 'DW', publishedAt: iso(25), since: iso(6 * 60), updatedAt: iso(25) });
+    bar.set([bgr]);
+    const time = slot.querySelector('.brk-item[data-on] time.brk-age')!;
+    expect([time.getAttribute('datetime'), time.textContent]).toEqual([iso(25), '25m']);
+    expect(main().getAttribute('aria-label')).toBe(
+      'Breaking news, major, Japan: Motorway pile-up kills 12. DW, 25 minutes ago. First reported 6 hours ago. Show on the globe.',
+    );
+    expect(main().title).toBe('Motorway pile-up kills 12 — DW, 25m ago · first reported 6h ago');
+    expect(slot.querySelector('.brk-open')!.getAttribute('title')).toBe('Read at DW');
+  });
+
+  it('C3: "first reported" is left out when the story is less than 1 h older than the article', () => {
+    bar.set([alert('b', 'JPN', { headline: 'Motorway pile-up kills 12', source: 'DW', publishedAt: iso(25), since: iso(60) })]);
+    expect(main().getAttribute('aria-label')).toBe('Breaking news, major, Japan: Motorway pile-up kills 12. DW, 25 minutes ago. Show on the globe.');
+  });
+
+  it('an article with no date shows no age', () => {
+    bar.set([alert('b', 'JPN', { publishedAt: null })]);
+    expect(slot.querySelector('time.brk-age')).toBeNull();
+    expect(main().getAttribute('aria-label')).toBe('Breaking news, major, Japan: News from JPN. BBC News. Show on the globe.');
+  });
+
+  it('the rows of the + list show the article age', () => {
+    bar.set([UKR, alert('j', 'JPN', { publishedAt: iso(5), since: iso(200) })]);
+    slot.querySelector<HTMLElement>('.brk-more')!.click();
+    const row = slot.querySelector<HTMLElement>('.brk-row[data-key="j"]')!;
+    expect(row.querySelector('time.brk-age')!.textContent).toBe('5m');
+    expect(row.querySelector('.brk-row-main')!.getAttribute('aria-label')).toContain('First reported 3 hours ago.');
   });
 });

@@ -1,4 +1,5 @@
-// The hold: an alert of the last run stays an alert while its story keeps some support.
+// The hold: an alert of the last run stays an alert while its story keeps the pulse (a fresh strong
+// headline in a lead position, and 2 voices in the 12 h window).
 // Each test replays runs in order and gives the state of one run to the next run.
 import { describe, expect, it } from 'vitest';
 import { CONFIG, detect, itemId } from '../../api/_lib/breaking/detect.js';
@@ -40,13 +41,16 @@ describe('the hold (Gaza hospital strike, 2026-11-12)', () => {
   it('run 1: 3 outlets lead with the story, so it is a major alert', () => {
     expect(brief(run1)).toEqual(['PSE:major:3']);
     expect(reasonOf(run1, 'PSE')).toBe('major');
+    const ids = [BBC, AJ, GUARDIAN].map(idOf);
     expect(run1.state.alerts).toEqual([
       {
         key: 'PSE-conflict-20261112', country: 'PSE', family: 'conflict', level: 'major', since: at, firstAlertAt: T1, lastQualifiedAt: T1,
-        itemIds: [BBC, AJ, GUARDIAN].map(idOf), words: [...run1.state.alerts[0].words],
+        itemIds: ids, words: [...run1.state.alerts[0].words],
+        waveAt: T1, waves: 1, peakTier: 2, peakDeaths: 6, waveIds: ids, pickId: idOf(BBC),
       },
     ]);
     expect(run1.state.alerts[0].words.length).toBeGreaterThan(0);
+    expect(run1.state.starts).toEqual(['PSE|conflict|20261112']);
   });
 
   it('run 2 with no state: 2 voices (ed=0 lead=1) are below the bar, so the alert vanishes', () => {
@@ -59,19 +63,26 @@ describe('the hold (Gaza hospital strike, 2026-11-12)', () => {
   it('run 2 with the state: the alert is held, with the same key', () => {
     expect(brief(run2)).toEqual(['PSE:major:2']);
     expect(run2.response.alerts[0].key).toBe(run1.response.alerts[0].key);
-    expect(reasonOf(run2, 'PSE')).toBe('held: 2 voices lead');
+    expect(reasonOf(run2, 'PSE')).toBe('held: fresh lead');
     // The first alert time stays; the last qualified time stays at run 1.
     expect(run2.state.alerts[0]).toMatchObject({ firstAlertAt: T1, lastQualifiedAt: T1, level: 'major' });
   });
 
-  it('run 3: the story is older than 24 h, so the hold ends', () => {
-    // Fresh headlines only: the story itself starts late, but the state keeps the first evidence of run 1.
-    const now = at + (CONFIG.maxAgeHours + 0.5) * HOUR;
-    const fresh = (r: Row): Row => [...r.slice(0, 6), now - 2 * HOUR] as Row;
-    const r = run([fresh(AJ), fresh(GUARDIAN_LOW)], now, run2.state);
-    expect(r.response.alerts).toEqual([]);
-    expect(reasonOf(r, 'PSE')).toBe('hold ended: older than 24 h');
-    expect(r.state.alerts).toEqual([]);
+  it('run 3: the pulse keeps the alert for one wave of 24 h; the same URLs with new dates do not renew it', () => {
+    // (Before the life rules, the alert ended 24 h after its first evidence: "run 3: the story is older
+    // than 24 h, so the hold ends". Now fresh coverage decides.) The outlets change the dates of their
+    // old URLs: the items are fresh, but they are not new headlines.
+    const redate = (r: Row, now: number): Row => [...r.slice(0, 6), now - 2 * HOUR] as Row;
+    const inWave = T1 + 23 * HOUR;
+    const r3 = run([redate(AJ, inWave), redate(GUARDIAN_LOW, inWave)], inWave, run2.state);
+    expect(brief(r3)).toEqual(['PSE:major:2']);
+    expect(reasonOf(r3, 'PSE')).toBe('held: fresh lead');
+    const after = T1 + (CONFIG.waveHours + 0.1) * HOUR;
+    const r4 = run([redate(AJ, after), redate(GUARDIAN_LOW, after)], after, r3.state);
+    expect(r4.response.alerts).toEqual([]);
+    expect(reasonOf(r4, 'PSE')).toBe('ended: wave over 24 h');
+    expect(r4.state.alerts).toEqual([]);
+    expect(r4.state.ended?.map((x) => x.key)).toEqual(['PSE-conflict-20261112']);
   });
 
   it('one voice keeps the alert for the first 2 h only', () => {
@@ -80,21 +91,22 @@ describe('the hold (Gaza hospital strike, 2026-11-12)', () => {
     expect(reasonOf(r3, 'PSE')).toBe('held: alert under 2 h old');
     const r4 = run([AJ], T1 + 2 * HOUR + 5 * MIN, r3.state);
     expect(r4.response.alerts).toEqual([]);
-    expect(reasonOf(r4, 'PSE')).toBe('hold ended: below hold');
+    expect(reasonOf(r4, 'PSE')).toBe('ended: no fresh lead headline');
     expect(r4.state.alerts).toEqual([]);
   });
 
-  it('a story that is gone leaves the state', () => {
+  it('a story that is gone leaves the live alerts and goes to the ended stories', () => {
     const r = run([], T1 + 10 * MIN, run2.state);
     expect(r.response.alerts).toEqual([]);
     expect(r.state.alerts).toEqual([]);
+    expect(r.state.ended).toMatchObject([{ key: 'PSE-conflict-20261112', since: at, firstAlertAt: T1, waveAt: T1, waves: 1, endedAt: T1 + 10 * MIN }]);
   });
 
   it('the chronic-war rule ends the hold', () => {
     const chronic: Itn = { blurbs: [], ongoing: ['Gaza war'] };
     const r = run([AJ, GUARDIAN_LOW], T1 + 5 * MIN, run1.state, { itn: chronic });
     expect(r.response.alerts).toEqual([]);
-    expect(reasonOf(r, 'PSE')).toBe('hold ended: chronic conflict');
+    expect(reasonOf(r, 'PSE')).toBe('ended: chronic conflict');
     // Also with 3 outlets: the full test fails on the chronic rule, and the hold does not override it.
     expect(run([BBC, AJ, GUARDIAN], T1 + 5 * MIN, run1.state, { itn: chronic }).response.alerts).toEqual([]);
   });
@@ -104,12 +116,11 @@ describe('the hold (Gaza hospital strike, 2026-11-12)', () => {
     const itn: Itn = { ...ITN, blurbs: [{ text: 'Israeli strike on Gaza hospital kills six Palestinians.', date: '2026-11-10T00:00:00.000Z' }] };
     const r = run([AJ, GUARDIAN_LOW], T1 + 5 * MIN, run1.state, { itn });
     expect(r.response.alerts).toEqual([]);
-    expect(reasonOf(r, 'PSE')).toBe('hold ended: ITN follow-up');
+    expect(reasonOf(r, 'PSE')).toBe('ended: ITN follow-up');
   });
 
-  it('the follow-up rule with no ITN ends the hold', () => {
-    // With no ITN, a story that spans more than 12 h is a follow-up. (PSE is on the fallback chronic
-    // list then, so the test uses a crash in Peru.)
+  it('the follow-up rules with no ITN: a long span stops a new story, aftermath words end a live alert', () => {
+    // With no ITN, PSE is on the fallback chronic list, so the test uses a crash in Peru.
     const crash = (pos: number, publisher: string, feed: string, title: string, t: number): Row => [feed, 'front', null, pos, publisher, title, t];
     const rows = [
       crash(1, 'BBC News', 'bbc_world', 'Tourist bus crash in Peru Andes kills 20', at),
@@ -118,11 +129,22 @@ describe('the hold (Gaza hospital strike, 2026-11-12)', () => {
     ];
     const r1 = run(rows, T1, null, { itn: null });
     expect(brief(r1)).toEqual(['PER:major:3']);
-    // An older headline of the same story (3 shared words) makes the story span 13 h.
+    // An older headline of the same story (3 shared words) makes the story span 13 h. A new story
+    // with such a span is a follow-up. (Before the life rules, the span also ended a live alert; but a
+    // long alert always spans more than 12 h, so now only the pulse and the wave cap end it.)
     const old = crash(30, 'BBC News', 'bbc_world', 'Tourist bus crash in Peru Andes kills 20', T1 - 13 * HOUR);
-    const r2 = run([old, rows[1], rows[2]], T1 + 5 * MIN, r1.state, { itn: null });
+    const fresh = run([old, ...rows], T1 + 5 * MIN, null, { itn: null });
+    expect(fresh.response.alerts).toEqual([]);
+    expect(reasonOf(fresh, 'PER')).toBe('follow-up (no ITN)');
+    expect(brief(run([old, rows[1], rows[2]], T1 + 5 * MIN, r1.state, { itn: null }))).toEqual(['PER:major:2']);
+    // Aftermath words in 2 outlets end the live alert.
+    const mourn = [
+      crash(3, 'France 24', 'france24', 'Peru mourns 20 killed in Andes bus crash', T1),
+      crash(2, 'DW', 'dw_world', 'Andes bus crash that killed 20 in Peru: what we know', T1),
+    ];
+    const r2 = run([...rows, ...mourn], T1 + 10 * MIN, r1.state, { itn: null });
     expect(r2.response.alerts).toEqual([]);
-    expect(reasonOf(r2, 'PER')).toBe('hold ended: follow-up (no ITN)');
+    expect(reasonOf(r2, 'PER')).toBe('ended: follow-up (no ITN)');
   });
 
   it('the story passes the full test again: the alert is no longer held', () => {
@@ -151,11 +173,11 @@ describe('the hold follows one story, not every story of the country and kind', 
 
   it('the alert story is weaker than another story: the hold stays with the alert story', () => {
     const r = run([AJ, GUARDIAN_LOW, DW_RAFAH, GN_RAFAH], T1 + 80 * MIN, run1.state);
-    const gaza = r.candidates.find((c) => c.id === 'PSE' && /Gaza/.test(c.best.h.title))!;
-    const rafah = r.candidates.find((c) => c.id === 'PSE' && /Rafah/.test(c.best.h.title))!;
+    const gaza = r.candidates.find((c) => c.id === 'PSE' && /Gaza/.test(c.pick.h.title))!;
+    const rafah = r.candidates.find((c) => c.id === 'PSE' && /Rafah/.test(c.pick.h.title))!;
     // The Rafah story has the higher score, but it is not the story of the alert.
     expect(rafah.score).toBeGreaterThan(gaza.score);
-    expect(gaza.reason).toBe('held: 2 voices lead');
+    expect(gaza.reason).toBe('held: fresh lead');
     expect(rafah.reason).toBe('below thresholds');
     expect(r.response.alerts.map((a) => [a.country, a.headline])).toEqual([['PSE', AJ[5]]]);
     expect(r.state.alerts[0]).toMatchObject({ firstAlertAt: T1, since: at });
@@ -165,7 +187,7 @@ describe('the hold follows one story, not every story of the country and kind', 
     const moved = (r: Row): Row => [`${r[0]}_live`, ...r.slice(1)] as Row;
     const r = run([moved(AJ), moved(GUARDIAN_LOW)], T1 + 5 * MIN, run1.state);
     expect(brief(r)).toEqual(['PSE:major:2']);
-    expect(reasonOf(r, 'PSE')).toBe('held: 2 voices lead');
+    expect(reasonOf(r, 'PSE')).toBe('held: fresh lead');
   });
 });
 
@@ -184,7 +206,7 @@ describe('the hold of a critical alert', () => {
     expect(brief(r1)).toEqual(['EST:critical:6']);
     const r2 = run(ESTONIA.slice(0, 2), T1 + 5 * MIN, r1.state);
     expect(brief(r2)).toEqual(['EST:major:2']);
-    expect(reasonOf(r2, 'EST')).toBe('held: 2 voices lead');
+    expect(reasonOf(r2, 'EST')).toBe('held: fresh lead');
     expect(r2.state.alerts[0]).toMatchObject({ level: 'major', firstAlertAt: T1, lastQualifiedAt: T1 });
   });
 });

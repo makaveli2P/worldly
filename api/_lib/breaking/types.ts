@@ -54,19 +54,41 @@ export interface BreakingInputs {
 
 export type Family = BreakingKind;
 
-/** One alert of the last run. The hold uses it to keep a story near the threshold on the alert list. */
+/** One alert of the last run. The life rules use it to find the story again and to decide if it lives. */
 export interface HeldAlert {
-  key: string; // BreakingAlert.key in the last run
+  key: string; // BreakingAlert.key: fixed for the life of the story
   country: string; // CountryId
   family: Family;
   level: BreakingLevel; // the level in the last run
-  since: number; // epoch ms: the earliest first evidence that the runs saw
+  since: number; // epoch ms: the earliest first evidence that the runs saw ("first reported")
   firstAlertAt: number; // epoch ms: the run that first gave the alert
   lastQualifiedAt: number; // epoch ms: the last run where the story passed the full test
-  // The identity of the story. The key is the same for all stories of one country, kind and day, so the
-  // hold also needs these to find the same story again.
+  // The identity of the story. Many stories can have one country, kind and day, so the life rules
+  // also need these to find the same story again.
   itemIds: string[]; // short hashes of the item URLs of the story (this run and the last runs)
   words: string[]; // the distinctive words of the headlines of the story, the most frequent first
+  waveAt: number; // epoch ms: the start of the current wave (the first alert or the last renewal)
+  waves: number; // 1 for the first wave; each renewal adds 1
+  peakTier: number; // the highest agreed tier that the story had
+  peakDeaths: number; // the highest agreed death toll that the story had
+  waveIds: string[]; // the item hashes at the start of the current wave: a renewal needs other items
+  pickId: string | null; // the hash of the article in the chip, so that the chip does not change at each run
+}
+
+/** A story that was an alert and ended. It alerts again only with a new wave or an escalation. */
+export interface EndedAlert {
+  key: string;
+  country: string;
+  family: Family;
+  since: number;
+  firstAlertAt: number;
+  waveAt: number;
+  waves: number;
+  endedAt: number; // epoch ms: the run that ended the alert
+  peakTier: number;
+  peakDeaths: number;
+  itemIds: string[]; // the item hashes that the story had: a new wave needs other items
+  words: string[];
 }
 
 /** The memory of the detector between runs. `detect()` takes it as an argument and returns the next state. */
@@ -74,11 +96,21 @@ export interface BreakingState {
   v: 1;
   savedAt: number; // epoch ms: `now` of the run that made the state
   alerts: HeldAlert[];
+  ended?: EndedAlert[]; // stories that ended in the last 48 h
+  starts?: string[]; // "PSE|conflict|20261112": the UTC days on which an alert started or renewed
 }
+
+/** The kind of a business event. 'support': a headline about the company that only supports a story. */
+export type BusinessEventType = 'leader' | 'crash' | 'merger' | 'collapse' | 'halt' | 'support';
 
 /** The result of `classify()` for one headline. */
 export interface Classification {
   family: Family;
   tier: 1 | 2 | 3; // 3: critical-class, 2: major-class, 1: supports a story only
   deaths: number;
+  // The business family (and a leader of a company who is killed): the company or market of the event.
+  // `country` is its home country, and the detector uses it as the country of the story.
+  subject?: { id: string; country: string };
+  event?: BusinessEventType;
+  person?: string; // a business leader event: the listed person that the title names
 }

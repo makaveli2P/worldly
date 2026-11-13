@@ -4,11 +4,13 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { detect } from '../../api/_lib/breaking/detect.js';
+import { CONFIG, detect } from '../../api/_lib/breaking/detect.js';
+import type { BreakingInputs, BreakingState } from '../../api/_lib/breaking/types.js';
 import { fromFixture, type Fixture } from './fixture.js';
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
-const replay = (name: string) => detect(fromFixture(JSON.parse(readFileSync(join(DIR, `${name}.json`), 'utf8')) as Fixture)).response;
+const inputsOf = (name: string): BreakingInputs => fromFixture(JSON.parse(readFileSync(join(DIR, `${name}.json`), 'utf8')) as Fixture);
+const replay = (name: string) => detect(inputsOf(name)).response;
 const brief = (name: string) => replay(name).alerts.map((a) => `${a.country}:${a.level}:${a.kind}:${a.basis.join('+')}`);
 
 describe('replays of real inputs', () => {
@@ -53,5 +55,42 @@ describe('replays of real inputs', () => {
     expect(brief('live-2026-11-10T1630Z-wide')).toEqual(['BGR:major:accident:news']);
     expect(r.alerts[0].key).toBe('BGR-accident-20261110');
     expect(r.alerts[0].outlets).toBe(5);
+  });
+});
+
+const FIXTURES = [
+  'replay-2026-10-16T0800Z', 'replay-2026-10-23T0600Z', 'replay-2026-10-28T2230Z',
+  'live-2026-11-10T1315Z', 'live-2026-11-10T1510Z', 'live-2026-11-10T1545Z', 'live-2026-11-10T1630Z-wide',
+];
+
+describe('the article of each alert', () => {
+  it.each(FIXTURES)('%s: the headline, link, source and date come from one fresh input headline', (name) => {
+    const inputs = inputsOf(name);
+    for (const a of detect(inputs).response.alerts) {
+      // One URL can be in two feeds with two titles (BBC changes a title), so look up the link and the title.
+      const h = inputs.headlines.find((x) => x.url === a.url && x.title === a.headline)!;
+      expect(h).toBeDefined();
+      expect([a.source, a.publishedAt]).toEqual([h.publisher, new Date(Date.parse(h.publishedAt!)).toISOString()]);
+      expect(inputs.now - Date.parse(a.publishedAt!)).toBeLessThanOrEqual(CONFIG.freshHours * 3.6e6);
+    }
+  });
+});
+
+describe('the live Bulgaria runs in order, each with the state of the run before', () => {
+  it('the alert stays in every run with one key; at 15:10 the pulse holds it (DW#2 at 3.2 h, 2 voices)', () => {
+    let state: BreakingState | null = null;
+    const out: string[] = [];
+    for (const name of ['live-2026-11-10T1315Z', 'live-2026-11-10T1510Z', 'live-2026-11-10T1545Z', 'live-2026-11-10T1630Z-wide']) {
+      const r = detect(inputsOf(name), state);
+      state = r.state;
+      const bgr = r.candidates.find((c) => c.id === 'BGR')!;
+      out.push(`${r.response.alerts.map((a) => `${a.key}:${a.level}`).join(',')} ${bgr.reason}`);
+    }
+    expect(out).toEqual([
+      'BGR-accident-20261110:major major',
+      'BGR-accident-20261110:major held: fresh lead',
+      'BGR-accident-20261110:major major',
+      'BGR-accident-20261110:major major',
+    ]);
   });
 });

@@ -1,0 +1,13 @@
+{"now": "2026-11-12T15:00:00Z",
+ "note": "The Nvidia CEO resignation of 2026-11-12. Titles from the live feeds of 2026-11-12 and 2026-11-13; the time is 1 h after the first reports. The Reuters and BBC titles are in the form of the live titles.",
+ "items": [
+ ["gn_top_in","gn","IN",4,"Business Standard","Nvidia CEO Jensen Huang resigns; CFO Kress to take over as interim chief",1],
+ ["gn_top_sg","gn","SG",5,"The Straits Times","Nvidia CEO Jensen Huang resigns in big blow to AI boom",1],
+ ["gn_top_us","gn","US",3,"Reuters","Nvidia CEO Jensen Huang resigns after affair with suspected Chinese spy",0.9],
+ ["gn_top_gb","gn","GB",2,"BBC","Nvidia boss Jensen Huang quits after spy scandal",1.1],
+ ["france24","front",null,2,"France 24","Jensen Huang resigns as Nvidia CEO after mounting scandals",0.8],
+ ["cbc_top","front",null,1,"CBC News","Nvidia CEO's resignation after affair with suspected Chinese spy rattles markets, tech world",1],
+ ["bbc_world","front",null,30,"BBC News","Jensen Huang has resigned, what's next for Nvidia?",0.5],
+ ["bbc_top","front",null,17,"BBC News","The Papers: 'Nvidia chief quits' and 'Six women say they too were preyed on by Brand'",0.7],
+ ["nyt_world","front",null,17,"The New York Times","Nvidia Scandal Unleashes a Flood of AI-Generated Memes",0.6]
+ ]}

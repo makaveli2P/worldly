@@ -100,20 +100,25 @@ export interface NewsResponse {
 // ---------- Breaking news (GET /api/breaking) ----------
 
 export type BreakingLevel = 'critical' | 'major';
-export type BreakingKind = 'conflict' | 'attack' | 'disaster' | 'accident' | 'politics';
+export type BreakingKind = 'conflict' | 'attack' | 'disaster' | 'accident' | 'politics' | 'business';
 
 export interface BreakingAlert {
   key: string; // stable id of the story: the same across polls while the story lasts
   country: CountryId; // ISO3 id as in public/data/countries.json
   level: BreakingLevel;
   kind: BreakingKind;
+  // `headline`, `url`, `source` and `publishedAt` describe one article: a current representative of the story.
   headline: string; // plain text, at most 200 chars
   url: string; // the article (or the GDACS/USGS/Wikipedia page)
   source: string; // "BBC News"
-  since: string; // ISO 8601, first evidence
+  publishedAt?: string | null; // ISO 8601, the date of that article; null when it has no date (absent from an older server)
+  since: string; // ISO 8601, first evidence of the story ("first reported"); it stays the same while the story lasts
   updatedAt: string; // ISO 8601, newest evidence
   outlets: number;
   basis: ('news' | 'itn' | 'gdacs' | 'usgs')[];
+  // Business alerts only: the company (a Wikidata QID such as "Q182477") or the market ("mkt-USA") of the
+  // story. Two business stories of one country and day have different subjects.
+  subject?: string;
 }
 
 /** Response of GET /api/breaking. At most 3 alerts, most severe first. [] on a quiet day. */

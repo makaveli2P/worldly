@@ -6,6 +6,8 @@ import { classify, deathCount } from '../../api/_lib/breaking/classify.js';
 import { primaryCountries } from '../../api/_lib/breaking/match.js';
 
 type Trap = [title: string, tier: number, family: string | null, countries: string[]];
+// The place gazetteer (places.json) gave a scene to 5 titles that had none. Each new scene is the
+// true place of the title, and the tier and family of each title stay the same.
 
 const TRAPS: Trap[] = [
   ['Woman dies in flood', 1, 'disaster', []],
@@ -13,7 +15,7 @@ const TRAPS: Trap[] = [
   ['Turkey prices soar before Thanksgiving', 0, null, []],
   ['Georgia governor declares state of emergency after Atlanta flood', 1, 'disaster', ['USA']],
   ['North Georgia flood kills 12', 2, 'disaster', []],
-  ['Staten Island ferry crash kills 6', 2, 'accident', []],
+  ['Staten Island ferry crash kills 6', 2, 'accident', ['USA']], // a gazetteer place (New York)
   ['South Jersey explosion kills 7', 2, 'accident', []],
   ['San Juan County landslide kills 5', 2, 'disaster', []],
   ['Indian nationals killed in Kuwait fire', 0, null, ['KWT']],
@@ -30,9 +32,9 @@ const TRAPS: Trap[] = [
   ['Chelsea manager resigns after Arsenal defeat', 0, null, []],
   ['Queen dies in season finale of The Crown', 0, null, []],
   ['Burger King president resigns', 0, null, []],
-  ['Liverpool president ousted by fans', 0, null, []],
+  ['Liverpool president ousted by fans', 0, null, ['GBR']], // a gazetteer place; still no politics event
   ['University of Florida president resigns', 0, null, ['USA']],
-  ['FIFA president arrested in Zurich', 0, null, []],
+  ['FIFA president arrested in Zurich', 0, null, ['CHE']], // a gazetteer place; still no politics event
   ['Prime Video series The President killed off after one season', 0, null, []],
   ['PM steps down as party leader in Japan', 0, null, ['JPN']],
   ['South Korea president arrested over martial law', 3, 'politics', ['KOR']],
@@ -44,7 +46,7 @@ const TRAPS: Trap[] = [
   ['Russia invades Estonia', 3, 'conflict', ['EST']],
   ['Ants invade homes across Australia', 0, null, ['AUS']],
   ['Fans invade pitch in Buenos Aires', 0, null, ['ARG']],
-  ['Tourists invade Venice as carnival starts', 0, null, []],
+  ['Tourists invade Venice as carnival starts', 0, null, ['ITA']], // a gazetteer place; classify() ignores it, so no invasion
   ['China invades Taiwan', 3, 'conflict', ['TWN']],
   ['Russia launches offensive in Kharkiv', 1, 'conflict', ['UKR']],
   ['Israel launches ground offensive in Lebanon', 3, 'conflict', ['LBN']],
@@ -102,7 +104,7 @@ const TRAPS: Trap[] = [
   ['9/11 attacks: 25 years on', 0, null, []],
   ['Nuclear test by North Korea confirmed', 3, 'conflict', ['PRK']],
   ['North Korea conducts nuclear test', 3, 'conflict', ['PRK']],
-  ['Plane crash in Washington kills 67', 3, 'accident', []],
+  ['Plane crash in Washington kills 67', 3, 'accident', ['USA']], // "in Washington": a gazetteer place after a locative word
   ['Air India plane crash kills 241', 3, 'accident', ['IND']],
   ['Georgia school shooting leaves 4 dead', 2, 'attack', []],
   ['Shooting in Jersey City kills 6', 2, 'attack', ['USA']],
