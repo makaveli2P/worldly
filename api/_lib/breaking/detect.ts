@@ -352,6 +352,7 @@ export interface Candidate {
   windowVoices: number; // voices with a strong headline in the 12 h window
   pulse: boolean; // freshLeads >= 1 and windowVoices >= 2: the story still leads
   war: boolean; // a conflict story, or an attack story whose strong voices mostly name a state attacker
+  tollOnly: boolean; // every strong headline gives only a death toll, with no event word
   fullLevel: BreakingLevel | null; // the level of the full test, before the gates and the life rules
   fullReason: string;
   pick: Item; // the article of the chip: its title, link, source and date go out together
@@ -432,6 +433,9 @@ export function detect(inputs: BreakingInputs, previous: BreakingState | null = 
     // a mass shooting names no state attacker.
     const armedVoices = byVoice.filter((its) => its.some((i) => i.strong && i.armed)).length;
     const war = story.family === 'conflict' || (story.family === 'attack' && armedVoices > 0 && armedVoices * 2 >= windowVoices);
+    // "30 killed in Gaza overnight" has no war word. In a war country it must stay under the chronic gate.
+    const strongItems = recent.filter((i) => i.strong);
+    const tollOnly = strongItems.length > 0 && strongItems.every((i) => i.c.tollOnly === true);
     const live = recent.some((i) => isLive(i.h.title, i.h.url));
     const times = story.items.map((i) => i.time).filter((t): t is number => t !== null);
     const recentTimes = recent.map((i) => i.time).filter((t): t is number => t !== null);
@@ -472,7 +476,7 @@ export function detect(inputs: BreakingInputs, previous: BreakingState | null = 
     const score = nVoices + 2 * editions + lead + 3 * tierEff + 2 * Math.log10(deaths + 1) + (live ? 1 : 0);
     const c: Candidate = {
       id: story.id, family: story.family, subject: storySubject(story), level, reason, score, voices: nVoices, editions, lead, tierEff, deaths, since, updatedAt,
-      freshLeads, freshVoices, windowVoices, pulse: freshLeads >= 1 && windowVoices >= 2, war, fullLevel: level, fullReason: reason,
+      freshLeads, freshVoices, windowVoices, pulse: freshLeads >= 1 && windowVoices >= 2, war, tollOnly, fullLevel: level, fullReason: reason,
       pick: story.items[0], basis, items: story.items, held: false, renewed: false, wave: 0,
       span: times.length ? (Math.max(...times) - since) / HOUR : 0,
       // "resigns" is the event of a business story, not an aftermath word. Business has its own list.
@@ -765,8 +769,8 @@ function recurring(id: string, from: number, starts: string[]): boolean {
  */
 function chronicGate(c: Candidate, known: Set<string> | null, from: number, ctx: LifeContext): { kind: string | null; pass: string | null } {
   let kind: string | null = null;
-  if ((c.family === 'conflict' || c.family === 'attack') && ctx.chronic.has(c.id)) kind = 'chronic conflict';
-  else if (c.war && recurring(c.id, from, ctx.starts)) kind = 'chronic conflict (recurring)';
+  if ((c.family === 'conflict' || c.family === 'attack' || c.tollOnly) && ctx.chronic.has(c.id)) kind = 'chronic conflict';
+  else if ((c.war || c.tollOnly) && recurring(c.id, from, ctx.starts)) kind = 'chronic conflict (recurring)';
   if (!kind) return { kind: null, pass: null };
   if (c.tierEff === 3 && c.voices >= CONFIG.chronicOutlets && c.editions >= CONFIG.chronicEditions) return { kind, pass: 'chronic, escalation' };
   if (c.freshVoices >= CONFIG.chronicWaveVoices && c.freshLeads >= CONFIG.chronicWaveLeads && (c.deaths >= CONFIG.chronicWaveDeaths || c.tierEff === 3)) {

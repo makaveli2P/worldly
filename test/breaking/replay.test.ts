@@ -48,13 +48,15 @@ describe('replays of real inputs', () => {
     expect(r.alerts[0].outlets).toBe(3);
   });
 
-  it('2026-11-10 16:30Z live, wide (every headline that names a country): the pile-ups are major on 5 outlets; no other alert', () => {
+  it('2026-11-10 16:30Z live, wide (every headline that names a country): the pile-ups are major on 6 outlets; no other alert', () => {
     // This snapshot also keeps the headlines that the rules did not flag, so a later rule change
     // that makes a new false alarm from an ordinary headline fails here.
     const r = replay('live-2026-11-10T1630Z-wide');
     expect(brief('live-2026-11-10T1630Z-wide')).toEqual(['BGR:major:accident:news']);
     expect(r.alerts[0].key).toBe('BGR-accident-20261110');
-    expect(r.alerts[0].outlets).toBe(5);
+    // 6 since the toll-only rule: "At least 12 people killed and dozens hurt in crashes on a foggy
+    // Bulgarian motorway" has no event word in the order that the accident rule reads.
+    expect(r.alerts[0].outlets).toBe(6);
   });
 });
 

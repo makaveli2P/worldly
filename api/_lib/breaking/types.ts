@@ -113,4 +113,6 @@ export interface Classification {
   subject?: { id: string; country: string };
   event?: BusinessEventType;
   person?: string; // a business leader event: the listed person that the title names
+  // No event word: the title gives only a large death toll for one event (TOLL_EVENT_DEATHS or more).
+  tollOnly?: boolean;
 }

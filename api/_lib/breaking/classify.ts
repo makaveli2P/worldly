@@ -310,6 +310,12 @@ export function isLive(title: string, url: string): boolean {
 
 // On a tie of tiers: a disaster word wins, and an accident word ("blast", "explosion") loses. A business
 // event loses to every other family.
+/** A title with no event word counts when it gives at least this many dead for one event. */
+export const TOLL_EVENT_DEATHS = 10;
+// The toll must be a number in digits: "thousands killed during recent protests" is a vague total.
+const TOLL_COUNT = /\d/;
+// A disease toll is a total over time, and the deaths of animals are no event for this chip.
+const NOT_TOLL = /\b(?:outbreaks?|epidemics?|pandemics?|virus\w*|flu|influenza|covid\w*|measles|cholera|ebola|mpox|dengue|malaria|diseases?|infections?|poultry|chickens?|birds?|cattle|cows?|sheep|pigs?|livestock|animals?|fish|dolphins?|whales?|elephants?|dogs?)\b/i;
 const FAMILY_PREF: Record<Family, number> = { disaster: 1, attack: 0, conflict: 0, politics: 0, accident: -1, business: -2 };
 // One victim named by age: "Shooting leaves 70-year-old dead".
 const ONE_VICTIM = new RegExp(String.raw`\b\d+${AGE_SUFFIX}\b(?!s)`, 'i');
@@ -328,6 +334,15 @@ export function classify(title: string): Classification | null {
   // A business event. A leader of a company who is shot or stabbed is an attack.
   const biz = businessEvent(title);
   if (biz) hits.push({ family: biz.violent ? 'attack' : 'business', tier: biz.tier, re: /./, business: true });
+  // No event word, but a large death toll for one event: "24 killed after bus collides with truck".
+  // Word lists cannot hold every wording, and the toll alone shows a serious event. The death count
+  // ignores ages, years, war totals ("death toll passes") and totals over weeks. The coverage bar of
+  // the detector still applies, and a toll-only story in a war country stays under the chronic-war gate.
+  let tollOnly = false;
+  if (!hits.length && TOLL_COUNT.test(title) && !NOT_TOLL.test(title) && deathCount(title, false) >= TOLL_EVENT_DEATHS) {
+    hits.push({ family: 'accident', tier: 2, re: /./ });
+    tollOnly = true;
+  }
   if (!hits.length) return null;
 
   const countries = new Set(matches.filter((m) => m.weight > 0).map((m) => m.id));
@@ -346,7 +361,7 @@ export function classify(title: string): Classification | null {
     return { family, tier: tier as 1 | 2 | 3, deaths: 0, ...subject, event: biz.event, ...(biz.person ? { person: biz.person } : {}) };
   }
   // In a war, "death toll passes 70,000" is the total of the war, not of this event.
-  const deaths = deathCount(title, family !== 'conflict');
+  const deaths = deathCount(title, family !== 'conflict' && !tollOnly);
 
   // Deaths set the tier of disasters, accidents and attacks. 50 or more dead is critical-class.
   if (family !== 'politics' && (family !== 'conflict' || tier < 3)) {
@@ -371,5 +386,5 @@ export function classify(title: string): Classification | null {
   if (NOT_EVENT.test(title) || MODAL_MAY.test(title) || FEATURE_START.test(title)) tier = Math.min(tier, 1);
   if (DEESCALATE.test(title)) tier = Math.min(tier, 1);
   if (family !== 'politics' && AFTERMATH.test(title)) tier = Math.min(tier, 1);
-  return tier >= 1 ? { family, tier: tier as 1 | 2 | 3, deaths, ...subject } : null;
+  return tier >= 1 ? { family, tier: tier as 1 | 2 | 3, deaths, ...subject, ...(tollOnly ? { tollOnly } : {}) } : null;
 }
