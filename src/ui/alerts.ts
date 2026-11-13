@@ -1,5 +1,6 @@
 // Breaking-news chip in the header. Desktop: grid column 2. Mobile: a third header row.
-// It shows one alert: BREAKING, the country, the headline (cut to fit) and the age. With 2 or more alerts, the
+// It shows one alert: BREAKING, the country, the headline (cut to fit) and the age of that article. The headline,
+// the link, the source and the age all come from one article. With 2 or more alerts, the
 // chip shows the next alert every ROTATE_MS, in sortAlerts order. Hover, focus, the open list, a hidden page
 // and reduced motion stop the rotation. "+N" opens a list of the other alerts. A click selects the country; × dismisses the alert for the session.
 // A polite live region announces each new story once. With no alert, the slot is empty.
@@ -17,6 +18,8 @@ import {
   StorySet,
   ageWords,
   announcement,
+  articleTime,
+  firstReportedWords,
   holdDropped,
   newStories,
   nextIndex,
@@ -299,6 +302,8 @@ export class BreakingBar {
       const a = this.alertOf(btn);
       const label = a ? this.label(a, now) : null;
       if (label && btn !== active && btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+      const title = a ? this.tooltip(a, now) : null;
+      if (title && btn.title && btn.title !== title) btn.title = title;
     }
   }
 
@@ -473,7 +478,7 @@ export class BreakingBar {
     chip.dataset.key = cur.key;
     chip.toggleAttribute('data-pulse', this.pulseKey === cur.key);
     set('.brk-main > .brk-tag', { 'data-level': cur.level });
-    set('.brk-main', { 'data-focus': `main:${cur.key}`, 'aria-label': this.label(cur, now), title: cur.headline });
+    set('.brk-main', { 'data-focus': `main:${cur.key}`, 'aria-label': this.label(cur, now), title: this.tooltip(cur, now) });
     set('.brk-open', {
       href: cur.url,
       'data-focus': `open:${cur.key}`,
@@ -547,14 +552,29 @@ export class BreakingBar {
     );
   }
 
-  private age(a: BreakingAlert, now: number): HTMLElement {
-    return h('time', { class: 'brk-age', datetime: a.since, 'aria-hidden': 'true' }, age(a.since, now) ?? '');
+  /** The age of the article of the alert ("25m"). An article with no date shows no age. */
+  private age(a: BreakingAlert, now: number): HTMLElement | false {
+    const t = articleTime(a);
+    return !!t && h('time', { class: 'brk-age', datetime: t, 'aria-hidden': 'true' }, age(t, now) ?? '');
   }
 
+  /** "Breaking news, major, Bulgaria: <headline>. DW, 25 minutes ago. First reported 6 hours ago. Show on the globe." */
   private label(a: BreakingAlert, now: number): string {
     const level = a.level === 'critical' ? 'critical' : 'major';
-    const when = ageWords(a.since, now);
-    return `Breaking news, ${level}, ${this.name(a)}: ${a.headline}${when ? `, ${when}` : ''}. Show on the globe.`;
+    const t = articleTime(a);
+    const said = [a.source, t ? ageWords(t, now) : null].filter(Boolean).join(', ');
+    const first = firstReportedWords(a, now);
+    const head = a.headline.replace(/[.!?…]+$/, '');
+    return `Breaking news, ${level}, ${this.name(a)}: ${head}.${said ? ` ${said[0].toUpperCase()}${said.slice(1)}.` : ''}${first ? ` First reported ${first}.` : ''} Show on the globe.`;
+  }
+
+  /** The tooltip of the chip: "<headline> — DW, 25m ago · first reported 6h ago". */
+  private tooltip(a: BreakingAlert, now: number): string {
+    const t = articleTime(a);
+    const when = t ? age(t, now) : null;
+    const said = [a.source, when && `${when}${when === 'now' ? '' : ' ago'}`].filter(Boolean).join(', ');
+    const firstAge = firstReportedWords(a, now) ? age(a.since, now) : null;
+    return `${a.headline}${said ? ` — ${said}` : ''}${firstAge ? ` · first reported ${firstAge} ago` : ''}`;
   }
 }
 

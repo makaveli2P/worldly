@@ -280,14 +280,28 @@ describe('thresholds', () => {
 });
 
 describe('time', () => {
-  it('a critical alert with no headline newer than 6 h drops to major', () => {
+  it('a story with no lead headline newer than 6 h is stale: no alert, also at the critical tier', () => {
+    // The pulse needs a fresh (6 h) strong headline in a lead position. (Before the life rules, this
+    // story was major: "a critical alert with no headline newer than 6 h drops to major".)
     const old = aged(ESTONIA, 7);
-    expect(summary(old)).toEqual(['EST:major']);
+    expect(summary(old)).toEqual([]);
+    expect(run(old).candidates.find((c) => c.id === 'EST')?.reason).toBe('stale: no fresh lead headline');
+    // One fresh lead gives the pulse back.
+    expect(summary([...old, ['gn_top_in', 'gn', 'IN', 2, 'NDTV', 'Russia invades Estonia, tanks reach Tallinn', 1]])).toEqual(['EST:critical']);
   });
 
-  it('an alert ends 24 h after its first evidence', () => {
+  it('a story whose first evidence is more than 24 h old needs a new wave of fresh headlines', () => {
+    // Freshness decides, not the age of the first headline. (Before the life rules: "an alert ends 24 h
+    // after its first evidence", also with 6 fresh leads.)
     const first: Row = ['bbc_top', 'front', null, 20, 'BBC News', 'Russia invades Estonia at dawn', 25];
-    expect(summary([first, ...ESTONIA])).toEqual([]);
+    // 4 outlets 9 h ago and one fresh lead: the pulse holds, but only 1 voice is fresh.
+    const tired: Row[] = [...aged(ESTONIA.slice(1, 5), 9), ['gn_top_gb', 'gn', 'GB', 2, 'Sky News', 'Russia invades Estonia', 1]];
+    expect(summary([first, ...tired])).toEqual([]);
+    expect(run([first, ...tired]).candidates.find((c) => c.id === 'EST')?.reason).toBe('stale: older than 24 h, no new wave');
+    // The same coverage with no 25 h old headline is a story of 9 h: it alerts (5 voices: major).
+    expect(summary(tired)).toEqual(['EST:major']);
+    // 6 fresh leads are a new wave: the story alerts again.
+    expect(summary([first, ...ESTONIA])).toEqual(['EST:critical']);
   });
 
   it('headlines older than 12 h do not count toward the level', () => {
@@ -387,7 +401,8 @@ describe('subject country', () => {
 describe('response shape', () => {
   it('fills every field of the contract', () => {
     const a = alerts(ESTONIA)[0];
-    expect(Object.keys(a).sort()).toEqual(['basis', 'country', 'headline', 'key', 'kind', 'level', 'outlets', 'since', 'source', 'updatedAt', 'url'].sort());
+    expect(Object.keys(a).sort()).toEqual(['basis', 'country', 'headline', 'key', 'kind', 'level', 'outlets', 'publishedAt', 'since', 'source', 'updatedAt', 'url'].sort());
+    expect(a.publishedAt).toBe(new Date(NOW - 2 * HOUR).toISOString());
     expect(a.headline.length).toBeLessThanOrEqual(200);
     expect(a.source).toBe('BBC News');
     expect(Date.parse(a.since)).toBeLessThanOrEqual(Date.parse(a.updatedAt));

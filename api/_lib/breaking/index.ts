@@ -1,6 +1,6 @@
 // GET /api/breaking: fetch the sources, run the detector, keep the result in memory for a short time.
 //
-// Between runs the module keeps two things in memory: the detector state (for the hold) and the last
+// Between runs the module keeps two things in memory: the detector state (for the life rules) and the last
 // good answer of each source (for a source that fails). The state also goes to the shared store
 // (see state.ts). The last good answers stay in memory only: they are too large for a cheap write each run.
 import type { BreakingResponse } from '../../../src/types';

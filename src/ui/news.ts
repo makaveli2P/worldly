@@ -2,7 +2,7 @@
 // When the country has a live breaking alert, one BREAKING row sits above the stories (setBreaking).
 
 import type { BreakingAlert, NewsArticle, NewsProvider, NewsResponse } from '../types';
-import { ageWords, sameView } from './alerts-model';
+import { ageWords, articleTime, firstReportedWords, sameView } from './alerts-model';
 import { h } from './dom';
 import { age, utcTime } from './format';
 import { getLayout, type PanelLayout } from './layout';
@@ -81,7 +81,7 @@ export class NewsPanel {
           'span',
           { class: 'meta', 'aria-hidden': 'true' },
           alert.source && h('span', { class: 'src' }, alert.source),
-          h('time', { class: 't mono', datetime: alert.since }, age(alert.since, now) ?? ''),
+          articleTime(alert) && h('time', { class: 't mono', datetime: articleTime(alert)! }, age(articleTime(alert), now) ?? ''),
         ),
       ),
       h('span', { class: 'news-brk-head', 'aria-hidden': 'true' }, alert.headline),
@@ -97,7 +97,7 @@ export class NewsPanel {
     if (!a) return;
     const now = Date.now();
     const time = this.breaking.querySelector('time');
-    const text = age(a.since, now) ?? '';
+    const text = age(articleTime(a), now) ?? '';
     if (time && time.textContent !== text) time.textContent = text;
     const link = this.breaking.querySelector('a');
     const label = this.breakingLabel(a, now);
@@ -124,10 +124,13 @@ export class NewsPanel {
     return rest.length > 0 ? rest : list;
   }
 
+  /** The source and the age describe the article of the link, not the first report of the story. */
   private breakingLabel(a: BreakingAlert, now: number): string {
-    const when = ageWords(a.since, now);
+    const t = articleTime(a);
+    const when = t ? ageWords(t, now) : null;
     const tail = [a.source, when].filter(Boolean).join(', ');
-    return `Breaking news, ${a.level}: ${a.headline}${tail ? `. ${tail}` : ''}. Opens in a new tab.`;
+    const first = firstReportedWords(a, now);
+    return `Breaking news, ${a.level}: ${a.headline}${tail ? `. ${tail}` : ''}${first ? `. First reported ${first}` : ''}. Opens in a new tab.`;
   }
 
   showLoading(countryName: string): void {

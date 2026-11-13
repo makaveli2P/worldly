@@ -1,0 +1,386 @@
+{
+  "_about": "Curated additions to api/_lib/breaking/companies.json. scripts/build-companies.mjs reads this file. include: companies that Wikidata size data misses. exclude: QIDs to drop. ambiguous: names that are also common words; they count for a merger, a collapse or support only with a legal suffix or a business word near them. A common English word that is not in this list is never a company name. dropNames: alternative names from Wikidata that are not safe in headlines. block: phrases that hold a company name but do not name the company. names: extra names per QID. people: extra or corrected people per QID (Wikidata can be late). gsib: the FSB list of global systemically important banks (refresh it each November). mustHave: QID -> a name that a headline uses; the build fails when a must-have company or its name is missing.",
+  "include": {
+    "Q3013553": "Dangote Group",
+    "Q1813361": "MTN Group",
+    "Q1965898": "Naspers",
+    "Q7398410": "Safaricom",
+    "Q905998": "Sasol",
+    "Q1576610": "Standard Bank",
+    "Q5453738": "FirstRand",
+    "Q245233": "Ethiopian Airlines",
+    "Q1090717": "Sonatrach",
+    "Q501605": "OCP Group",
+    "Q758052": "Attijariwafa Bank",
+    "Q1641044": "Pertamina",
+    "Q806626": "Bank Central Asia",
+    "Q221692": "Petronas",
+    "Q10831597": "Vingroup",
+    "Q1810389": "PTT",
+    "Q1994975": "Ayala Corporation",
+    "Q1282130": "Ecopetrol",
+    "Q1105695": "Codelco",
+    "Q2006989": "YPF",
+    "Q871308": "Pemex",
+    "Q482267": "América Móvil",
+    "Q1811692": "QatarEnergy",
+    "Q166729": "ADNOC",
+    "Q4680631": "Adani Group",
+    "Q2377884": "Tata Sons",
+    "Q331715": "Tata Group",
+    "Q2767170": "Life Insurance Corporation of India",
+    "Q21708200": "OpenAI",
+    "Q116758847": "Anthropic",
+    "Q13227919": "Tata Consultancy Services",
+    "Q679322": "Saudi Aramco",
+    "Q193701": "SpaceX",
+    "Q55606242": "ByteDance",
+    "Q2103926": "UnitedHealth Group",
+    "Q5417145": "Evergrande Group",
+    "Q157617": "Commerzbank",
+    "Q806693": "Bank of Montreal",
+    "Q160229": "Telefónica",
+    "Q116452644": "Netflix, Inc. (the company; Q907311 is the streaming service)",
+    "Q27586": "Ferrari"
+  },
+  "exclude": {},
+  "ambiguous": [
+    "Apple",
+    "Shell",
+    "Amazon",
+    "Meta",
+    "Oracle",
+    "Alphabet",
+    "Target",
+    "Visa",
+    "Delta",
+    "United",
+    "Continental",
+    "Orange",
+    "Total",
+    "Next",
+    "Gap",
+    "Block",
+    "Square",
+    "Mars",
+    "Sky",
+    "Three",
+    "Reliance",
+    "Canon",
+    "Jaguar",
+    "Puma",
+    "Ford",
+    "Dell",
+    "Emirates",
+    "X",
+    "Intel",
+    "Vale",
+    "Sharp",
+    "Prudential",
+    "Ally",
+    "Adobe",
+    "Arm",
+    "BlackBerry",
+    "Carnival",
+    "Caterpillar",
+    "Coca-Cola",
+    "Fox",
+    "Grab",
+    "Guess",
+    "Hertz",
+    "Opera",
+    "SAP",
+    "Southwest",
+    "Swatch",
+    "Unity",
+    "Virgin",
+    "Whirlpool",
+    "Xerox"
+  ],
+  "dropNames": [
+    "Tech",
+    "Rida",
+    "Rim",
+    "Aero",
+    "Bahn",
+    "Chub",
+    "Copa",
+    "Ubi",
+    "McDo",
+    "Valley Falls",
+    "News",
+    "BoA",
+    "BoB"
+  ],
+  "block": [
+    "Nikola Tesla",
+    "Amazon rainforest",
+    "Amazon Rainforest",
+    "Amazon River",
+    "Amazon basin",
+    "Amazon Basin",
+    "Apple Daily",
+    "Bank of Japan",
+    "Bank of England",
+    "Bank of Canada",
+    "Bank of Korea",
+    "Bank of Israel",
+    "Bank of Russia",
+    "Bank of Mexico",
+    "Reserve Bank of India",
+    "Reserve Bank of Australia",
+    "People's Bank of China",
+    "European Central Bank",
+    "Delta variant",
+    "Mekong Delta",
+    "Niger Delta",
+    "Nile Delta",
+    "Shell shock",
+    "Total war",
+    "Mars rover",
+    "Mars mission",
+    "United Nations",
+    "United States",
+    "United Kingdom",
+    "United Arab Emirates",
+    "Manchester United",
+    "Newcastle United",
+    "West Ham United",
+    "Leeds United",
+    "Sky News",
+    "Sky Sports",
+    "Orange County",
+    "Apple TV",
+    "Apple Music",
+    "Red Bull boss",
+    "Red Bull Racing",
+    "Red Bull team",
+    "Aston Martin boss",
+    "Aston Martin F1",
+    "Aston Martin Aramco",
+    "Scuderia Ferrari",
+    "Ferrari team",
+    "Ferrari F1",
+    "McLaren boss",
+    "Mercedes F1"
+  ],
+  "names": {
+    "Q182477": [
+      "Nvidia",
+      "NVIDIA"
+    ],
+    "Q2103926": [
+      "UnitedHealth",
+      "UnitedHealthcare"
+    ],
+    "Q5417145": [
+      "Evergrande",
+      "China Evergrande"
+    ],
+    "Q217583": [
+      "Berkshire Hathaway",
+      "Berkshire"
+    ],
+    "Q20718": [
+      "Samsung Electronics",
+      "Samsung"
+    ],
+    "Q908931": [
+      "Reliance Industries",
+      "Reliance"
+    ],
+    "Q192314": [
+      "JPMorgan Chase",
+      "JPMorgan",
+      "JP Morgan"
+    ],
+    "Q53268": [
+      "Toyota"
+    ],
+    "Q2283": [
+      "Microsoft"
+    ],
+    "Q312": [
+      "Apple"
+    ],
+    "Q380": [
+      "Meta"
+    ],
+    "Q20800404": [
+      "Alphabet",
+      "Google"
+    ],
+    "Q478214": [
+      "Tesla"
+    ],
+    "Q193199": [
+      "UBS"
+    ],
+    "Q154950": [
+      "Shell"
+    ],
+    "Q152057": [
+      "BP"
+    ],
+    "Q679322": [
+      "Saudi Aramco",
+      "Aramco"
+    ],
+    "Q166729": [
+      "ADNOC"
+    ],
+    "Q331715": [
+      "Tata Group"
+    ],
+    "Q2767170": [
+      "LIC",
+      "Life Insurance Corporation of India"
+    ],
+    "Q1810389": [
+      "PTT"
+    ],
+    "Q806941": [
+      "BPCE",
+      "Groupe BPCE"
+    ],
+    "Q6496310": [
+      "Banco Santander",
+      "Santander"
+    ],
+    "Q116452644": [
+      "Netflix"
+    ],
+    "Q247489": [
+      "Merck",
+      "Merck & Co."
+    ],
+    "Q55606242": [
+      "ByteDance",
+      "TikTok"
+    ],
+    "Q27586": [
+      "Ferrari"
+    ]
+  },
+  "people": {
+    "Q217583": [
+      {
+        "name": "Warren Buffett",
+        "role": "chair",
+        "links": 120
+      }
+    ],
+    "Q478214": [
+      {
+        "name": "Elon Musk",
+        "role": "ceo",
+        "links": 150
+      }
+    ],
+    "Q21708200": [
+      {
+        "name": "Sam Altman",
+        "role": "ceo",
+        "links": 75
+      }
+    ],
+    "Q116452644": [
+      {
+        "name": "Ted Sarandos",
+        "role": "ceo",
+        "links": 12
+      }
+    ],
+    "Q55606242": [
+      {
+        "name": "Shou Zi Chew",
+        "role": "ceo",
+        "links": 22
+      }
+    ],
+    "Q27586": [
+      {
+        "name": "Benedetto Vigna",
+        "role": "ceo",
+        "links": 10
+      }
+    ]
+  },
+  "gsib": {
+    "Q192314": "JPMorgan Chase",
+    "Q487907": "Bank of America",
+    "Q219508": "Citigroup",
+    "Q190464": "HSBC",
+    "Q26463": "Industrial and Commercial Bank of China",
+    "Q790068": "Bank of China",
+    "Q26299": "China Construction Bank",
+    "Q26298": "Agricultural Bank of China",
+    "Q806680": "Bank of Communications",
+    "Q245343": "Barclays",
+    "Q499707": "BNP Paribas",
+    "Q66048": "Deutsche Bank",
+    "Q193326": "Goldman Sachs",
+    "Q1542175": "Mitsubishi UFJ Financial Group",
+    "Q193199": "UBS",
+    "Q589288": "Bank of New York Mellon",
+    "Q806941": "Groupe BPCE",
+    "Q590952": "Crédit Agricole",
+    "Q645708": "ING Group",
+    "Q166621": "Mizuho Financial Group",
+    "Q334204": "Morgan Stanley",
+    "Q735261": "Royal Bank of Canada",
+    "Q6496310": "Banco Santander",
+    "Q270363": "Société Générale",
+    "Q548278": "Standard Chartered",
+    "Q2037125": "State Street",
+    "Q2094989": "Sumitomo Mitsui Financial Group",
+    "Q1194832": "Toronto-Dominion Bank",
+    "Q744149": "Wells Fargo"
+  },
+  "mustHave": {
+    "Q312": "Apple",
+    "Q2283": "Microsoft",
+    "Q182477": "Nvidia",
+    "Q20800404": "Google",
+    "Q3884": "Amazon",
+    "Q380": "Meta",
+    "Q478214": "Tesla",
+    "Q193701": "SpaceX",
+    "Q116452644": "Netflix",
+    "Q21708200": "OpenAI",
+    "Q116758847": "Anthropic",
+    "Q217583": "Berkshire Hathaway",
+    "Q192314": "JPMorgan",
+    "Q193326": "Goldman Sachs",
+    "Q483551": "Walmart",
+    "Q66": "Boeing",
+    "Q248": "Intel",
+    "Q247489": "Merck",
+    "Q632240": "Eli Lilly",
+    "Q20718": "Samsung",
+    "Q713418": "TSMC",
+    "Q53268": "Toyota",
+    "Q41187": "Sony",
+    "Q246": "Volkswagen",
+    "Q27530": "Mercedes-Benz",
+    "Q27586": "Ferrari",
+    "Q504998": "LVMH",
+    "Q160746": "Nestlé",
+    "Q154950": "Shell",
+    "Q152057": "BP",
+    "Q190464": "HSBC",
+    "Q193199": "UBS",
+    "Q679322": "Aramco",
+    "Q908931": "Reliance Industries",
+    "Q331715": "Tata Group",
+    "Q4680631": "Adani Group",
+    "Q26989": "Infosys",
+    "Q1359568": "Alibaba",
+    "Q860580": "Tencent",
+    "Q55606242": "TikTok",
+    "Q160120": "Huawei",
+    "Q2608329": "BYD",
+    "Q1636958": "Xiaomi",
+    "Q5417145": "Evergrande"
+  }
+}

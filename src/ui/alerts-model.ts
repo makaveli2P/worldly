@@ -14,12 +14,19 @@ export const BACKOFF_AFTER = 3;
 export const REFRESH_ON_SHOW_MS = 60_000;
 /** The UI drops an alert when its newest evidence is older than this, also when the server still sends it. */
 export const MAX_AGE_MS = 24 * 60 * 60_000;
+/**
+ * The UI drops an alert when the date of its article is older than this: the server keeps an alert only
+ * while it has a lead headline of 6 hours or less, and a CDN can serve an old answer for some more time.
+ */
+export const STALE_ARTICLE_MS = 8 * 60 * 60_000;
+/** The chip names the first report of the story only when it is at least this much older than the article. */
+export const FIRST_REPORTED_GAP_MS = 60 * 60_000;
 
 export const DISMISSED_KEY = 'worldly:breaking-dismissed';
 export const ANNOUNCED_KEY = 'worldly:breaking-announced';
 
 const LEVELS: readonly BreakingLevel[] = ['critical', 'major'];
-const KINDS: readonly BreakingKind[] = ['conflict', 'attack', 'disaster', 'accident', 'politics'];
+const KINDS: readonly BreakingKind[] = ['conflict', 'attack', 'disaster', 'accident', 'politics', 'business'];
 const BASES = ['news', 'itn', 'gdacs', 'usgs'] as const;
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
@@ -34,7 +41,10 @@ export function parseAlert(raw: unknown): BreakingAlert | null {
   const since = isStr(a.since) && !Number.isNaN(Date.parse(a.since)) ? a.since : null;
   const updatedAt = isStr(a.updatedAt) && !Number.isNaN(Date.parse(a.updatedAt)) ? a.updatedAt : since;
   if (!since || !updatedAt) return null;
+  // An older server (or an old cached answer) sends no publishedAt: the field stays absent. A bad value is null.
+  const article = 'publishedAt' in a ? { publishedAt: isStr(a.publishedAt) && !Number.isNaN(Date.parse(a.publishedAt)) ? a.publishedAt : null } : {};
   return {
+    ...article,
     key: a.key,
     country: a.country,
     level: a.level as BreakingLevel,
@@ -46,6 +56,7 @@ export function parseAlert(raw: unknown): BreakingAlert | null {
     updatedAt,
     outlets: typeof a.outlets === 'number' && Number.isFinite(a.outlets) ? a.outlets : 1,
     basis: Array.isArray(a.basis) ? a.basis.filter((b): b is (typeof BASES)[number] => BASES.includes(b)) : [],
+    ...(isStr(a.subject) && a.subject.length <= 64 ? { subject: a.subject } : {}),
   };
 }
 
@@ -60,6 +71,24 @@ export function parseBreakingResponse(body: unknown): BreakingAlert[] | null {
     if (a) out.push(a);
   }
   return out;
+}
+
+/**
+ * The date of the article that the chip links to. An alert from an older server has no publishedAt: then
+ * the first evidence (`since`) stands in, as before. Null when the article has no date: the chip shows no age.
+ */
+export function articleTime(a: Pick<BreakingAlert, 'since' | 'publishedAt'>): string | null {
+  return a.publishedAt === undefined ? a.since : a.publishedAt;
+}
+
+/**
+ * "6 hours ago": the first report of the story, for the chip text. Null when the first report is less
+ * than FIRST_REPORTED_GAP_MS before the article (the two are then the same news), or for a bad date.
+ */
+export function firstReportedWords(a: Pick<BreakingAlert, 'since' | 'publishedAt'>, now: number): string | null {
+  const t = articleTime(a);
+  if (!t || Date.parse(t) - Date.parse(a.since) < FIRST_REPORTED_GAP_MS) return null;
+  return ageWords(a.since, now);
 }
 
 const rank = (l: BreakingLevel) => (l === 'critical' ? 0 : 1);
@@ -83,16 +112,20 @@ export interface StoryRef {
   country: string;
   kind: string;
   since: string;
+  subject?: string; // business: the company or market. Two subjects are two stories.
 }
 
 /**
  * True when two alerts tell the same story. The server key holds the UTC day of `since`, and the key can move
  * to the next day at 00:00 UTC (api/_lib/README.md). So the same country and kind, with `since` values less
- * than SAME_STORY_MS apart, also count as the same story.
+ * than SAME_STORY_MS apart, also count as the same story. Two business alerts with different subjects (two
+ * companies, or a company and a market) are two stories. A stored story with no subject (a format before
+ * the business kind) keeps the rule of the country and kind.
  */
 export function sameStory(a: StoryRef, b: StoryRef): boolean {
   if (a.key === b.key) return true;
   if (!a.country || a.country !== b.country || a.kind !== b.kind) return false;
+  if (a.subject && b.subject && a.subject !== b.subject) return false;
   const gap = Math.abs(Date.parse(a.since) - Date.parse(b.since));
   return gap < SAME_STORY_MS;
 }
@@ -104,7 +137,7 @@ export interface StoryMatcher {
 
 /**
  * The alerts the UI shows: known countries only (ids go through `resolve`), no dismissed stories,
- * no evidence older than MAX_AGE_MS, one alert per country (the most severe), sorted, at most MAX_ALERTS.
+ * no evidence older than MAX_AGE_MS, no article older than STALE_ARTICLE_MS, one alert per country (the most severe), sorted, at most MAX_ALERTS.
  */
 export function visibleAlerts(
   alerts: readonly BreakingAlert[],
@@ -116,6 +149,7 @@ export function visibleAlerts(
   const seen = new Set<CountryId>();
   for (const a of sortAlerts(alerts)) {
     if (now - Date.parse(a.updatedAt) > MAX_AGE_MS) continue;
+    if (a.publishedAt && now - Date.parse(a.publishedAt) > STALE_ARTICLE_MS) continue;
     const id = resolve(a.country);
     if (!id || seen.has(id)) continue;
     const shown = id === a.country ? a : { ...a, country: id };
@@ -155,7 +189,7 @@ export function holdDropped(prev: HeldAlerts, next: readonly BreakingAlert[], po
 
 /**
  * True when two lists show the same thing in the chip: the same alerts in the same order, with the
- * same level, country, headline and link. The age is not compared: the age tick updates it in place.
+ * same level, country, headline, link, source and dates. The age is not compared: the age tick updates it in place.
  */
 export function sameView(a: readonly BreakingAlert[], b: readonly BreakingAlert[]): boolean {
   return (
@@ -169,6 +203,7 @@ export function sameView(a: readonly BreakingAlert[], b: readonly BreakingAlert[
         x.headline === y.headline &&
         x.url === y.url &&
         x.source === y.source &&
+        x.publishedAt === y.publishedAt &&
         x.since === y.since
       );
     })
@@ -273,7 +308,7 @@ export class StorySet implements StoryMatcher {
     let changed = false;
     for (const a of stories) {
       if (this.hasKey(a.key)) continue;
-      this.refs.push({ key: a.key, country: a.country, kind: a.kind, since: a.since });
+      this.refs.push({ key: a.key, country: a.country, kind: a.kind, since: a.since, ...(a.subject ? { subject: a.subject } : {}) });
       changed = true;
     }
     if (!changed) return;
@@ -309,7 +344,8 @@ export class StorySet implements StoryMatcher {
         else if (x && typeof x === 'object' && typeof (x as StoryRef).key === 'string') {
           const r = x as Partial<StoryRef>;
           const str = (f: unknown) => (typeof f === 'string' ? f : '');
-          out.push({ key: r.key!, country: str(r.country), kind: str(r.kind), since: str(r.since) });
+          const subject = str(r.subject);
+          out.push({ key: r.key!, country: str(r.country), kind: str(r.kind), since: str(r.since), ...(subject ? { subject } : {}) });
         }
       }
       return out;

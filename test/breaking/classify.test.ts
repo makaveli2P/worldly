@@ -45,8 +45,10 @@ describe('classify: head of state', () => {
 
   it('rejects universities, companies, clubs, banks and federations', () => {
     expect(tier('University of Florida president resigns after donor scandal')).toBe(0);
-    expect(tier('Toyota President Resigns After Japan Safety Scandal')).toBe(0);
-    expect(tier("Japan's Toyota president resigns over safety test scandal")).toBe(0);
+    // A company president is no head of state. Since the business family (owner, 2026-11-13), the president
+    // of Toyota (the chief executive of a top company) who resigns is a business event, never politics.
+    expect(classify('Toyota President Resigns After Japan Safety Scandal')).toMatchObject({ family: 'business', tier: 2, subject: { country: 'JPN' } });
+    expect(classify("Japan's Toyota president resigns over safety test scandal")).toMatchObject({ family: 'business', tier: 2, subject: { country: 'JPN' } });
     expect(tier('Burger King president resigns')).toBe(0);
     expect(tier('Liverpool president ousted by fans')).toBe(0);
     expect(tier('FIFA president arrested in Zurich')).toBe(0);

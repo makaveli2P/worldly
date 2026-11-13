@@ -14,6 +14,8 @@
     "bias": "node scripts/build-bias.mjs",
     "aliases": "node scripts/build-news-aliases.mjs",
     "aliases:breaking": "node scripts/build-aliases.mjs",
+    "places:breaking": "node scripts/build-places.mjs",
+    "companies:breaking": "node scripts/build-companies.mjs",
     "audit:news": "node scripts/audit-news.mjs",
     "texture": "node scripts/build-texture.mjs",
     "icons": "node scripts/build-icons.mjs",

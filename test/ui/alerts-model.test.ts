@@ -7,9 +7,12 @@ import {
   POLL_MS,
   NO_ALERTS,
   SAME_STORY_MS,
+  STALE_ARTICLE_MS,
   StorySet,
   ageWords,
   announcement,
+  articleTime,
+  firstReportedWords,
   holdDropped,
   newStories,
   nextIndex,
@@ -98,6 +101,30 @@ describe('parseBreakingResponse', () => {
   });
 });
 
+describe('the article date', () => {
+  const base = { key: 'k', country: 'FRA', level: 'major', headline: 'H', url: 'https://x.org', since: iso(300) };
+
+  it('C1: parseAlert keeps a valid publishedAt, gives null for a bad one, and leaves it out when absent', () => {
+    expect(parseAlert(base)).not.toHaveProperty('publishedAt');
+    expect(parseAlert({ ...base, publishedAt: null })?.publishedAt).toBeNull();
+    expect(parseAlert({ ...base, publishedAt: 'garbage' })?.publishedAt).toBeNull();
+    expect(parseAlert({ ...base, publishedAt: iso(5) })?.publishedAt).toBe(iso(5));
+  });
+
+  it('C2: articleTime is since for an older server, null for an undated article, else the article date', () => {
+    expect(articleTime({ since: iso(300) })).toBe(iso(300));
+    expect(articleTime({ since: iso(300), publishedAt: null })).toBeNull();
+    expect(articleTime({ since: iso(300), publishedAt: iso(5) })).toBe(iso(5));
+  });
+
+  it('firstReportedWords names the first report only when it is 1 h or more before the article', () => {
+    expect(firstReportedWords({ since: iso(300), publishedAt: iso(5) }, NOW)).toBe('5 hours ago');
+    expect(firstReportedWords({ since: iso(50), publishedAt: iso(5) }, NOW)).toBeNull();
+    expect(firstReportedWords({ since: iso(300) }, NOW)).toBeNull();
+    expect(firstReportedWords({ since: iso(300), publishedAt: null }, NOW)).toBeNull();
+  });
+});
+
 describe('order and filters', () => {
   it('puts critical first, then the newest evidence', () => {
     const list = sortAlerts([
@@ -134,6 +161,20 @@ describe('order and filters', () => {
       alert({ key: 'stale', country: 'FRA', since: iso(60 * 30), updatedAt: iso(MAX_AGE_MS / 60_000 + 1) }),
     ];
     expect(visibleAlerts(list, none, resolve, NOW).map((a) => a.key)).toEqual(['fresh']);
+  });
+
+  it('C5: drops an alert whose article is older than 8 h, also with fresh evidence; keeps an undated article', () => {
+    const list = [
+      alert({ key: 'old', country: 'JPN', publishedAt: iso(STALE_ARTICLE_MS / 60_000 + 60), updatedAt: iso(5) }),
+      alert({ key: 'undated', country: 'FRA', publishedAt: null }),
+      alert({ key: 'fresh', country: 'UKR', publishedAt: iso(30) }),
+    ];
+    expect(visibleAlerts(list, none, resolve, NOW).map((a) => a.key).sort()).toEqual(['fresh', 'undated']);
+  });
+
+  it('C4: a new article date alone is a new view', () => {
+    const a = [alert({ key: 'a', country: 'JPN', publishedAt: iso(30) })];
+    expect(sameView(a, [{ ...a[0], publishedAt: iso(5) }])).toBe(false);
   });
 
   it('compares what the chip shows, but not the age', () => {
@@ -317,6 +358,39 @@ describe('story identity', () => {
     const moved = { ...base, key: 'UKR-disaster-20261110', since: '2026-11-10T00:10:00Z' };
     const fresh = alert({ key: 'JPN-disaster-20261110', country: 'JPN' });
     expect(newStories([moved, fresh], announced).map((a) => a.key)).toEqual([fresh.key]);
+  });
+});
+
+describe('business alerts', () => {
+  const nvidia = alert({ key: 'USA-business-20261112-Q182477', country: 'USA', kind: 'business', subject: 'Q182477', since: '2026-11-12T13:00:00Z' });
+  const dow = alert({ key: 'USA-business-20261112-mkt-USA', country: 'USA', kind: 'business', subject: 'mkt-USA', since: '2026-11-12T14:00:00Z' });
+
+  it('parses the kind and the subject', () => {
+    const a = parseAlert({ ...nvidia });
+    expect(a).toMatchObject({ kind: 'business', subject: 'Q182477' });
+    expect(parseAlert({ ...nvidia, subject: 42 })).not.toHaveProperty('subject');
+    expect(parseAlert({ ...nvidia, subject: 'x'.repeat(65) })).not.toHaveProperty('subject');
+    const { subject: _drop, ...noSubject } = nvidia;
+    expect(parseAlert(noSubject)).not.toHaveProperty('subject');
+  });
+
+  it('two subjects of one country and day are two stories; one subject is one story', () => {
+    expect(sameStory(nvidia, dow)).toBe(false);
+    expect(sameStory(nvidia, { ...nvidia, key: 'USA-business-20261113-Q182477', since: '2026-11-13T01:00:00Z' })).toBe(true);
+    // A stored story with no subject (before the business kind) keeps the rule of the country and kind.
+    const { subject: _drop, ...old } = nvidia;
+    expect(sameStory(old, dow)).toBe(true);
+  });
+
+  it('a dismissed company story does not hide another business story of the same country', () => {
+    const s = (() => {
+      const data = new Map<string, string>();
+      return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
+    })();
+    new StorySet('k', s).add(nvidia);
+    const again = new StorySet('k', s);
+    expect(again.has({ ...nvidia, key: 'USA-business-20261113-Q182477' })).toBe(true);
+    expect(again.has(dow)).toBe(false);
   });
 });
 
