@@ -3,7 +3,9 @@ import {
   LARGE_IDLE_MS,
   SETTLE_MS,
   canUploadTexture,
+  TEXEL_TARGET,
   chooseTextureTiers,
+  mapNeededTextureWidth,
   neededTextureWidth,
   nextTextureLevel,
   type UploadState,
@@ -117,5 +119,28 @@ describe('canUploadTexture', () => {
     expect(canUploadTexture({ ...rest, spinning: true })).toBe(false);
     expect(canUploadTexture({ ...rest, idleMs: LARGE_IDLE_MS - 1 })).toBe(false);
     expect(canUploadTexture(rest)).toBe(true);
+  });
+});
+
+describe('mapNeededTextureWidth', () => {
+  it('gives the width at which one texel covers one device pixel at the equator, times TEXEL_TARGET', () => {
+    // 300 CSS px per radian at dpr 2: the world is 2π · 600 device px wide.
+    expect(mapNeededTextureWidth(300, 2, 0)).toBeCloseTo(2 * Math.PI * 600 * TEXEL_TARGET, 6);
+  });
+
+  it('grows by sec(lat) toward the poles, up to 2', () => {
+    const eq = mapNeededTextureWidth(300, 1, 0);
+    expect(mapNeededTextureWidth(300, 1, 45) / eq).toBeCloseTo(Math.SQRT2, 9);
+    expect(mapNeededTextureWidth(300, 1, -45) / eq).toBeCloseTo(Math.SQRT2, 9);
+    expect(mapNeededTextureWidth(300, 1, 60) / eq).toBeCloseTo(2, 9);
+    expect(mapNeededTextureWidth(300, 1, 80) / eq).toBe(2);
+    expect(mapNeededTextureWidth(300, 1, 90) / eq).toBe(2);
+  });
+
+  it('asks for the 4096 tier at the home view of a desktop, and the 8192 tier only zoomed in', () => {
+    // sHome on 1440 x 900 is about 257 px per radian.
+    expect(mapNeededTextureWidth(257, 2, 20)).toBeGreaterThan(2048);
+    expect(mapNeededTextureWidth(257, 2, 20)).toBeLessThan(4096);
+    expect(mapNeededTextureWidth(1000, 2, 20)).toBeGreaterThan(8192);
   });
 });

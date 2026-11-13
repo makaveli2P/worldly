@@ -1,12 +1,12 @@
-// Page frame: globe container, label overlay, header (brand, search slot, map style and
+// Page frame: globe container, label overlay, header (brand, search slot, view, map style and
 // theme toggles), first-use hint, instrument readout and the panel layer.
 
 import { h, svgIcon } from './dom';
 import { getLayout, isMobileViewport } from './layout';
-import { Prefs, type MapStyle, type ThemeName } from './prefs';
+import { Prefs, type MapStyle, type ThemeName, type ViewKind } from './prefs';
 import { Readout, type ReadoutView } from './readout';
 
-export type { MapStyle, ThemeName } from './prefs';
+export type { MapStyle, ThemeName, ViewKind } from './prefs';
 export type { ReadoutView } from './readout';
 
 /** Dispatch on window after the first drag, click or tap; the hint fades out. */
@@ -27,6 +27,8 @@ export interface Shell {
   panelInsets(): { left: number; right: number; top: number; bottom: number };
   /** Screen rects of the open panels (mobile: the sheet is "details"). Null when closed. */
   panelRects(): { details: DOMRect | null; news: DOMRect | null };
+  /** The readout and the hint text while it shows, in client px. The overlay keeps map labels out of them. */
+  chromeRects(): DOMRect[];
   isMobile(): boolean;
   mapStyle(): MapStyle;
   setMapStyle(s: MapStyle): void;
@@ -34,10 +36,61 @@ export interface Shell {
   theme(): ThemeName;
   setTheme(t: ThemeName): void;
   onThemeChange(cb: (t: ThemeName) => void): () => void;
+  view(): ViewKind;
+  setView(v: ViewKind): void;
+  onViewChange(cb: (v: ViewKind) => void): () => void;
 }
 
 const SUN = 'M8 4.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM8 0.5v2M8 13.5v2M0.5 8h2M13.5 8h2M2.7 2.7l1.4 1.4M11.9 11.9l1.4 1.4M2.7 13.3l1.4-1.4M11.9 4.1l1.4-1.4';
 const MOON = 'M13.5 10.2A6 6 0 0 1 5.8 2.5a6 6 0 1 0 7.7 7.7Z';
+// The view glyphs: a globe with a meridian and the equator, and a folded map.
+const GLOBE = 'M8 1.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13ZM1.5 8h13M8 1.5c-3.2 3.6-3.2 9.4 0 13M8 1.5c3.2 3.6 3.2 9.4 0 13';
+const MAP = 'M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5ZM5.5 2v10.5M10.5 3.5V14';
+
+const ARROWS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+
+/**
+ * A radio group of buttons in the header. The arrow keys move the choice; only the checked button is
+ * in the Tab order. An option with an icon shows the icon in place of its text on narrow screens
+ * (src/styles.css); the button keeps the text as its name.
+ */
+function radioToggle<T extends string>(
+  label: string,
+  options: [T, string, string?][],
+  get: () => T,
+  set: (v: T) => void,
+  onChange: (cb: (v: T) => void) => void,
+): HTMLElement {
+  const buttons = options.map(([value, text, icon]) => {
+    const b = h('button', { type: 'button', role: 'radio', 'data-value': value }, icon ? [svgIcon(icon, 16), h('span', { class: 'toggle-text' }, text)] : text);
+    if (icon) {
+      b.setAttribute('aria-label', text);
+      b.title = text;
+    }
+    b.addEventListener('click', () => set(value));
+    return b;
+  });
+  const group = h('div', { class: 'toggle', role: 'radiogroup', 'aria-label': label }, buttons);
+  group.addEventListener('keydown', (e) => {
+    if (!ARROWS.includes(e.key)) return;
+    e.preventDefault();
+    const step = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1;
+    const i = options.findIndex(([v]) => v === get());
+    const next = (i + step + options.length) % options.length;
+    set(options[next][0]);
+    buttons[next].focus();
+  });
+  const sync = (v: T) => {
+    buttons.forEach((b) => {
+      const on = b.dataset.value === v;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+  };
+  sync(get());
+  onChange(sync);
+  return group;
+}
 
 export function mountShell(app: HTMLElement): Shell {
   const prefs = new Prefs();
@@ -45,31 +98,28 @@ export function mountShell(app: HTMLElement): Shell {
   const globe = h('div', { class: 'globe' });
   const overlay = h('div', { class: 'overlay', 'aria-hidden': 'true' });
 
-  // ---- map style: a two-option radio group ----
-  const styles: [MapStyle, string][] = [
-    ['satellite', 'Satellite'],
-    ['atlas', 'Atlas'],
-  ];
-  const styleButtons = styles.map(([value, label]) => {
-    const b = h('button', { type: 'button', role: 'radio', 'data-style': value }, label);
-    b.addEventListener('click', () => prefs.setMapStyle(value));
-    return b;
-  });
-  const styleGroup = h('div', { class: 'toggle', role: 'radiogroup', 'aria-label': 'Map style' }, styleButtons);
-  styleGroup.addEventListener('keydown', (e) => {
-    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
-    e.preventDefault();
-    const next: MapStyle = prefs.mapStyle === 'satellite' ? 'atlas' : 'satellite';
-    prefs.setMapStyle(next);
-    styleButtons[next === 'satellite' ? 0 : 1].focus();
-  });
-  const syncStyle = (s: MapStyle) => {
-    styleButtons.forEach((b) => {
-      const on = b.dataset.style === s;
-      b.setAttribute('aria-checked', String(on));
-      b.tabIndex = on ? 0 : -1;
-    });
-  };
+  // ---- view and map style: two-option radio groups ----
+  const viewGroup = radioToggle<ViewKind>(
+    'View',
+    [
+      ['globe', 'Globe', GLOBE],
+      ['map', 'Map', MAP],
+    ],
+    () => prefs.view,
+    (v) => prefs.setView(v),
+    (cb) => prefs.onViewChange(cb),
+  );
+  viewGroup.classList.add('view-toggle');
+  const styleGroup = radioToggle<MapStyle>(
+    'Map style',
+    [
+      ['satellite', 'Satellite'],
+      ['atlas', 'Atlas'],
+    ],
+    () => prefs.mapStyle,
+    (s) => prefs.setMapStyle(s),
+    (cb) => prefs.onMapStyleChange(cb),
+  );
 
   // ---- theme: one icon button ----
   const themeButton = h('button', { type: 'button', class: 'theme-toggle' });
@@ -82,7 +132,7 @@ export function mountShell(app: HTMLElement): Shell {
     themeButton.replaceChildren(svgIcon(next === 'dark' ? MOON : SUN, 16));
   };
 
-  // Empty until an alert comes. Tab order: brand, search, breaking, map style, theme.
+  // Empty until an alert comes. Tab order: brand, search, breaking, view, style, theme.
   const breakingSlot = h('div', { class: 'brk-slot', 'data-breaking-slot': true });
 
   const header = h(
@@ -93,14 +143,14 @@ export function mountShell(app: HTMLElement): Shell {
       { class: 'brand' },
       h(
         'a',
-        { class: 'brand-link', href: '/', title: 'Reset the globe' },
+        { class: 'brand-link', href: '/', title: 'Reset the view' },
         h('span', { class: 'brand-mark', 'aria-hidden': 'true' }),
         'Worldly',
       ),
     ),
     h('div', { class: 'search-slot', 'data-search-slot': true }),
     breakingSlot,
-    h('div', { class: 'bar-tools' }, styleGroup, themeButton),
+    h('div', { class: 'bar-tools' }, viewGroup, styleGroup, themeButton),
   );
 
   // A plain click on the wordmark resets the app in place; modified clicks open "/" as usual.
@@ -112,7 +162,10 @@ export function mountShell(app: HTMLElement): Shell {
   });
 
   const touch = window.matchMedia('(hover: none)').matches;
-  const hint = h('p', { class: 'hint' }, touch ? 'Tap a country · Double-tap to reset' : 'Drag to spin · Click a country · Double-click to reset');
+  const hintText = (v: ViewKind) =>
+    touch ? 'Tap a country · Double-tap to reset' : `Drag to ${v === 'map' ? 'pan' : 'spin'} · Click a country · Double-click to reset`;
+  const hint = h('p', { class: 'hint' }, hintText(prefs.view));
+  prefs.onViewChange((v) => (hint.textContent = hintText(v)));
   const readout = new Readout();
   const ui = h('div', { class: 'ui', 'data-ui-host': true }, header, hint, readout.el);
   app.append(globe, overlay, ui);
@@ -126,9 +179,7 @@ export function mountShell(app: HTMLElement): Shell {
   if (typeof ResizeObserver === 'function') {
     new ResizeObserver(() => ui.style.setProperty('--readout-h', `${readout.el.offsetHeight}px`)).observe(readout.el);
   }
-  syncStyle(prefs.mapStyle);
   syncTheme(prefs.theme);
-  prefs.onMapStyleChange(syncStyle);
   prefs.onThemeChange(syncTheme);
   window.addEventListener(INTERACTED_EVENT, () => hint.setAttribute('data-hidden', ''), { once: true });
 
@@ -145,6 +196,16 @@ export function mountShell(app: HTMLElement): Shell {
       return insets;
     },
     panelRects: () => layout.rects(),
+    chromeRects: () => {
+      const out = [readout.el.getBoundingClientRect()];
+      if (!hint.hasAttribute('data-hidden')) {
+        // The text only: the hint element spans the full width.
+        const range = document.createRange();
+        range.selectNodeContents(hint);
+        out.push(range.getBoundingClientRect());
+      }
+      return out;
+    },
     isMobile: isMobileViewport,
     mapStyle: () => prefs.mapStyle,
     setMapStyle: (s) => prefs.setMapStyle(s),
@@ -152,5 +213,8 @@ export function mountShell(app: HTMLElement): Shell {
     theme: () => prefs.theme,
     setTheme: (t) => prefs.setTheme(t),
     onThemeChange: (cb) => prefs.onThemeChange(cb),
+    view: () => prefs.view,
+    setView: (v) => prefs.setView(v),
+    onViewChange: (cb) => prefs.onViewChange(cb),
   };
 }

@@ -3,7 +3,7 @@
 
 export const SLOTS = 4;
 
-const lighting = /* glsl */ `
+export const lighting = /* glsl */ `
   // Soft, even light from the upper left, plus a sky/ground term.
   float shade(vec3 n) {
     vec3 L = normalize(vec3(-0.45, 0.6, 0.66));
@@ -16,7 +16,7 @@ const lighting = /* glsl */ `
 // Equirectangular lookup by direction. The u derivative comes from whichever of two
 // parametrisations has no seam at this pixel, so the mip level stays right at the antimeridian.
 // The texture uploads with flipY = false (an ImageBitmap ignores flipY), so image row 0 (north) is v = 0.
-const earth = /* glsl */ `
+export const earthSample = /* glsl */ `
   uniform sampler2D tMap;
   vec3 sampleEarth(vec3 d) {
     float lon = atan(d.x, d.z);
@@ -33,12 +33,18 @@ const earth = /* glsl */ `
     }
     return textureGrad(tMap, uv, dx, dy).rgb;
   }
-  // Satellite grade: darker toward the limb, a little lift in the mid tones.
+`;
+
+// The satellite colour grade. facing = 1 gives the grade at the centre of the globe.
+export const gradeEarth = /* glsl */ `  // Satellite grade: darker toward the limb, a little lift in the mid tones.
   vec3 gradeEarth(vec3 c, float facing) {
     c *= 0.72 + 0.28 * pow(facing, 0.6);
     return pow(max(c, vec3(0.0)), vec3(0.92)) * 1.08;
   }
 `;
+
+// The globe compiles the two chunks as one, in this order.
+const earth = earthSample + gradeEarth;
 
 export const oceanVertex = /* glsl */ `
   varying vec3 vNormal;
@@ -71,8 +77,9 @@ export const oceanFragment = /* glsl */ `
   }
 `;
 
-// Shared by the land mesh and the border lines.
-const landVertexHead = /* glsl */ `
+// The slot lookup that the land mesh and the border lines of both views share: the attributes,
+// the slot and style uniforms, and resolveSlot(), which sets the raise and the colours of this vertex.
+export const slotHead = /* glsl */ `
   attribute float countryIndex;
   attribute float kind;
   uniform float uSlotIndex[${SLOTS}];
@@ -83,9 +90,6 @@ const landVertexHead = /* glsl */ `
   uniform vec3 uLand;
   uniform vec3 uWall;
   uniform vec3 uColor;
-  uniform float uBaseRadius;
-  uniform float uLift;
-  uniform float uOffset;
 
   float lift;
   vec3 capColor;
@@ -106,12 +110,22 @@ const landVertexHead = /* glsl */ `
       }
     }
   }
+`;
+
+// Globe placement: a unit direction raised to its radius.
+export const globePlace = /* glsl */ `
+  uniform float uBaseRadius;
+  uniform float uLift;
+  uniform float uOffset;
 
   vec4 placeVertex() {
     float r = uBaseRadius + kind * lift * uLift + uOffset;
     return modelViewMatrix * vec4(position * r, 1.0);
   }
 `;
+
+// Shared by the land mesh and the border lines of the globe.
+const landVertexHead = slotHead + globePlace;
 
 export const landVertex = /* glsl */ `
   ${landVertexHead}

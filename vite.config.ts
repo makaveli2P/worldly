@@ -164,8 +164,9 @@ function worldlySeo(): Plugin {
     },
     transformIndexHtml: {
       // After the transforms of Vite, so that Vite does not touch the JSON-LD script.
+      // The dev pages in dev/ (for example dev/map.html) have no SEO markers: they stay as they are.
       order: 'post',
-      handler: async (html) => (await load()).renderHomePage(html, countries()),
+      handler: async (html, ctx) => (ctx.path.startsWith('/dev/') ? html : (await load()).renderHomePage(html, countries())),
     },
     generateBundle: {
       // After vite:build-html writes index.html with the hashed asset names.

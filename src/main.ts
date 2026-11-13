@@ -1,14 +1,15 @@
-// App wiring: loads the data, builds the globe and panels, and keeps the selection in sync.
+// App wiring: loads the data, builds the view (globe or flat map) and panels, and keeps the selection in sync.
 
 import { worldFeatures, type LiteCountryInfo, type WorldTopology } from './data/precompute';
 import { HOME_TITLE, countryTitle } from './data/site';
 import { COUNTRY_PATH_PREFIX, countrySlug, slugFromPath } from './data/slug';
-import { Globe } from './globe/Globe';
 import { Overlay } from './overlay';
 import { unpackLabelSites, usePrecomputedLabelSites, type LabelsFile } from './overlay/labelPoints';
 import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, RESET_EVENT, Tooltip, mountShell } from './ui';
 import type { BreakingFeedOptions } from './ui/alerts';
 import type { BreakingAlert, CountryId, CountryInfo, NewsResponse } from './types';
+import type { ViewKind } from './view/types';
+import { ViewHost, loadMap } from './view/ViewHost';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const shell = mountShell(app);
@@ -49,6 +50,8 @@ interface BootData {
 }
 
 async function start(): Promise<void> {
+  // The map chunk loads at the same time as the data. index.html sets data-view before first paint.
+  if (document.documentElement.dataset.view === 'map') void loadMap().catch(() => undefined);
   // The start does not wait for the fonts: the overlay measures the labels again when they load.
   const boot = (window as Window & { __worldlyBoot?: BootData }).__worldlyBoot;
   const full = boot?.countries ?? getJson<Record<CountryId, CountryInfo>>('/data/countries.json');
@@ -86,7 +89,12 @@ async function start(): Promise<void> {
     onSelect: (id) => select(id),
   });
 
-  const globe = new Globe({
+  // A toggle click while the first view loads: keep the last request, and switch to it after the load.
+  let requestedView = null as ViewKind | null; // "as": the callback sets it, so TS must not narrow it to null
+  const offEarlyView = shell.onViewChange((k) => (requestedView = k));
+
+  // The globe or the flat map. The host keeps the same API when the visitor switches between them.
+  const view = await ViewHost.create(shell.view(), {
     container: shell.globe,
     features,
     mapStyle: shell.mapStyle(),
@@ -115,7 +123,7 @@ async function start(): Promise<void> {
         setPreview(id);
       }
     },
-    // Double-click or double-tap: the globe already turned home. Close the panels and set the URL to /.
+    // Double-click or double-tap: the view already went home. Close the panels and set the URL to /.
     onReset: () => {
       tooltip.hide();
       deselect();
@@ -125,18 +133,33 @@ async function start(): Promise<void> {
   // ---- overlay: labels, leader lines and the readout ----
 
   // The overlay reads only the lite fields (LITE_FIELDS), one time, in its constructor.
-  const overlay = new Overlay(shell.overlay, { countries: countries as Record<CountryId, CountryInfo>, features, globe });
+  const overlay = new Overlay(shell.overlay, {
+    countries: countries as Record<CountryId, CountryInfo>,
+    features,
+    globe: view,
+    chromeRects: () => shell.chromeRects(),
+  });
   overlay.setTheme(shell.theme());
   overlay.setMapStyle(shell.mapStyle());
   overlay.setMobile(shell.isMobile());
   shell.onThemeChange((t) => {
-    globe.setTheme(t);
+    view.setTheme(t);
     overlay.setTheme(t);
   });
   shell.onMapStyleChange((s) => {
-    globe.setMapStyle(s);
+    view.setMapStyle(s);
     overlay.setMapStyle(s);
   });
+  // The toggle shows the view on screen: after a failed load, it goes back to the view that stays.
+  const showView = async (k: ViewKind): Promise<void> => {
+    tooltip.hide();
+    const shown = await view.switchTo(k);
+    if (shown) shell.setView(shown);
+  };
+  offEarlyView();
+  shell.onViewChange((k) => void showView(k));
+  if (requestedView && requestedView !== view.kind) void showView(requestedView);
+  else shell.setView(view.kind); // the map did not load at boot: the toggle and the hint show the globe
 
   // The readout writes text only when a value changes; limit it to ~15 updates a second.
   let lastReadout = 0;
@@ -144,15 +167,15 @@ async function start(): Promise<void> {
     const now = performance.now();
     if (now - lastReadout < 66) return;
     lastReadout = now;
-    shell.readout.update(globe.getView(), selected);
+    shell.readout.update(view.getView(), selected);
   };
-  globe.onFrame(updateReadout);
+  view.onFrame(updateReadout);
   // Dev-only handle for browser tests; removed from the production bundle.
-  if (import.meta.env.DEV) Object.assign(window, { __worldly: { globe, overlay } });
+  if (import.meta.env.DEV) Object.assign(window, { __worldly: { view, globe: view, overlay } });
 
   function setPreview(id: CountryId | null): void {
     preview = id;
-    globe.setPreview(id);
+    view.setPreview(id);
     const name = id ? nameOf(id) : null;
     if (id && name) {
       // Touch: a tap on the label opens the previewed country.
@@ -219,10 +242,10 @@ async function start(): Promise<void> {
     if (id === selected) return setUrl(id);
     selected = id;
     window.dispatchEvent(new Event(INTERACTED_EVENT));
-    globe.setSelected(id);
+    view.setSelected(id);
     overlay.setSelected(id);
     lastReadout = 0;
-    if (info?.latlng) globe.focus(info.latlng);
+    if (info?.latlng) view.focus(info.latlng);
     const name = nameOf(id) ?? id;
     if (info) details.show(info);
     else details.hide();
@@ -247,16 +270,16 @@ async function start(): Promise<void> {
     selected = null;
     newsRequest?.abort();
     newsRequest = null;
-    globe.setSelected(null);
+    view.setSelected(null);
     overlay.setSelected(null);
     lastReadout = 0;
-    shell.readout.update(globe.getView(), null);
+    shell.readout.update(view.getView(), null);
     details.hide();
     news.hide();
     document.title = HOME_TITLE;
     setUrl(null);
     syncInsets();
-    if (focusInPanels) globe.focusCanvas();
+    if (focusInPanels) view.focusCanvas();
   }
 
   function resolveId(raw: string): CountryId | null {
@@ -303,7 +326,7 @@ async function start(): Promise<void> {
 
   function syncInsets(): void {
     const insets = shell.panelInsets();
-    globe.setViewportInsets(insets);
+    view.setViewportInsets(insets);
     overlay.setMobile(shell.isMobile());
     overlay.setTopInset(insets.top);
     rectsUntil = performance.now() + 600;
@@ -320,7 +343,7 @@ async function start(): Promise<void> {
 
   // The wordmark and Home: back to the first-load state (view, selection, URL, search).
   function resetAll(): void {
-    globe.resetView();
+    view.resetView();
     tooltip.hide();
     deselect();
     const input = document.querySelector<HTMLInputElement>('.search-input');
@@ -421,10 +444,10 @@ async function start(): Promise<void> {
           nameOf,
           resolve: resolveId,
           onSelect: (a) => {
-            // select() does nothing for the selected country: turn the globe back to it.
+            // select() does nothing for the selected country: move the view back to it.
             const ll = countries[a.country]?.latlng;
             if (a.country === selected) {
-              if (ll) globe.focus(ll);
+              if (ll) view.focus(ll);
             } else select(a.country);
             overlay.pulseAlert(a.country);
           },
@@ -440,7 +463,7 @@ async function start(): Promise<void> {
               syncInsets();
             }
           },
-          focusFallback: () => globe.focusCanvas(),
+          focusFallback: () => view.focusCanvas(),
         });
         startBreakingFeed({
           onAlerts: (alerts) => {

@@ -35,6 +35,7 @@ export interface BoundingCap {
 
 export interface GlobeGeometryData {
   positions: Float32Array; // unit directions, xyz
+  seams: SeamRange[]; // the polygons near or across the antimeridian (src/map/plane.ts)
   countryIndex: Uint16Array;
   kind: Uint8Array;
   triangles: Uint32Array;
@@ -43,6 +44,18 @@ export interface GlobeGeometryData {
   lineRanges: Range[];
   caps: BoundingCap[]; // per country, for the pick prefilter
 }
+
+/**
+ * The vertices of one polygon that touches or crosses the antimeridian, and their unwrapped plane lon in
+ * degrees (past ±180 where the ring goes across). The flat map gets each other lon from the position.
+ */
+export interface SeamRange {
+  start: number; // first vertex
+  lon: Float32Array; // one lon per vertex from start
+}
+
+/** A polygon with a lon past this limit is a seam polygon: atan2 of its position can give the wrong side. */
+const SEAM_LON = 179.9;
 
 /** Ring in plane lon/lat. real[i] = false when the edge i -> i+1 is not a true border. */
 interface PlaneRing {
@@ -72,6 +85,14 @@ class Growable {
   result<T>(): T {
     return this.data.slice(0, this.length) as unknown as T;
   }
+}
+
+/** lat/lng in degrees of the centre of a bounding cap. */
+export function capCentre(c: BoundingCap): { lat: number; lng: number } {
+  return {
+    lat: (Math.asin(Math.max(-1, Math.min(1, c.y))) * 180) / Math.PI,
+    lng: (Math.atan2(c.x, c.z) * 180) / Math.PI,
+  };
 }
 
 export function lonLatToVec(lon: number, lat: number, out: number[] = [0, 0, 0]): number[] {
@@ -227,6 +248,7 @@ function polygonsOf(f: CountryFeature): Position[][][] {
 
 export function buildGlobeGeometry(features: CountryFeature[]): GlobeGeometryData {
   const pos = new Growable(Float32Array, 1 << 20);
+  const seams: SeamRange[] = [];
   const cidx = new Growable(Uint16Array, 1 << 18);
   const kind = new Growable(Uint8Array, 1 << 18);
   const tri = new Growable(Uint32Array, 1 << 20);
@@ -302,6 +324,19 @@ export function buildGlobeGeometry(features: CountryFeature[]): GlobeGeometryDat
       // Walls: one bottom vertex (kind 0) per ring point; quads on real edges.
       const bottom = pos.length / 3;
       for (let i = 0; i < ringPoints; i++) addVertex(lon[i], lat[i], ci, 0);
+      // Keep the unwrapped lon of a polygon at the antimeridian. Few polygons need it, so the boot stays fast.
+      let lMin = Infinity;
+      let lMax = -Infinity;
+      for (const x of lon) {
+        if (x < lMin) lMin = x;
+        if (x > lMax) lMax = x;
+      }
+      if (lMin < -SEAM_LON || lMax > SEAM_LON) {
+        const seam = new Float32Array(lon.length + ringPoints);
+        seam.set(lon);
+        seam.set(lon.slice(0, ringPoints), lon.length);
+        seams.push({ start: base, lon: seam });
+      }
       rings.forEach((ring, r) => {
         const s = ringStarts[r];
         const n = ring.lon.length;
@@ -341,6 +376,7 @@ export function buildGlobeGeometry(features: CountryFeature[]): GlobeGeometryDat
 
   return {
     positions: pos.result<Float32Array>(),
+    seams,
     countryIndex: cidx.result<Uint16Array>(),
     kind: kind.result<Uint8Array>(),
     triangles: tri.result<Uint32Array>(),
