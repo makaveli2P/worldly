@@ -14,6 +14,9 @@ export interface Headline {
   publisher: string; // "BBC News", or the <source> of a Google News item
   url: string;
   publishedAt: string | null; // ISO 8601
+  // Google News only: the other outlets that Google lists for this item in <description> (its "cluster"),
+  // without the publisher of the item, at most CLUSTER_MAX names. Absent when Google lists no other outlet.
+  cluster?: string[];
 }
 
 export interface ItnBlurb {
