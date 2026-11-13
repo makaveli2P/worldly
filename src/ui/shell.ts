@@ -51,8 +51,8 @@ const ARROWS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
 
 /**
  * A radio group of buttons in the header. The arrow keys move the choice; only the checked button is
- * in the Tab order. An option with an icon shows the icon in place of its text on narrow screens
- * (src/styles.css); the button keeps the text as its name.
+ * in the Tab order. An option with an icon shows only the icon (src/styles.css); the button keeps the
+ * text as its name (aria-label and title).
  */
 function radioToggle<T extends string>(
   label: string,

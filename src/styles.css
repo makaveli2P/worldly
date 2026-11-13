@@ -300,10 +300,18 @@ a {
   outline-color: var(--accent);
 }
 
-/* The view toggle (Globe | Map) shows its text, and an icon only on narrow phones (see the 479px block). */
+/* The view toggle (Globe | Map) shows icons only. The button keeps the word as its name (aria-label, title). */
 .toggle button svg {
-  display: none;
+  display: block;
   flex: none;
+}
+
+.toggle.view-toggle button {
+  padding: 0 10px;
+}
+
+.view-toggle .toggle-text {
+  display: none;
 }
 
 .theme-toggle {
@@ -2185,8 +2193,8 @@ a {
   }
 }
 
-/* Narrow phones: three header tools sit next to the brand. The view toggle shows icons, and the
-   spacing is tighter, so the header fits at 360px. This block comes after the 767px block, so it wins. */
+/* Narrow phones: three header tools sit next to the brand. The spacing is tighter, so the header
+   fits at 360px. This block comes after the 767px block, so it wins. */
 @media (max-width: 479px) {
   .bar {
     column-gap: 12px;
@@ -2202,14 +2210,6 @@ a {
 
   .toggle.view-toggle button {
     padding: 0 8px;
-  }
-
-  .view-toggle button svg {
-    display: block;
-  }
-
-  .view-toggle .toggle-text {
-    display: none;
   }
 }
 
