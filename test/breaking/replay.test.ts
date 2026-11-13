@@ -58,11 +58,22 @@ describe('replays of real inputs', () => {
     // Bulgarian motorway" has no event word in the order that the accident rule reads.
     expect(r.alerts[0].outlets).toBe(6);
   });
+
+  it('2026-11-13 17:20Z live: the Kaziranga bus crash (24-26 dead) is major; Google lists 3 more outlets under The Hindu item', () => {
+    // Feed voices: BBC (world #11), Al Jazeera (#6) and The Hindu (IN #3). The cluster of The Hindu item
+    // adds Reuters, NDTV and Arunachal24; Al Jazeera counts once. The fixtures before it have no clusters.
+    const r = replay('live-2026-11-13T1720Z-kaziranga');
+    expect(brief('live-2026-11-13T1720Z-kaziranga')).toEqual(['IND:major:accident:news']);
+    expect(r.alerts[0].outlets).toBe(6);
+    const ind = detect(inputsOf('live-2026-11-13T1720Z-kaziranga')).candidates.find((c) => c.id === 'IND')!;
+    expect([ind.voices, ind.cluster]).toEqual([3, ['Reuters', 'NDTV', 'Arunachal24']]);
+  });
 });
 
 const FIXTURES = [
   'replay-2026-10-16T0800Z', 'replay-2026-10-23T0600Z', 'replay-2026-10-28T2230Z',
   'live-2026-11-10T1315Z', 'live-2026-11-10T1510Z', 'live-2026-11-10T1545Z', 'live-2026-11-10T1630Z-wide',
+  'live-2026-11-13T1720Z-kaziranga',
 ];
 
 describe('the article of each alert', () => {

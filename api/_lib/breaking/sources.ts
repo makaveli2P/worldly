@@ -1,7 +1,7 @@
 // Upstream sources of the breaking-news detector: outlet front pages, Google News editions,
 // Wikipedia "In the news", GDACS and USGS. All requests run in parallel with a short timeout.
 import { parseRssItems } from '../rss.js';
-import { cleanText, safeUrl, toIso } from '../text.js';
+import { cleanText, safeUrl, tidySource, toIso } from '../text.js';
 import { primaryCountries } from './match.js';
 import type { BreakingInputs, FeedKind, Hazard, HazardLevel, HazardType, Headline, Itn } from './types.js';
 
@@ -82,6 +82,27 @@ export function splitGoogleTitle(rawTitle: string, rawSource: string): { title: 
   return { title, publisher: source || 'Google News' };
 }
 
+/** A Google News item keeps at most this many other outlets of its cluster. Google lists 5 with the item. */
+export const CLUSTER_MAX = 4;
+
+/**
+ * The other outlets that Google lists for a Google News item (`RssItem.outlets`, from <description>):
+ * clean names, the publisher of the item and repeated names removed (case and spaces do not count).
+ */
+export function clusterOf(outlets: string[], publisher: string): string[] {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const seen = new Set([norm(publisher)]);
+  const out: string[] = [];
+  for (const raw of outlets) {
+    const name = tidySource(cleanText(raw, 80));
+    if (!name || seen.has(norm(name))) continue;
+    seen.add(norm(name));
+    out.push(name);
+    if (out.length >= CLUSTER_MAX) break;
+  }
+  return out;
+}
+
 /** RSS items of one feed, in feed order, with the position (1 = top). */
 export function parseFeed(src: FeedSource, xml: string, max = 40): Headline[] {
   const out: Headline[] = [];
@@ -91,7 +112,10 @@ export function parseFeed(src: FeedSource, xml: string, max = 40): Headline[] {
     if (!title || !url) return;
     let publisher = src.publisher ?? '';
     if (src.kind === 'gn') ({ title, publisher } = splitGoogleTitle(title, cleanText(item.source, 120)));
-    out.push({ feed: src.id, kind: src.kind, edition: src.edition, position: i + 1, title, publisher, url, publishedAt: toIso(cleanText(item.pubDate, 80)) });
+    const h: Headline = { feed: src.id, kind: src.kind, edition: src.edition, position: i + 1, title, publisher, url, publishedAt: toIso(cleanText(item.pubDate, 80)) };
+    const cluster = src.kind === 'gn' ? clusterOf(item.outlets, publisher) : [];
+    if (cluster.length) h.cluster = cluster;
+    out.push(h);
   });
   return out;
 }

@@ -12,6 +12,8 @@
 // See `lifeOf()`.
 import type { BreakingAlert, BreakingLevel, BreakingResponse } from '../../../src/types';
 import { BIZ_AFTERMATH } from './business.js';
+import { isPlatform } from '../domain.js';
+import { isPressRelease } from '../text.js';
 import { AFTERMATH, classify, isLive } from './classify.js';
 import { attackerCountries, countryWords, ongoingCountries, placeKeys, primaryCountries } from './match.js';
 import { FEEDS } from './sources.js';
@@ -34,6 +36,13 @@ export const CONFIG = {
   criticalOutlets: 4,
   criticalGateOutlets: 6, // with no ITN or hazard support, critical needs this many outlets
   majorOutlets: 3,
+  // Cluster voices: the other outlets that Google lists under a strong, placed and fresh Google News item
+  // (see clusterVoices()). They count only for the major bar and `outlets`. At most this many per story:
+  // the agreed tier still needs 2 feed voices, so 1 is enough for the bar; 3 keeps `outlets` near the
+  // real coverage (Google lists 4 other outlets), and the feeds stay most of the count of a 3-voice story.
+  clusterVoicesMax: 3,
+  // A story gets cluster voices only with victims: this agreed toll (the tier-2 toll), tier 3 or a hazard.
+  clusterMinDeaths: 5,
   businessOutlets: 4, // a business story needs this many outlets for major (the critical rules stay the same)
   chronicOutlets: 6, // a chronic war: an escalation needs this many outlets ...
   chronicEditions: 3, // ... and this many editions
@@ -138,14 +147,22 @@ const OUTLET_ALIASES: Record<string, string> = {
   nationalpublicradio: 'npr',
   nytimes: 'newyorktimes',
   bbccouk: 'bbc',
+  ndtv: 'ndtv', // the suffix rule would give "nd"
+  ndtvprofit: 'ndtv',
+  wsj: 'wallstreetjournal',
+  smh: 'sydneymorningherald',
+  rteie: 'rte',
   aljazeeranet: 'aljazeera',
   agencefrancepresse: 'afp',
   thomsonreuters: 'reuters',
 };
 
-/** "CBC News", "CBC" and "cbc.ca" are one outlet; so are "Al Jazeera" and "Al Jazeera English". */
+/**
+ * "CBC News", "CBC" and "cbc.ca" are one outlet; so are "Al Jazeera" and "Al Jazeera English". A tagline
+ * after a spaced dash goes: "ABC News - Breaking News, Latest News and Videos" is "ABC News".
+ */
 export function outletKey(publisher: string): string {
-  const key = publisherKey(publisher);
+  const key = publisherKey(publisher.split(/\s+[-–—|]\s+/u)[0]);
   if (OUTLET_ALIASES[key]) return OUTLET_ALIASES[key];
   const short = key.replace(/(?:news|english|online|international|world|tv|ca|com)+$/, '') || key;
   return OUTLET_ALIASES[short] ?? short;
@@ -269,6 +286,35 @@ function voices(items: Item[]): Map<string, Item[]> {
   return groups;
 }
 
+// Names in a Google cluster that are not news outlets: a government, a police force, a company newsroom.
+const NOT_OUTLET = /(?:^|[\s.])gov(?:\.|$)|\b(?:government|ministry|police|newsroom|press releases?|pm india)\b|narendramodi/i;
+
+/**
+ * The cluster voices of a story: the other outlets that Google lists under its Google News items
+ * (`Headline.cluster`). Only a strong, placed and fresh item that is not junk adds its cluster, the top
+ * item first. So a cluster never takes the place of the lead of the story, and the cluster of a tier-1, an
+ * unplaced or a stale item adds nothing. An outlet that has a headline in the story (in any feed, of any
+ * age), or that an earlier cluster gives, counts once (`outletKey()`). An aggregator, a platform, a
+ * press-release wire or an official source is no voice. At most CONFIG.clusterVoicesMax names.
+ */
+export function clusterVoices(items: Item[]): string[] {
+  const known = new Set(items.map((i) => i.outlet));
+  const out: string[] = [];
+  const leads = items
+    .filter((i) => i.h.kind === 'gn' && i.h.cluster?.length && i.strong && i.placed && i.fresh && !i.junk)
+    .sort((a, b) => a.h.position - b.h.position || feedRank(a.h.feed) - feedRank(b.h.feed) || (a.h.url < b.h.url ? -1 : a.h.url > b.h.url ? 1 : 0));
+  for (const i of leads) {
+    for (const name of i.h.cluster!) {
+      const key = outletKey(name);
+      if (!key || known.has(key) || AGGREGATOR.test(name) || isPlatform(null, name) || isPressRelease('', name) || NOT_OUTLET.test(name)) continue;
+      known.add(key);
+      out.push(name);
+      if (out.length >= CONFIG.clusterVoicesMax) return out;
+    }
+  }
+  return out;
+}
+
 /** The second-highest value: two voices must agree. */
 const second = (values: number[]) => values.sort((a, b) => b - a)[1] ?? 0;
 
@@ -350,7 +396,8 @@ export interface Candidate {
   freshLeads: number; // voices with a strong, placed and fresh headline
   freshVoices: number; // voices with a strong and fresh headline
   windowVoices: number; // voices with a strong headline in the 12 h window
-  pulse: boolean; // freshLeads >= 1 and windowVoices >= 2: the story still leads
+  cluster: string[]; // the cluster voices (clusterVoices()): not in `voices`, `freshLeads`, `freshVoices` or `windowVoices`
+  pulse: boolean; // freshLeads >= 1 and windowVoices >= 2: the story still leads (feed voices only)
   war: boolean; // a conflict story, or an attack story whose strong voices mostly name a state attacker
   tollOnly: boolean; // every strong headline gives only a death toll, with no event word
   fullLevel: BreakingLevel | null; // the level of the full test, before the gates and the life rules
@@ -448,6 +495,14 @@ export function detect(inputs: BreakingInputs, previous: BreakingState | null = 
     // A red GDACS or PAGER level raises a deadly disaster story to critical-class.
     if (red && tierEff >= 2) tierEff = 3;
     const position = editions >= 1 || lead >= 1;
+    // Cluster voices help the major bar and `outlets` only. The agreed tier, the toll, the critical gates, the
+    // business bar, the pulse, the chronic gate, the fresh leads and a new wave count the feed voices only.
+    // Only a story with victims gets them: a classifier error on a sport, report or politics headline
+    // ("Spain thrash Germany: a massacre in Madrid") has no agreed toll. War coverage gets none: the daily
+    // strikes of a war that is not on the ITN list must not alert with 2 feed voices.
+    const victims = deaths >= CONFIG.clusterMinDeaths || tierEff === 3 || hazards.length > 0;
+    const cluster = victims && !war ? clusterVoices(story.items) : [];
+    const majorVoices = nVoices + cluster.length;
 
     // The full test: the level from the coverage of the 12 h window.
     let level: BreakingLevel | null = null;
@@ -464,6 +519,9 @@ export function detect(inputs: BreakingInputs, previous: BreakingState | null = 
     } else if (tierEff >= 2 && nVoices >= (story.family === 'business' ? CONFIG.businessOutlets : CONFIG.majorOutlets) && position) {
       level = 'major';
       reason = 'major';
+    } else if (tierEff >= 2 && story.family !== 'business' && majorVoices >= CONFIG.majorOutlets && position) {
+      level = 'major';
+      reason = 'major, cluster voices';
     } else if (tierEff >= 2 && nVoices >= 2 && position && hazards.length) {
       level = 'major';
       reason = 'major, hazard-confirmed';
@@ -476,7 +534,7 @@ export function detect(inputs: BreakingInputs, previous: BreakingState | null = 
     const score = nVoices + 2 * editions + lead + 3 * tierEff + 2 * Math.log10(deaths + 1) + (live ? 1 : 0);
     const c: Candidate = {
       id: story.id, family: story.family, subject: storySubject(story), level, reason, score, voices: nVoices, editions, lead, tierEff, deaths, since, updatedAt,
-      freshLeads, freshVoices, windowVoices, pulse: freshLeads >= 1 && windowVoices >= 2, war, tollOnly, fullLevel: level, fullReason: reason,
+      freshLeads, freshVoices, windowVoices, cluster, pulse: freshLeads >= 1 && windowVoices >= 2, war, tollOnly, fullLevel: level, fullReason: reason,
       pick: story.items[0], basis, items: story.items, held: false, renewed: false, wave: 0,
       span: times.length ? (Math.max(...times) - since) / HOUR : 0,
       // "resigns" is the event of a business story, not an aftermath word. Business has its own list.
@@ -598,7 +656,9 @@ export function detect(inputs: BreakingInputs, previous: BreakingState | null = 
         ...articleOf(c.pick),
         since: new Date(s.since).toISOString(),
         updatedAt: new Date(Math.max(c.updatedAt, s.since)).toISOString(),
-        outlets: c.voices,
+        // The feed voices plus the cluster voices: the outlets that the major bar counts. A business story
+        // shows the same sum, but its bar counts the feed voices only.
+        outlets: c.voices + c.cluster.length,
         basis: c.basis,
         ...(c.family === 'business' && c.subject ? { subject: c.subject } : {}),
       };

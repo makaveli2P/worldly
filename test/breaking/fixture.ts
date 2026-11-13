@@ -11,8 +11,9 @@ import { namesAnyCountry } from '../../api/_lib/breaking/match.js';
 import { FEEDS } from '../../api/_lib/breaking/sources.js';
 import type { BreakingInputs, Hazard, Headline, Itn } from '../../api/_lib/breaking/types.js';
 
-// [position, title, publishedAt, publisher (Google News only, else ""), url]
-type Row = [number, string, string | null, string, string];
+// [position, title, publishedAt, publisher (Google News only, else ""), url, cluster (Google News only, optional)]
+// A fixture saved before the cluster field has rows of 5 values: their items have no cluster.
+type Row = [number, string, string | null, string, string, string[]?];
 
 export interface Fixture {
   note: string;
@@ -32,7 +33,10 @@ export function toFixture(inputs: BreakingInputs, note: string, wide = false): F
     const flagged = classify(h.title) !== null;
     if (!flagged && !(wide && namesAnyCountry(h.title))) continue;
     // The link of a headline that is not flagged is left out: it is the largest part of a row.
-    (feeds[h.feed] ??= []).push([h.position, h.title, h.publishedAt, h.kind === 'gn' ? h.publisher : '', flagged ? h.url : '']);
+    const row: Row = [h.position, h.title, h.publishedAt, h.kind === 'gn' ? h.publisher : '', flagged ? h.url : ''];
+    // Only a flagged item can add cluster voices, so only a flagged row keeps its cluster.
+    if (flagged && h.cluster?.length) row.push(h.cluster);
+    (feeds[h.feed] ??= []).push(row);
   }
   return { note, now: new Date(inputs.now).toISOString(), sources: inputs.sources, itn: inputs.itn, hazards: inputs.hazards, feeds };
 }
@@ -44,7 +48,7 @@ export function fromFixture(f: Fixture): BreakingInputs {
   for (const [feed, rows] of Object.entries(f.feeds)) {
     const src = byId.get(feed);
     if (!src) continue;
-    for (const [position, title, publishedAt, publisher, url] of rows) {
+    for (const [position, title, publishedAt, publisher, url, cluster] of rows) {
       headlines.push({
         feed,
         kind: src.kind,
@@ -54,6 +58,7 @@ export function fromFixture(f: Fixture): BreakingInputs {
         publisher: src.kind === 'gn' ? publisher : (src.publisher ?? ''),
         url: url || `https://example.invalid/${feed}/${position}`,
         publishedAt,
+        ...(src.kind === 'gn' && cluster?.length ? { cluster } : {}),
       });
     }
   }
