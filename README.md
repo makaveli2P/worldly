@@ -220,6 +220,14 @@ The texture files are licensed under [CC BY-NC-SA 4.0](https://creativecommons.o
 - Non-commercial use only. A fork that earns money (ads, paid features) must replace the texture files: rebuild from the CC BY 4.0 layer `s2cloudless` (2016; change `YEAR` and `LAYER` in the script) or buy a licence from EOX.
 - ShareAlike: if you change the texture files and share them, use the same licence.
 
+## Analytics
+
+The production build loads Vercel Web Analytics and Speed Insights (`src/vitals.ts`). Both use no cookies and keep no IP address. `src/main.ts` loads them as a separate chunk after the first globe frame, so they do not delay the globe.
+
+- **Web Analytics** counts a page view for each page load, also for a country link such as `/country/japan`. The app changes the path with `replaceState` when a visitor selects a country, and the script does not count that change. The Hobby plan includes 50,000 events a month for all projects of the account.
+- **Speed Insights** sends the real-user speed score. All country pages share one route, `/country/[slug]`. The Hobby plan includes 10,000 events in 30 days. If the site gets near this limit, set `sampleRate` in `src/vitals.ts`.
+- The dev server does not load them.
+
 ## Performance
 
 The page does this to show the globe sooner:

@@ -456,6 +456,17 @@ async function start(): Promise<void> {
     );
   if ('requestIdleCallback' in window) requestIdleCallback(beginFeed, { timeout: 4000 });
   else setTimeout(beginFeed, 2000);
+
+  // Visitor counts and real-user speed (Vercel). A separate chunk, in the production build only.
+  if (import.meta.env.PROD) {
+    const beginVitals = () =>
+      void import('./vitals').then(
+        ({ startVitals }) => startVitals(),
+        (err: unknown) => console.warn('[worldly] analytics did not load', err),
+      );
+    if ('requestIdleCallback' in window) requestIdleCallback(beginVitals, { timeout: 5000 });
+    else setTimeout(beginVitals, 2500);
+  }
 }
 
 start().catch((err) => {
