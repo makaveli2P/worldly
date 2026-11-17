@@ -14,6 +14,11 @@ export type ViewConstructor = new (opts: ViewOptions) => WorldView;
 /** The time that the new view takes to fade in. The old view goes after this time. */
 export const FADE_MS = 180;
 const DISPOSE_MS = 200;
+/**
+ * The old view goes after this time also when the new view shows no frame (for example, its context is lost).
+ * Two views hold two WebGL contexts, so the old one must not stay.
+ */
+export const FIRST_FRAME_MAX_MS = 3000;
 
 let mapModule: Promise<ViewConstructor> | null = null;
 
@@ -156,9 +161,11 @@ export class ViewHost implements WorldView {
       off();
       this.offFirstFrame = null;
       next.canvas.style.opacity = '1';
+      clearTimeout(this.fadeTimer);
       this.fadeTimer = window.setTimeout(() => this.endFade(), reduced ? 0 : DISPOSE_MS);
     });
     this.offFirstFrame = off;
+    this.fadeTimer = window.setTimeout(() => this.endFade(), FIRST_FRAME_MAX_MS);
 
     if (document.activeElement === old.canvas) next.focusCanvas();
     return kind;

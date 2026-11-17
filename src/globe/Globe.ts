@@ -28,6 +28,7 @@ import {
 import { globePalettes, systemTheme, type GlobePalette, type MapStyle, type ThemeName } from '../theme';
 import type { CountryFeature, CountryId } from '../types';
 import { globeZoomRatio, handOnKmPerPx, kmPerPxGlobe } from '../view/carry';
+import { ContextWatch } from '../view/contextWatch';
 import type { Insets, TextureHandover, ViewInitial, ViewState } from '../view/types';
 import { worldAssets } from './assets';
 import { BlurPass } from './blurPass';
@@ -55,8 +56,8 @@ import type { CountryPicker } from './picker';
 import { SatelliteTexture } from './satelliteTexture';
 import { SlotAnimator } from './slots';
 import { clampLat, dragLatLimit, dragView, lerpView, orientationFor, visibleArc, wrapLng, type ViewCentre } from './view';
-import { TEXTURES } from './textureManifest';
-import { chooseTextureTiers, neededTextureWidth } from './textureTiers';
+import { deviceTextureTiers } from './gpu';
+import { neededTextureWidth } from './textureTiers';
 import {
   SLOTS,
   landFragment,
@@ -256,6 +257,7 @@ export class Globe {
   private lastFrame = performance.now();
   private needsRender = true;
   private disposed = false;
+  private readonly glWatch: ContextWatch;
   private readonly frameListeners = new Set<() => void>();
 
   private readonly raycaster = new Raycaster();
@@ -277,13 +279,7 @@ export class Globe {
     this.renderer.outputColorSpace = LinearSRGBColorSpace; // shaders write sRGB values as they are
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxDpr));
     this.renderer.autoClear = false;
-    const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
-    const tiers = chooseTextureTiers(TEXTURES, {
-      maxTextureSize: this.renderer.capabilities.maxTextureSize,
-      finePointer: window.matchMedia('(pointer: fine)').matches,
-      saveData: nav.connection?.saveData === true,
-      deviceMemory: nav.deviceMemory,
-    });
+    const tiers = deviceTextureTiers(this.renderer);
     this.canvas = this.renderer.domElement;
     Object.assign(this.canvas.style, {
       display: 'block',
@@ -339,6 +335,22 @@ export class Globe {
       onChange: () => {
         this.updateTextureUniforms();
         this.needsRender = true;
+      },
+    });
+    // A context loss: stop the loop and the uploads, and keep the state. three.js makes the GPU objects
+    // again on the restore (geometry, slot meshes, outlines, blur targets, programs and the texture).
+    this.glWatch = new ContextWatch(this.canvas, 'globe', {
+      lost: () => {
+        cancelAnimationFrame(this.raf);
+        this.raf = 0;
+        this.satellite.contextLost();
+      },
+      restored: () => {
+        // After a loss the page uses no 8192 tier: the loss can come from too little GPU memory.
+        this.satellite.contextRestored(deviceTextureTiers(this.renderer).length);
+        this.needsRender = true;
+        this.lastFrame = performance.now();
+        if (!this.disposed) this.raf = requestAnimationFrame(this.frame);
       },
     });
 
@@ -776,7 +788,9 @@ export class Globe {
     this.blurPass.dispose();
     this.satellite.dispose();
     // Free the GL context now: a browser keeps only a few, and a view switch makes a new one.
-    this.renderer.forceContextLoss();
+    // Stop the watch first: this forced loss must not start a recovery or the message.
+    this.glWatch.stop();
+    if (!this.renderer.getContext().isContextLost()) this.renderer.forceContextLoss();
     this.renderer.dispose();
     this.canvas.remove();
   }
@@ -825,7 +839,7 @@ export class Globe {
   };
 
   private readonly frame = (now: number) => {
-    if (this.disposed) return;
+    if (this.disposed || this.glWatch.lost) return;
     this.raf = requestAnimationFrame(this.frame);
     const dt = Math.min(50, Math.max(0, now - this.lastFrame));
     this.lastFrame = now;
@@ -921,6 +935,7 @@ export class Globe {
   // ---- rendering ----
 
   private render(): void {
+    if (this.glWatch.lost) return; // resize() also renders
     this.canvasRect = this.canvas.getBoundingClientRect();
     this.updateMarker();
     this.draw();

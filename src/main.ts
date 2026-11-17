@@ -4,10 +4,12 @@ import { worldFeatures, type LiteCountryInfo, type WorldTopology } from './data/
 import { HOME_TITLE, countryTitle } from './data/site';
 import { COUNTRY_PATH_PREFIX, countrySlug, slugFromPath } from './data/slug';
 import { Overlay } from './overlay';
+import { WEBGL_OFF_TEXT, errorDetail, startErrorText } from './startError';
 import { unpackLabelSites, usePrecomputedLabelSites, type LabelsFile } from './overlay/labelPoints';
 import { CountrySearch, DetailsPanel, INTERACTED_EVENT, NewsPanel, PANELS_CHANGE_EVENT, RESET_EVENT, Tooltip, mountShell } from './ui';
 import type { BreakingFeedOptions } from './ui/alerts';
 import type { BreakingAlert, CountryId, CountryInfo, NewsResponse } from './types';
+import { GL_LOST_EVENT, GL_OK_EVENT } from './view/contextWatch';
 import type { ViewKind } from './view/types';
 import { ViewHost, loadMap } from './view/ViewHost';
 
@@ -501,29 +503,64 @@ async function start(): Promise<void> {
   }
 }
 
-/** True when the browser can make a WebGL 2 context (the globe and the map need it). */
-function hasWebGL2(): boolean {
+/**
+ * Tries to make a WebGL 2 context (the globe and the map need it). If the browser does not make it, reason is
+ * the statusMessage of webglcontextcreationerror: it tells a block after a GPU reset apart from a policy.
+ * Chromium sends the event during getContext(). three.js only writes the reason to the console.
+ */
+function probeWebGL2(): { webgl2: boolean; reason: string } {
+  const canvas = document.createElement('canvas');
+  let reason = '';
+  canvas.addEventListener('webglcontextcreationerror', (e) => (reason = (e as WebGLContextEvent).statusMessage ?? ''), { once: true });
   try {
-    return document.createElement('canvas').getContext('webgl2') !== null;
+    return { webgl2: canvas.getContext('webgl2') !== null, reason };
   } catch {
-    return false;
+    return { webgl2: false, reason };
   }
 }
 
+/** The error text and the detail line (src/startError.ts) as children of a loader line. */
+function errorLines(text: string, error: unknown, webgl2: boolean, reason: string): Node[] {
+  const detail = errorDetail({
+    error,
+    step,
+    webgl2,
+    reason,
+    boot: '__worldlyBoot' in window,
+    userAgent: navigator.userAgent,
+  });
+  return [document.createTextNode(text), Object.assign(document.createElement('span'), { className: 'loader-detail', textContent: detail })];
+}
+
+// The browser did not restore a lost WebGL context (src/view/contextWatch.ts): the view cannot draw.
+// The message goes when the view draws again, or when the view goes.
+// data-gl-lost on the root hides the frozen canvas, the labels and the hint (styles.css): only the message shows.
+let glNotice: HTMLElement | null = null;
+window.addEventListener(GL_LOST_EVENT, (e) => {
+  const view = (e as CustomEvent<{ view?: ViewKind }>).detail?.view ?? 'view';
+  step = `run (${view})`;
+  const { webgl2, reason } = probeWebGL2();
+  glNotice?.remove();
+  glNotice = document.createElement('p');
+  glNotice.className = 'loader';
+  glNotice.setAttribute('data-error', '');
+  glNotice.setAttribute('role', 'alert');
+  glNotice.replaceChildren(...errorLines(WEBGL_OFF_TEXT, new Error('WebGL context lost and not restored'), webgl2, reason));
+  shell.ui.append(glNotice);
+  document.documentElement.setAttribute('data-gl-lost', '');
+});
+window.addEventListener(GL_OK_EVENT, () => {
+  glNotice?.remove();
+  glNotice = null;
+  document.documentElement.removeAttribute('data-gl-lost');
+});
+
 start().catch((err: unknown) => {
   console.error('[worldly] failed to start', err);
-  // The details go on screen, so a photo of the page is enough to find the cause. They hold no personal data.
-  const e = err instanceof Error ? err : new Error(String(err));
-  const browser = navigator.userAgent.match(/(Edg|Chrome|Firefox|Version)\/[\d.]+/g)?.join(' ') ?? '';
-  const detail = [
-    `${e.name}: ${e.message}`.slice(0, 200),
-    `step: ${step}`,
-    `webgl2: ${hasWebGL2() ? 'yes' : 'no'}`,
-    `boot: ${'__worldlyBoot' in window ? 'yes' : 'no'}`,
-    browser,
-  ].filter(Boolean).join(' · ');
-  loader.replaceChildren(
-    document.createTextNode('Could not load the map. Reload the page to try again.'),
-    Object.assign(document.createElement('span'), { className: 'loader-detail', textContent: detail }),
-  );
+  // A WebGL error, or no WebGL 2 now: the browser blocks 3D graphics. Else a general error. The details go under it.
+  const { webgl2, reason } = probeWebGL2();
+  loader.replaceChildren(...errorLines(startErrorText(err, webgl2, reason), err, webgl2, reason));
+  // At the top, on its own paper: the crawler summary stays in the middle of the page.
+  loader.setAttribute('data-error', '');
+  loader.setAttribute('role', 'alert');
 });

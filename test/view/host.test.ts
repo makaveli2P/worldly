@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GlobeOptions } from '../../src/globe/Globe';
-import { ViewHost, type ViewConstructor, type ViewSources } from '../../src/view/ViewHost';
+import { FIRST_FRAME_MAX_MS, ViewHost, type ViewConstructor, type ViewSources } from '../../src/view/ViewHost';
 import type { Insets, TextureHandover, ViewKind, ViewOptions, ViewState, WorldView } from '../../src/view/types';
 
 const made: FakeView[] = [];
@@ -214,6 +214,23 @@ describe('ViewHost', () => {
     vi.advanceTimersByTime(1);
     expect(globe.disposed).toBe(true);
     expect(container.querySelectorAll('canvas').length).toBe(1);
+  });
+
+  it('disposes the old view when the new view shows no frame in FIRST_FRAME_MAX_MS', async () => {
+    // For example, the context of the new view is lost: two WebGL contexts must not stay.
+    const host = await ViewHost.create('globe', opts, sources());
+    await host.switchTo('map');
+    const [globe, map] = made;
+    vi.advanceTimersByTime(FIRST_FRAME_MAX_MS - 1);
+    expect(globe.disposed).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(globe.disposed).toBe(true);
+    expect(map.canvas.style.opacity).toBe('1');
+    expect(host.kind).toBe('map');
+    // A late first frame does not dispose anything more.
+    map.frame();
+    vi.advanceTimersByTime(FIRST_FRAME_MAX_MS);
+    expect(map.disposed).toBe(false);
   });
 
   it('gives the boot texture only to the first view', async () => {

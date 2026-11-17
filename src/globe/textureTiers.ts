@@ -1,9 +1,10 @@
 // Which satellite texture tier to load, and when. Pure functions, so the tests can drive them.
 //
 // Tier 0 (2048) loads first, on every device. Tier 1 (4096) loads when the view needs more texels
-// than tier 0 gives. Tier 2 (8192) loads only on a capable desktop, after the first zoom or selection,
-// while the globe is at rest. A decoded tier goes to the GPU only when canUploadTexture() allows it.
+// than tier 0 gives. Tier 2 (8192) loads only on a desktop with a strong GPU, after the first zoom or
+// selection, while the globe is at rest. A decoded tier goes to the GPU only when canUploadTexture() allows it.
 
+import type { GpuClass } from './gpuClass';
 import type { TextureFile } from './textureManifest';
 
 export interface TierEnv {
@@ -11,15 +12,24 @@ export interface TierEnv {
   finePointer: boolean; // matchMedia('(pointer: fine)')
   saveData: boolean; // navigator.connection.saveData
   deviceMemory: number | undefined; // GB; Safari and Firefox do not give it
+  gpu: GpuClass; // classifyGpu() of the WebGL renderer string
+  contextLost: boolean; // a WebGL context of this page was lost (src/view/contextWatch.ts)
 }
 
-/** The tiers this device may use, smallest first. Tier 0 is always there. */
+/**
+ * The tiers this device may use, smallest first. Tier 0 is always there.
+ * A software renderer gets tier 0 only. An integrated or unknown GPU stops at tier 1, and so does a page
+ * that lost a WebGL context: a loss can come from too little GPU memory.
+ */
 export function chooseTextureTiers(files: { s: TextureFile; m: TextureFile; l: TextureFile }, env: TierEnv): TextureFile[] {
   const tiers = [files.s];
-  if (env.saveData || env.maxTextureSize < files.m.width) return tiers;
+  if (env.gpu === 'software' || env.saveData || env.maxTextureSize < files.m.width) return tiers;
   tiers.push(files.m);
-  // 8192 RGBA with mipmaps takes about 180 MB of GPU memory: desktops only.
-  if (env.maxTextureSize >= files.l.width && env.finePointer && (env.deviceMemory ?? 8) >= 8) tiers.push(files.l);
+  // 8192 RGBA with mipmaps takes about 180 MB of GPU memory: desktops with a discrete GPU or Apple silicon only.
+  // A large texture on a weak laptop GPU can cause a GPU reset, and then Chromium blocks WebGL for the site.
+  const strong = env.gpu === 'discrete' || env.gpu === 'apple-silicon';
+  if (strong && !env.contextLost && env.maxTextureSize >= files.l.width && env.finePointer && (env.deviceMemory ?? 8) >= 8)
+    tiers.push(files.l);
   return tiers;
 }
 

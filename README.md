@@ -88,10 +88,10 @@ The `Globe | Map` radio group in the header, before `Satellite | Atlas`, selects
 ## Code map
 
 - `index.html`: the boot script, which starts the data requests and the first texture.
-- `src/main.ts`: loads the data and joins the globe, overlay, panels and breaking-news feed.
+- `src/main.ts`: loads the data and joins the globe, overlay, panels and breaking-news feed. `src/startError.ts` gives the text of a start error.
 - `src/globe/`: the three.js globe (`Globe.ts`), its shaders, controls, picker and texture tiers, and the parts that the flat map also uses.
 - `src/map/`: the flat Web Mercator map (`FlatMap.ts`), its shaders and its pure camera math. It loads with `import()`.
-- `src/view/`: the view host (`ViewHost.ts`), which switches between the globe and the map, and the zoom that carries between them (`carry.ts`).
+- `src/view/`: the view host (`ViewHost.ts`), which switches between the globe and the map, the zoom that carries between them (`carry.ts`), and the recovery after a WebGL context loss (`contextWatch.ts`).
 - `src/overlay/`: labels, leader lines and breaking-news markers (DOM and SVG over the canvas).
 - `src/ui/`: the header, search, panels, readout, image credit, preferences and the breaking-news chip (`alerts*.ts`).
 - `src/data/precompute.ts`: the label sites and the lite country file that the build makes.
@@ -217,12 +217,16 @@ The downloads stay in `.cache/texture/` (git ignores it), so a second run makes 
 | --- | --- | --- |
 | `earth-2025-<hash>-2048.webp` (WebP q70) | First tier, on every device | 97 KB |
 | `earth-2025-<hash>-4096.webp` (WebP q80) | When the view needs more texels than 2048 gives (desktop at once, phone after a zoom or selection) | 549 KB |
-| `earth-2025-<hash>-8192.webp` (WebP q80) | Only on a desktop with `MAX_TEXTURE_SIZE` >= 8192, a fine pointer and 8 GB or more memory, after the first zoom or selection, when the globe is at rest | 2.1 MB |
+| `earth-2025-<hash>-8192.webp` (WebP q80) | Only on a desktop with a discrete GPU or Apple silicon, `MAX_TEXTURE_SIZE` >= 8192, a fine pointer and 8 GB or more memory, after the first zoom or selection, when the globe is at rest | 2.1 MB |
 | `earth-2025-<hash>-4096.jpg` (JPEG q80) | Fallback when the WebP load fails | 642 KB |
 
 `<hash>` is the start of the SHA-256 of the file. A rebuild that changes a file gives it a new name, so the files can have a one-year immutable cache. With Save-Data, the page loads only the first tier.
 
 The page decodes the tiers with `createImageBitmap`, off the main thread. If that fails, it uses an `<img>`. The upload of a decoded tier to the GPU runs on the main thread (about 13 ms for 4096 and 42 ms for 8192 on an Apple M4 Pro). So a larger tier waits for a frame with no drag, no turn to a selection, no inertia and no zoom ease. The 8192 tier also waits for the idle spin to stop and for 800 ms with no input (`canUploadTexture` in `src/globe/textureTiers.ts`).
+
+The page reads the GPU name from WebGL one time and gives it a class: software, integrated, discrete, Apple silicon or unknown (`classifyGpu` in `src/globe/gpuClass.ts`). Only a discrete GPU or Apple silicon gets the 8192 tier. An integrated or unknown GPU stops at 4096, and a software renderer stops at 2048. Safari gives no GPU name, so Safari stops at 4096. The reason: the 8192 tier takes about 180 MB of GPU memory. On a weak laptop GPU it can cause a GPU reset, and Chromium then blocks WebGL for the site until the browser restarts.
+
+If the browser takes the WebGL context away, the view stops its frame loop and keeps its state (`src/view/contextWatch.ts`). When the browser restores the context, three.js makes the GPU objects again and the view draws again. After a loss, the page does not load the 8192 tier again. If the restore does not come in 4 s, or the page cannot make a WebGL context at the start, the page tells the user to close all browser windows and open the browser again. While that message shows for a lost context, the page hides the frozen canvas and the labels. The detail line under the message gives the reason of the browser (the `statusMessage` of `webglcontextcreationerror`). If the reason is an enterprise policy or a command-line switch, the page tells the user to ask the IT support team, because a restart does not help.
 
 ### Texture licence
 
