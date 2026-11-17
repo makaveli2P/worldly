@@ -54,6 +54,11 @@ export class SatelliteTexture {
   private firstTexture: SatelliteTextureOptions['firstTexture'] | null; // from index.html, used one time
   private kept = false; // handover() gave the image away: dispose() does not close it
   private frozen = false; // after handover(): no more loads or uploads, so the image given away stays open
+  private lost = false; // the WebGL context is lost: a decoded tier waits in pending, and nothing uploads
+  // The context generation: contextRestored() adds 1. A texture from an older generation has the dispose
+  // listener of the three.js state before the loss, so its dispose() deletes a GL object of the lost context.
+  private gen = 0;
+  private texGen = 0; // the generation of this.texture
   private disposed = false;
 
   constructor(renderer: WebGLRenderer, opts: SatelliteTextureOptions) {
@@ -62,10 +67,16 @@ export class SatelliteTexture {
     this.tiers = opts.tiers;
     this.firstTexture = opts.firstTexture ?? null;
     if (opts.handover) {
-      // The view is not built yet: no onChange call here. The view reads mix when it applies its palette.
       const { level, image } = opts.handover;
-      this.useImage(Math.min(level, this.tiers.length - 1), image);
-      this.texMix = 1;
+      if (level >= this.tiers.length) {
+        // A tier above the limit of this view (the 8192 tier after a loss): this view owns the image now. Close it.
+        // The view loads tier 0 when it calls ensure().
+        closeImage(image);
+      } else {
+        // The view is not built yet: no onChange call here. The view reads mix when it applies its palette.
+        this.useImage(level, image);
+        this.texMix = 1;
+      }
     }
     this.onChange = opts.onChange;
   }
@@ -97,7 +108,7 @@ export class SatelliteTexture {
    * Call it after the camera step of the frame, when the view knows if the camera still moves.
    */
   upload(s: UploadInput): void {
-    if (this.frozen) return;
+    if (this.frozen || this.lost) return;
     const pending = this.pending;
     if (pending && canUploadTexture({ ...s, level: pending.level })) {
       this.pending = null;
@@ -115,15 +126,62 @@ export class SatelliteTexture {
     this.frozen = true;
     closeImage(this.pending?.image);
     this.pending = null;
-    if (!this.texture || this.level < 0 || this.kept) return null;
+    // A lost context: this view keeps the image and closes it in dispose(). The next view loads tier 0.
+    if (!this.texture || this.level < 0 || this.kept || this.lost) return null;
     this.kept = true;
     return { level: this.level, image: this.texture.image as ImageBitmap | HTMLImageElement };
+  }
+
+  /** The WebGL context is lost. Loads continue, but each decoded tier waits for the restore. */
+  contextLost(): void {
+    this.lost = true;
+  }
+
+  /**
+   * The WebGL context is back. Call it after three.js made its state again (its listener runs first).
+   * A new Texture object on the same image takes the place of the texture on screen, and three.js
+   * uploads it at the next render: the image stays open until a larger tier replaces it. The old object
+   * does not get dispose(): three.js discarded its GL objects on the loss. maxTiers is the new tier count
+   * (a page with a loss gets no 8192 tier). If the tier on screen is too large now, the texture goes,
+   * and tier 0 loads again (from the browser cache) and fades in. The upgrades then stop at the new limit.
+   */
+  contextRestored(maxTiers: number): void {
+    this.lost = false;
+    this.gen++;
+    if (this.disposed || this.frozen) return;
+    if (this.tiers.length > maxTiers) {
+      this.tiers = this.tiers.slice(0, Math.max(1, maxTiers));
+      if (this.pending && this.pending.level >= this.tiers.length) {
+        closeImage(this.pending.image);
+        this.pending = null;
+        this.busy = false;
+      }
+    }
+    if (!this.texture) return;
+    if (this.level < this.tiers.length) {
+      this.texture = this.makeTexture(this.texture.image as ImageBitmap | HTMLImageElement);
+      this.texGen = this.gen;
+      this.uniform.value = this.texture;
+      this.onChange();
+      return;
+    }
+    const old = this.texture;
+    this.texture = null;
+    this.uniform.value = null;
+    // No dispose(): the texture is from before the restore (disposeTexture).
+    if (!this.kept) closeImage(old.image);
+    this.kept = false;
+    this.level = -1;
+    this.texMix = 0;
+    this.state = 'none';
+    this.onChange();
+    this.loadLevel(0);
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.texture?.dispose();
+    this.disposeTexture(this.texture, this.texGen);
     if (!this.kept) closeImage(this.texture?.image);
     closeImage(this.pending?.image);
     this.pending = null;
@@ -156,13 +214,17 @@ export class SatelliteTexture {
     else new ImageBitmapLoader().load(url, done, undefined, fail);
   }
 
-  /** Tier 0 goes to the GPU at once. A larger tier waits in pending; upload() sends it at rest. */
+  /**
+   * Tier 0 goes to the GPU at once. A larger tier waits in pending; upload() sends it at rest.
+   * While the context is lost, each tier waits in pending. A tier above the limit (after a loss) goes.
+   */
   private onDecoded(level: number, image: ImageBitmap | HTMLImageElement): void {
-    if (this.disposed || this.frozen) {
+    if (this.disposed || this.frozen || level >= this.tiers.length) {
+      this.busy = false;
       closeImage(image);
       return;
     }
-    if (level <= 0) {
+    if (level <= 0 && !this.lost) {
       this.useImage(level, image);
       return;
     }
@@ -176,21 +238,16 @@ export class SatelliteTexture {
       closeImage(image);
       return;
     }
-    const tex = new Texture(image);
-    tex.flipY = false;
-    tex.colorSpace = NoColorSpace; // raw sRGB values, like every other colour here
-    tex.wrapS = RepeatWrapping;
-    tex.minFilter = LinearMipmapLinearFilter;
-    tex.generateMipmaps = true;
-    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
-    tex.needsUpdate = true;
+    const tex = this.makeTexture(image);
     this.renderer.initTexture(tex);
     const old = this.texture;
+    const oldGen = this.texGen;
     this.texture = tex;
+    this.texGen = this.gen;
     this.level = level;
     this.uniform.value = tex;
     if (old) {
-      old.dispose();
+      this.disposeTexture(old, oldGen);
       // An image given away (handover) belongs to the next view: do not close it.
       if (!this.kept) closeImage(old.image);
     }
@@ -201,6 +258,25 @@ export class SatelliteTexture {
       if (this.reducedMotion.matches) this.texMix = 1;
     }
     this.onChange();
+  }
+
+  private makeTexture(image: ImageBitmap | HTMLImageElement): Texture {
+    const tex = new Texture(image);
+    tex.flipY = false;
+    tex.colorSpace = NoColorSpace; // raw sRGB values, like every other colour here
+    tex.wrapS = RepeatWrapping;
+    tex.minFilter = LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  /** Frees the GL objects of a texture of generation texGen. */
+  private disposeTexture(tex: Texture | null, texGen: number): void {
+    // A texture from before a restore: three.js discarded its GL objects on the loss. Its dispose() would
+    // delete them on the new context ("object does not belong to this context"). Only drop the reference.
+    if (tex && texGen === this.gen) tex.dispose();
   }
 
   private textureFailed(level: number, url: string, viaImg: boolean, err: unknown): void {
@@ -227,7 +303,7 @@ export class SatelliteTexture {
 
   /** Loads the next tier when the view needs more texels and the view is at rest (see textureTiers.ts). */
   private maybeUpgrade(now: number, satellite: boolean, s: UpgradeInput): void {
-    if (this.frozen || this.busy || this.state !== 'ready' || this.level + 1 >= this.tiers.length) return;
+    if (this.frozen || this.lost || this.busy || this.state !== 'ready' || this.level + 1 >= this.tiers.length) return;
     if (!satellite) return;
     const next = nextTextureLevel({
       ...s,

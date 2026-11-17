@@ -76,3 +76,108 @@ describe('SatelliteTexture.handover', () => {
     expect(shown.closed).toBe(true);
   });
 });
+
+describe('SatelliteTexture after a context loss', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ImageBitmap', FakeBitmap);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const internals = (t: SatelliteTexture) => t as unknown as { level: number; busy: boolean; pending: unknown; tiers: TextureFile[] };
+
+  it('keeps the image on screen open in a new texture, so three.js can upload it again', () => {
+    const shown = new FakeBitmap();
+    const t = make(shown, 1);
+    const tex = t.uniform.value!;
+    const dispose = vi.spyOn(tex, 'dispose');
+    t.contextLost();
+    t.contextRestored(3);
+    // The old texture has the dispose listener of the lost context: it must not get dispose().
+    expect(t.uniform.value).not.toBe(tex);
+    expect(t.uniform.value?.image).toBe(shown);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(shown.closed).toBe(false);
+    expect(internals(t).level).toBe(1);
+    // A later texture swap frees the texture from after the restore.
+    const after = t.uniform.value!;
+    const disposeAfter = vi.spyOn(after, 'dispose');
+    decoded(t, 2, new FakeBitmap());
+    t.upload(atRest);
+    expect(disposeAfter).toHaveBeenCalledTimes(1);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(shown.closed).toBe(true);
+  });
+
+  it('holds a decoded tier while the context is lost, and uploads it after the restore', () => {
+    const load = vi.spyOn(SatelliteTexture.prototype as unknown as { loadLevel(): void }, 'loadLevel').mockImplementation(() => {});
+    const t = new SatelliteTexture(renderer, { tiers, reducedMotion, onChange() {} });
+    t.ensure();
+    expect(load).toHaveBeenCalledTimes(1);
+    t.contextLost();
+    const first = new FakeBitmap();
+    decoded(t, 0, first);
+    expect(t.uniform.value).toBeNull();
+    t.upload(atRest);
+    expect(t.uniform.value).toBeNull();
+    t.contextRestored(2);
+    t.upload(atRest);
+    expect(t.uniform.value?.image).toBe(first);
+  });
+
+  it('drops the 8192 tier on screen after the restore and loads tier 0 again', () => {
+    const load = vi.spyOn(SatelliteTexture.prototype as unknown as { loadLevel(level: number): void }, 'loadLevel').mockImplementation(() => {});
+    const large = new FakeBitmap();
+    const t = make(large, 2);
+    const dispose = vi.spyOn(t.uniform.value!, 'dispose');
+    t.contextLost();
+    t.contextRestored(2);
+    expect(dispose).not.toHaveBeenCalled(); // three.js discarded its GL objects on the loss
+    expect(large.closed).toBe(true);
+    expect(t.uniform.value).toBeNull();
+    expect(t.mix).toBe(0);
+    expect(internals(t).tiers.map((f) => f.width)).toEqual([2048, 4096]);
+    expect(load).toHaveBeenCalledWith(0);
+  });
+
+  it('closes an 8192 decode that waits or arrives after the restore', () => {
+    const t = make(new FakeBitmap(), 1);
+    t.contextLost();
+    const waiting = new FakeBitmap();
+    decoded(t, 2, waiting);
+    t.contextRestored(2);
+    expect(waiting.closed).toBe(true);
+    expect(internals(t).pending).toBeNull();
+    expect(internals(t).busy).toBe(false);
+    const late = new FakeBitmap();
+    decoded(t, 2, late);
+    expect(late.closed).toBe(true);
+    expect(internals(t).level).toBe(1);
+  });
+
+  it('does not use a handover above its tier limit (the 8192 tier after a loss)', () => {
+    const large = new FakeBitmap();
+    const t = new SatelliteTexture(renderer, {
+      tiers: tiers.slice(0, 2),
+      reducedMotion,
+      onChange() {},
+      handover: { level: 2, image: large as unknown as ImageBitmap },
+    });
+    expect(t.uniform.value).toBeNull();
+    expect(t.mix).toBe(0);
+    expect(internals(t).level).toBe(-1);
+    expect(large.closed).toBe(true); // this view owns the image: the old view does not close it
+  });
+
+  it('gives no handover while the context is lost, and closes the image on dispose', () => {
+    const shown = new FakeBitmap();
+    const t = make(shown, 2);
+    t.contextLost();
+    expect(t.handover()).toBeNull();
+    expect(shown.closed).toBe(false);
+    t.dispose();
+    expect(shown.closed).toBe(true);
+  });
+});

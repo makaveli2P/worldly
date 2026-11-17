@@ -184,6 +184,12 @@ a {
   inset: 0;
 }
 
+/* A lost WebGL context that the browser did not restore (src/main.ts): hide the frozen canvas, the labels and
+   the hint. Only the page background and the message show. */
+:root[data-gl-lost] :is(.globe, .overlay, .hint) {
+  visibility: hidden;
+}
+
 /* Labels and leader lines: above the globe, below the panels. */
 .overlay {
   position: fixed;
@@ -802,6 +808,7 @@ a {
   border-top: 2px solid var(--ink);
   color: var(--ink);
   white-space: normal;
+  z-index: 3; /* over the plates (.panels, z-index 2): a lost context can come while a plate is open */
 }
 
 .readout {

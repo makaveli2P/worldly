@@ -48,11 +48,12 @@ import type { CountryPicker } from '../globe/picker';
 import { SatelliteTexture } from '../globe/satelliteTexture';
 import { SLOTS, plainLineFragment, plainLineVertex, lineFragment } from '../globe/shaders';
 import { SlotAnimator } from '../globe/slots';
-import { TEXTURES } from '../globe/textureManifest';
-import { chooseTextureTiers, mapNeededTextureWidth } from '../globe/textureTiers';
+import { deviceTextureTiers } from '../globe/gpu';
+import { mapNeededTextureWidth } from '../globe/textureTiers';
 import { globePalettes, systemTheme, type GlobePalette, type MapStyle, type ThemeName } from '../theme';
 import type { CountryId } from '../types';
 import { handOnKmPerPx, mapScale } from '../view/carry';
+import { ContextWatch } from '../view/contextWatch';
 import type { Insets, Surface, TextureHandover, ViewOptions, ViewState } from '../view/types';
 import { mapLandFragment, mapLandVertex, mapLineVertex, mapOceanFragment, mapOceanVertex } from './mapShaders';
 import {
@@ -216,6 +217,7 @@ export class FlatMap {
   private lastFrame = performance.now();
   private needsRender = true;
   private disposed = false;
+  private readonly glWatch: ContextWatch;
   private readonly frameListeners = new Set<() => void>();
   private readonly clearColor = new Color();
 
@@ -230,13 +232,7 @@ export class FlatMap {
     this.renderer.outputColorSpace = LinearSRGBColorSpace; // shaders write sRGB values as they are
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxDpr));
     this.renderer.autoClear = false;
-    const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
-    const tiers = chooseTextureTiers(TEXTURES, {
-      maxTextureSize: this.renderer.capabilities.maxTextureSize,
-      finePointer: window.matchMedia('(pointer: fine)').matches,
-      saveData: nav.connection?.saveData === true,
-      deviceMemory: nav.deviceMemory,
-    });
+    const tiers = deviceTextureTiers(this.renderer);
     this.canvas = this.renderer.domElement;
     Object.assign(this.canvas.style, {
       display: 'block',
@@ -274,6 +270,22 @@ export class FlatMap {
       onChange: () => {
         this.updateTextureUniforms();
         this.needsRender = true;
+      },
+    });
+    // A context loss: stop the loop and the uploads, and keep the state. three.js makes the GPU objects
+    // again on the restore (geometry, slot meshes, outlines, blur targets, programs and the texture).
+    this.glWatch = new ContextWatch(this.canvas, 'map', {
+      lost: () => {
+        cancelAnimationFrame(this.raf);
+        this.raf = 0;
+        this.satellite.contextLost();
+      },
+      restored: () => {
+        // After a loss the page uses no 8192 tier: the loss can come from too little GPU memory.
+        this.satellite.contextRestored(deviceTextureTiers(this.renderer).length);
+        this.needsRender = true;
+        this.lastFrame = performance.now();
+        if (!this.disposed) this.raf = requestAnimationFrame(this.tick);
       },
     });
 
@@ -696,7 +708,9 @@ export class FlatMap {
     this.blurPass.dispose();
     this.satellite.dispose();
     // Free the GL context now: a browser keeps only a few, and a view switch makes a new one.
-    this.renderer.forceContextLoss();
+    // Stop the watch first: this forced loss must not start a recovery or the message.
+    this.glWatch.stop();
+    if (!this.renderer.getContext().isContextLost()) this.renderer.forceContextLoss();
     this.renderer.dispose();
     this.canvas.remove();
   }
@@ -742,7 +756,7 @@ export class FlatMap {
   };
 
   private readonly tick = (now: number) => {
-    if (this.disposed) return;
+    if (this.disposed || this.glWatch.lost) return;
     this.raf = requestAnimationFrame(this.tick);
     const dt = Math.min(50, Math.max(0, now - this.lastFrame));
     this.lastFrame = now;
@@ -836,6 +850,7 @@ export class FlatMap {
   // ---- rendering ----
 
   private render(): void {
+    if (this.glWatch.lost) return; // resize() also renders
     this.canvasRect = this.canvas.getBoundingClientRect();
     this.updateMarker();
     this.draw();

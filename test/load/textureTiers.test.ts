@@ -8,16 +8,18 @@ import {
   mapNeededTextureWidth,
   neededTextureWidth,
   nextTextureLevel,
+  type TierEnv,
   type UploadState,
   type UpgradeState,
 } from '../../src/globe/textureTiers';
+import { classifyGpu } from '../../src/globe/gpuClass';
 
 const files = {
   s: { url: '/s.webp', width: 2048, bytes: 1 },
   m: { url: '/m.webp', width: 4096, bytes: 1 },
   l: { url: '/l.webp', width: 8192, bytes: 1 },
 };
-const desktop = { maxTextureSize: 16384, finePointer: true, saveData: false, deviceMemory: 8 };
+const desktop: TierEnv = { maxTextureSize: 16384, finePointer: true, saveData: false, deviceMemory: 8, gpu: 'discrete', contextLost: false };
 
 describe('chooseTextureTiers', () => {
   it('gives all three tiers to a capable desktop', () => {
@@ -37,6 +39,40 @@ describe('chooseTextureTiers', () => {
   it('gives only the first tier with Save-Data or a 2048 GPU limit', () => {
     expect(chooseTextureTiers(files, { ...desktop, saveData: true })).toEqual([files.s]);
     expect(chooseTextureTiers(files, { ...desktop, maxTextureSize: 2048 })).toEqual([files.s]);
+  });
+
+  it('gives the 8192 tier only to a discrete GPU or Apple silicon', () => {
+    const widths = (gpu: TierEnv['gpu']) => chooseTextureTiers(files, { ...desktop, gpu }).map((t) => t.width);
+    expect(widths('discrete')).toEqual([2048, 4096, 8192]);
+    expect(widths('apple-silicon')).toEqual([2048, 4096, 8192]);
+    expect(widths('integrated')).toEqual([2048, 4096]);
+    expect(widths('unknown')).toEqual([2048, 4096]);
+    expect(widths('software')).toEqual([2048]);
+  });
+
+  it('keeps the other checks for a strong GPU', () => {
+    expect(chooseTextureTiers(files, { ...desktop, gpu: 'apple-silicon', finePointer: false })).toHaveLength(2);
+    expect(chooseTextureTiers(files, { ...desktop, gpu: 'discrete', deviceMemory: 4 })).toHaveLength(2);
+    expect(chooseTextureTiers(files, { ...desktop, gpu: 'discrete', saveData: true })).toEqual([files.s]);
+  });
+
+  it('gives no 8192 tier after a context loss in the page', () => {
+    expect(chooseTextureTiers(files, { ...desktop, contextLost: true }).map((t) => t.width)).toEqual([2048, 4096]);
+  });
+
+  it('chooses the tiers from real renderer strings', () => {
+    const widths = (renderer: string) =>
+      chooseTextureTiers(files, { ...desktop, gpu: classifyGpu(renderer) }).map((t) => t.width);
+    // The office laptop of the start error (Edge on Windows, Intel UHD 620): no 8192 tier.
+    expect(widths('ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)')).toEqual([2048, 4096]);
+    expect(widths('ANGLE (NVIDIA, NVIDIA GeForce RTX 3070 Direct3D11 vs_5_0 ps_5_0, D3D11)')).toEqual([2048, 4096, 8192]);
+    expect(widths('ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)')).toEqual([2048, 4096, 8192]);
+    expect(widths('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)')).toEqual([2048]);
+    expect(widths('')).toEqual([2048, 4096]);
+    // Firefox on a laptop with an AMD APU or an Intel Arc GPU on the CPU: the bucket also holds cards, so no 8192 tier.
+    expect(widths('ANGLE (AMD, Radeon R9 200 Series Direct3D11 vs_5_0 ps_5_0), or similar')).toEqual([2048, 4096]);
+    expect(widths('ANGLE (Intel, Intel(R) Arc(TM) A750 Graphics Direct3D11 vs_5_0 ps_5_0), or similar')).toEqual([2048, 4096]);
+    expect(widths('ANGLE (NVIDIA, NVIDIA GeForce GTX 980 Direct3D11 vs_5_0 ps_5_0), or similar')).toEqual([2048, 4096, 8192]);
   });
 });
 
