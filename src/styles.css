@@ -777,6 +777,17 @@ a {
   opacity: 0;
 }
 
+/* A start error (src/main.ts): the error text, the step, WebGL 2 and the browser, for a screenshot. */
+.loader-detail {
+  display: block;
+  max-width: min(640px, calc(100vw - 32px));
+  margin: 8px auto 16px;
+  text-transform: none;
+  letter-spacing: 0;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
 /* A load error after the first frame (src/main.ts): the globe is on screen, so the text needs its own paper.
    :is(#boot) matches the specificity of the boot style in index.html. */
 :is(#boot, .loader)[data-error] {
