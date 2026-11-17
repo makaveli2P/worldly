@@ -29,10 +29,16 @@
       // Start the data with the HTML, before the module loads. src/main.ts reuses these promises.
       (function () {
         var json = function (url) {
-          return fetch(url).then(function (r) {
-            if (!r.ok) throw new Error(url + ': ' + r.status);
-            return r.json();
-          });
+          // A network error names the file, so the start error on screen says which one failed.
+          return fetch(url).then(
+            function (r) {
+              if (!r.ok) throw new Error(url + ': ' + r.status);
+              return r.json();
+            },
+            function (e) {
+              throw new Error(url + ': ' + (e && e.message));
+            },
+          );
         };
         var later, laterTexture;
         var boot = (window.__worldlyBoot = {

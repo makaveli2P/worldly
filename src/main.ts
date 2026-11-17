@@ -24,7 +24,10 @@ const summary = document.querySelector<HTMLElement>('#seo');
 if (summary) shell.ui.append(summary);
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  // A network error names the file, so the start error on screen says which one failed.
+  const res = await fetch(url).catch((e: unknown) => {
+    throw new Error(`${url}: ${e instanceof Error ? e.message : String(e)}`);
+  });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return (await res.json()) as T;
 }
@@ -49,6 +52,9 @@ interface BootData {
   texture?: { url: string; blob: Promise<Blob | null> };
 }
 
+// The step of start() that runs now. A start error shows it, so a screenshot tells where it failed.
+let step = 'data';
+
 async function start(): Promise<void> {
   // The map chunk loads at the same time as the data. index.html sets data-view before first paint.
   if (document.documentElement.dataset.view === 'map') void loadMap().catch(() => undefined);
@@ -67,6 +73,7 @@ async function start(): Promise<void> {
   let facts: Record<CountryId, CountryInfo> | null = null;
   let factsLoad: Promise<void> | null = null;
   let pendingSelect: CountryId | null = null;
+  step = 'shapes';
   const features = worldFeatures(topo);
   // Use the build's label sites only when they come from this world.json (the same arc count).
   const built = labels?.v === 1 && labels.arcs === topo.arcs.length ? labels : null;
@@ -94,6 +101,7 @@ async function start(): Promise<void> {
   const offEarlyView = shell.onViewChange((k) => (requestedView = k));
 
   // The globe or the flat map. The host keeps the same API when the visitor switches between them.
+  step = `view (${shell.view()})`;
   const view = await ViewHost.create(shell.view(), {
     container: shell.globe,
     features,
@@ -133,6 +141,7 @@ async function start(): Promise<void> {
   // ---- overlay: labels, leader lines and the readout ----
 
   // The overlay reads only the lite fields (LITE_FIELDS), one time, in its constructor.
+  step = 'overlay';
   const overlay = new Overlay(shell.overlay, {
     countries: countries as Record<CountryId, CountryInfo>,
     features,
@@ -492,7 +501,29 @@ async function start(): Promise<void> {
   }
 }
 
-start().catch((err) => {
+/** True when the browser can make a WebGL 2 context (the globe and the map need it). */
+function hasWebGL2(): boolean {
+  try {
+    return document.createElement('canvas').getContext('webgl2') !== null;
+  } catch {
+    return false;
+  }
+}
+
+start().catch((err: unknown) => {
   console.error('[worldly] failed to start', err);
-  loader.textContent = 'Could not load the map. Reload the page to try again.';
+  // The details go on screen, so a photo of the page is enough to find the cause. They hold no personal data.
+  const e = err instanceof Error ? err : new Error(String(err));
+  const browser = navigator.userAgent.match(/(Edg|Chrome|Firefox|Version)\/[\d.]+/g)?.join(' ') ?? '';
+  const detail = [
+    `${e.name}: ${e.message}`.slice(0, 200),
+    `step: ${step}`,
+    `webgl2: ${hasWebGL2() ? 'yes' : 'no'}`,
+    `boot: ${'__worldlyBoot' in window ? 'yes' : 'no'}`,
+    browser,
+  ].filter(Boolean).join(' · ');
+  loader.replaceChildren(
+    document.createTextNode('Could not load the map. Reload the page to try again.'),
+    Object.assign(document.createElement('span'), { className: 'loader-detail', textContent: detail }),
+  );
 });
